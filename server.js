@@ -3,6 +3,7 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
+import crypto from "crypto";
 import pkg from "pg";
 
 const { Pool } = pkg;
@@ -12,9 +13,12 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 10000;
-const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "dev-admin-token";
 
-// --- DB Pool ---
+// Simple creds (env-backed; defaults to admin/supersecret)
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "admin";
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "supersecret";
+
+// DB pool (Render/Supabase)
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
@@ -22,28 +26,73 @@ const pool = new Pool({
 
 app.use(express.json());
 
-// paths
+// ---- SPA paths ----
 const clientDir = path.join(__dirname, "dashboard", "dist");
 const indexHtml = path.join(clientDir, "index.html");
 
-// auth helpers
-function readBearer(req) {
-  const auth = req.headers.authorization || "";
-  return auth.startsWith("Bearer ") ? auth.slice(7) : "";
-}
-function requireAdmin(req, res) {
-  const token = readBearer(req);
-  if (!token) return res.status(401).json({ ok: false, error: "Missing token" });
-  if (token !== ADMIN_TOKEN) return res.status(401).json({ ok: false, error: "Invalid token" });
+// ---- Sessions (in-memory) ----
+const SESSIONS = new Set();
+const makeToken = () => crypto.randomUUID();
+const readBearer = (req) => {
+  const h = req.headers.authorization || "";
+  return h.startsWith("Bearer ") ? h.slice(7) : "";
+};
+const requireSession = (req, res) => {
+  const t = readBearer(req);
+  if (!t) return res.status(401).json({ ok: false, error: "Missing token" });
+  if (!SESSIONS.has(t)) return res.status(401).json({ ok: false, error: "Invalid session" });
   return true;
-}
+};
 
-// health
+// ---- Diag ----
 app.get("/health", (_req, res) => res.json({ ok: true }));
+app.get("/__diag", async (_req, res) => {
+  let db_ok = false;
+  try {
+    const r = await pool.query("select 1 as ok");
+    db_ok = r.rows?.[0]?.ok === 1;
+  } catch {}
+  res.json({
+    ok: true,
+    admin_username_set: Boolean(process.env.ADMIN_USERNAME),
+    clientDir,
+    index_exists: fs.existsSync(indexHtml),
+    db_ok,
+  });
+});
+app.get("/__ls", (_req, res) => {
+  try {
+    const root = fs.readdirSync(__dirname);
+    const dash = fs.existsSync(path.join(__dirname, "dashboard"))
+      ? fs.readdirSync(path.join(__dirname, "dashboard"))
+      : null;
+    const dist = fs.existsSync(clientDir) ? fs.readdirSync(clientDir) : null;
+    res.json({ ok: true, root, dash, dist });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e) });
+  }
+});
 
-// leads: list
+// ---- Auth: username/password ----
+app.post("/api/auth/login", (req, res) => {
+  const { username, password } = req.body || {};
+  if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
+    const token = makeToken();
+    SESSIONS.add(token);
+    return res.json({ ok: true, token });
+  }
+  return res.status(401).json({ ok: false, error: "Invalid credentials" });
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  const t = readBearer(req);
+  if (t) SESSIONS.delete(t);
+  res.json({ ok: true });
+});
+
+// ---- Leads (Postgres) ----
 app.get("/api/leads", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!requireSession(req, res)) return;
   try {
     const { rows } = await pool.query(
       "SELECT id, company, role, salary_band, status, created_at FROM leads ORDER BY created_at DESC"
@@ -55,9 +104,8 @@ app.get("/api/leads", async (req, res) => {
   }
 });
 
-// leads: create
 app.post("/api/leads", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!requireSession(req, res)) return;
   const { company, role, salary_band = "AED 50K+", status = "New" } = req.body || {};
   if (!company || !role) {
     return res.status(400).json({ ok: false, error: "company and role required" });
@@ -76,15 +124,13 @@ app.post("/api/leads", async (req, res) => {
   }
 });
 
-// static + SPA fallback
-if (fs.existsSync(clientDir)) {
-  app.use(express.static(clientDir));
-}
+// ---- Static + SPA fallback ----
+if (fs.existsSync(clientDir)) app.use(express.static(clientDir));
 app.get(/.*/, (_req, res) => {
   if (fs.existsSync(indexHtml)) return res.sendFile(indexHtml);
   res.status(500).send("UI not built");
 });
 
 app.listen(PORT, () => {
-  console.log(`[UPR] Server running on port ${PORT}`);
+  console.log(`[UPR] Server listening on :${PORT}`);
 });

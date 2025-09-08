@@ -1,24 +1,19 @@
 // dashboard/src/utils/auth.ts
-const KEY = "upr_admin_token";
+const KEY = "upr_session_token";
 
 export function getToken(): string | null {
   return localStorage.getItem(KEY);
 }
-
 export function setToken(token: string) {
   localStorage.setItem(KEY, token);
 }
-
 export function clearToken() {
   localStorage.removeItem(KEY);
 }
-
 export function isAuthed(): boolean {
   return Boolean(getToken());
 }
 
-// If you deploy the frontend separate from the backend, set VITE_API_BASE to the backend URL.
-// When served by the same Express server, API_BASE can be empty.
 const API_BASE =
   (import.meta.env.VITE_API_BASE?.toString().replace(/\/+$/, "") as string) || "";
 
@@ -31,12 +26,23 @@ async function api(path: string, opts: RequestInit = {}) {
   return resp;
 }
 
-export async function validateToken(token: string): Promise<boolean> {
-  const resp = await fetch(`${API_BASE}/api/auth/validate`, {
+export async function login(username: string, password: string): Promise<boolean> {
+  const resp = await fetch(`${API_BASE}/api/auth/login`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
   });
-  return resp.ok;
+  if (!resp.ok) return false;
+  const json = await resp.json();
+  if (json?.token) setToken(json.token);
+  return true;
+}
+
+export async function logout(): Promise<void> {
+  try {
+    await api("/api/auth/logout", { method: "POST" });
+  } catch {}
+  clearToken();
 }
 
 export async function fetchLeads(): Promise<{ ok: boolean; data: any[] }> {
