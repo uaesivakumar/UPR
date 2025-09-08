@@ -1,3 +1,4 @@
+// dashboard/src/App.jsx
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import Sidebar from "./components/sidebar";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -9,8 +10,6 @@ import Login from "./pages/Login";
 
 function Shell() {
   const location = useLocation();
-
-  // Sidebar layout + page content (pages render their own Topbar now)
   return (
     <div className="min-h-screen flex bg-gray-50">
       <Sidebar />
