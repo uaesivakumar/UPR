@@ -1,9 +1,12 @@
 // server/routes/leads.js
 import express from "express";
 import requireSession from "../middleware/requireSession.js";
+import multer from "multer";
+import { parse } from "csv-parse/sync";
 
 const SORT_WHITELIST = new Set(["id", "company", "role", "salary_band", "status", "created_at"]);
 const DIR_WHITELIST = new Set(["asc", "desc"]);
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } }); // 5MB
 
 export default function leadsRoutes(pool) {
   const router = express.Router();
@@ -29,12 +32,10 @@ export default function leadsRoutes(pool) {
       const params = [];
       if (q) params.push(q);
 
-      // total
       const totalSql = `SELECT COUNT(*)::int AS count FROM leads ${where}`;
       const totalRes = await pool.query(totalSql, params);
       const total = totalRes.rows[0]?.count ?? 0;
 
-      // data
       const offset = (page - 1) * pageSize;
       const dataSql = `
         SELECT id, company, role, salary_band, status, created_at
@@ -66,6 +67,51 @@ export default function leadsRoutes(pool) {
     } catch (e) {
       console.error("leads:create", e);
       res.status(500).json({ ok: false, error: "DB error" });
+    }
+  });
+
+  // bulk import (CSV)
+  router.post("/bulk", upload.single("file"), async (req, res) => {
+    if (!req.file) return res.status(400).json({ ok: false, error: "file is required (field name: file)" });
+    try {
+      const text = req.file.buffer.toString("utf8");
+      const rows = parse(text, { columns: true, skip_empty_lines: true, trim: true });
+
+      // Allowed headers: company, role, salary_band, status
+      const normalized = rows
+        .map((r) => ({
+          company: r.company || r.Company || r.company_name || "",
+          role: r.role || r.Role || "",
+          salary_band: r.salary_band || r.Salary || r["salary band"] || "AED 50K+",
+          status: r.status || r.Status || "New",
+        }))
+        .filter((r) => r.company && r.role);
+
+      if (normalized.length === 0) return res.json({ ok: true, imported: 0 });
+
+      // Transactional insert
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        for (const r of normalized) {
+          await client.query(
+            `INSERT INTO leads (company, role, salary_band, status)
+             VALUES ($1, $2, $3, $4)`,
+            [r.company, r.role, r.salary_band, r.status]
+          );
+        }
+        await client.query("COMMIT");
+        res.json({ ok: true, imported: normalized.length });
+      } catch (e) {
+        await client.query("ROLLBACK");
+        console.error("leads:bulk", e);
+        res.status(500).json({ ok: false, error: "bulk insert error" });
+      } finally {
+        client.release();
+      }
+    } catch (e) {
+      console.error("leads:bulk-parse", e);
+      res.status(400).json({ ok: false, error: "invalid CSV" });
     }
   });
 

@@ -1,7 +1,7 @@
 import { useNavigate, useLocation } from "react-router-dom";
 import { clearToken } from "../utils/auth";
 
-export default function Topbar({ title = "Dashboard", onSearch, onAdd }) {
+export default function Topbar({ title = "Dashboard", onSearch, onAdd, rightSlot }) {
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -17,9 +17,7 @@ export default function Topbar({ title = "Dashboard", onSearch, onAdd }) {
     <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
         <h1 className="truncate text-2xl font-semibold">{title}</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          {location.pathname.replace("/", "") || "home"}
-        </p>
+        <p className="mt-1 text-sm text-gray-500">{location.pathname.replace("/", "") || "home"}</p>
       </div>
 
       <div className="flex w-full items-center gap-3 sm:w-auto">
@@ -38,6 +36,7 @@ export default function Topbar({ title = "Dashboard", onSearch, onAdd }) {
             Add Lead
           </button>
         )}
+        {rightSlot}
         <button
           onClick={logout}
           className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium hover:bg-gray-50"

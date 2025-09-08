@@ -21,7 +21,11 @@ async function api(path: string, opts: RequestInit = {}) {
   const token = getToken();
   const headers = new Headers(opts.headers || {});
   if (token) headers.set("Authorization", `Bearer ${token}`);
-  if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+
+  // Only set JSON content type when body is not FormData
+  const isForm = typeof FormData !== "undefined" && opts.body instanceof FormData;
+  if (!isForm && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+
   const resp = await fetch(`${API_BASE}${path}`, { ...opts, headers });
   return resp;
 }
@@ -45,12 +49,11 @@ export async function logout(): Promise<void> {
   clearToken();
 }
 
-// NEW: paged search
 export async function fetchLeads(params?: {
   q?: string;
   page?: number;
   page_size?: number;
-  sort?: string; // e.g. "created_at:desc", "company:asc"
+  sort?: string;
 }): Promise<{ ok: boolean; data: any[]; total: number; page: number; page_size: number; sort: string }> {
   const qs = new URLSearchParams();
   if (params?.q) qs.set("q", params.q);
@@ -91,4 +94,12 @@ export async function updateLead(
 export async function deleteLead(id: number): Promise<void> {
   const resp = await api(`/api/leads/${id}`, { method: "DELETE" });
   if (!resp.ok) throw new Error(await resp.text());
+}
+
+export async function uploadLeadsCsv(file: File): Promise<{ ok: boolean; imported: number }> {
+  const form = new FormData();
+  form.append("file", file);
+  const resp = await api("/api/leads/bulk", { method: "POST", body: form });
+  if (!resp.ok) throw new Error(await resp.text());
+  return resp.json();
 }
