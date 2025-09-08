@@ -75,8 +75,8 @@ if (fs.existsSync(clientDir)) {
   app.use(express.static(clientDir));
 }
 
-// Express 5: use "/*" for catch-all instead of "*"
-app.get("/*", (_req, res) => {
+// Express 5 safe catch-all
+app.get(/.*/, (_req, res) => {
   if (fs.existsSync(indexHtml)) return res.sendFile(indexHtml);
   res.status(500).send("UI not built: missing dashboard/dist/index.html");
 });
