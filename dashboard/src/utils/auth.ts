@@ -45,8 +45,19 @@ export async function logout(): Promise<void> {
   clearToken();
 }
 
-export async function fetchLeads(): Promise<{ ok: boolean; data: any[] }> {
-  const resp = await api("/api/leads", { method: "GET" });
+// NEW: paged search
+export async function fetchLeads(params?: {
+  q?: string;
+  page?: number;
+  page_size?: number;
+  sort?: string; // e.g. "created_at:desc", "company:asc"
+}): Promise<{ ok: boolean; data: any[]; total: number; page: number; page_size: number; sort: string }> {
+  const qs = new URLSearchParams();
+  if (params?.q) qs.set("q", params.q);
+  if (params?.page) qs.set("page", String(params.page));
+  if (params?.page_size) qs.set("page_size", String(params.page_size));
+  if (params?.sort) qs.set("sort", params.sort);
+  const resp = await api(`/api/leads?${qs.toString()}`, { method: "GET" });
   if (!resp.ok) throw new Error("Failed to fetch leads");
   return resp.json();
 }
@@ -61,9 +72,23 @@ export async function createLead(payload: {
     method: "POST",
     body: JSON.stringify(payload),
   });
-  if (!resp.ok) {
-    const msg = await resp.text();
-    throw new Error(msg || "Failed to create lead");
-  }
+  if (!resp.ok) throw new Error(await resp.text());
   return resp.json();
+}
+
+export async function updateLead(
+  id: number,
+  payload: { company: string; role: string; salary_band?: string; status?: string }
+): Promise<{ ok: boolean; data: any }> {
+  const resp = await api(`/api/leads/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) throw new Error(await resp.text());
+  return resp.json();
+}
+
+export async function deleteLead(id: number): Promise<void> {
+  const resp = await api(`/api/leads/${id}`, { method: "DELETE" });
+  if (!resp.ok) throw new Error(await resp.text());
 }

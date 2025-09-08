@@ -2,19 +2,49 @@
 import express from "express";
 import requireSession from "../middleware/requireSession.js";
 
+const SORT_WHITELIST = new Set(["id", "company", "role", "salary_band", "status", "created_at"]);
+const DIR_WHITELIST = new Set(["asc", "desc"]);
+
 export default function leadsRoutes(pool) {
   const router = express.Router();
 
   // all /api/leads/* require session
   router.use(requireSession);
 
-  // list
-  router.get("/", async (_req, res) => {
+  // list (server-side search + pagination)
+  router.get("/", async (req, res) => {
     try {
-      const { rows } = await pool.query(
-        "SELECT id, company, role, salary_band, status, created_at FROM leads ORDER BY created_at DESC"
-      );
-      res.json({ ok: true, data: rows });
+      const q = (req.query.q ?? "").toString().trim();
+      const page = Math.max(1, parseInt(req.query.page ?? "1", 10) || 1);
+      const pageSize = Math.min(100, Math.max(1, parseInt(req.query.page_size ?? "10", 10) || 10));
+
+      // sort format: "created_at:desc" or "company:asc"
+      const [sortColRaw, sortDirRaw] = (req.query.sort ?? "created_at:desc").toString().split(":");
+      const sortCol = SORT_WHITELIST.has(sortColRaw) ? sortColRaw : "created_at";
+      const sortDir = DIR_WHITELIST.has((sortDirRaw || "desc").toLowerCase()) ? sortDirRaw.toLowerCase() : "desc";
+
+      const where = q
+        ? `WHERE company ILIKE '%'||$1||'%' OR role ILIKE '%'||$1||'%' OR status ILIKE '%'||$1||'%' OR CAST(id AS TEXT) ILIKE '%'||$1||'%'`
+        : "";
+      const params = [];
+      if (q) params.push(q);
+
+      // total
+      const totalSql = `SELECT COUNT(*)::int AS count FROM leads ${where}`;
+      const totalRes = await pool.query(totalSql, params);
+      const total = totalRes.rows[0]?.count ?? 0;
+
+      // data
+      const offset = (page - 1) * pageSize;
+      const dataSql = `
+        SELECT id, company, role, salary_band, status, created_at
+        FROM leads
+        ${where}
+        ORDER BY ${sortCol} ${sortDir}
+        LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+      `;
+      const dataRes = await pool.query(dataSql, [...params, pageSize, offset]);
+      res.json({ ok: true, data: dataRes.rows, total, page, page_size: pageSize, sort: `${sortCol}:${sortDir}` });
     } catch (e) {
       console.error("leads:list", e);
       res.status(500).json({ ok: false, error: "DB error" });
