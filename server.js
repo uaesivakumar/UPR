@@ -34,7 +34,6 @@ app.get("/__diag", (_req, res) =>
     env_port: process.env.PORT || null,
   })
 );
-// list files to verify image contents
 app.get("/__ls", (_req, res) => {
   try {
     const root = fs.readdirSync(__dirname);
@@ -48,26 +47,50 @@ app.get("/__ls", (_req, res) => {
   }
 });
 
-// --- auth validate ---
-app.post("/api/auth/validate", (req, res) => {
+// --- simple bearer auth helper ---
+function readBearer(req) {
   const auth = req.headers.authorization || "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  return auth.startsWith("Bearer ") ? auth.slice(7) : "";
+}
+function requireAdmin(req, res) {
+  const token = readBearer(req);
   if (!token) return res.status(401).json({ ok: false, error: "Missing token" });
   if (token !== ADMIN_TOKEN) return res.status(401).json({ ok: false, error: "Invalid token" });
-  return res.json({ ok: true });
+  return true;
+}
+
+// --- auth validate ---
+app.post("/api/auth/validate", (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.json({ ok: true });
 });
 
-// --- sample leads (protected) ---
-const SAMPLE_LEADS = [
+// --- in-memory leads store (persists for life of process) ---
+const LEADS = [
   { id: "ld_001", company: "Al Noor Holdings", role: "HR Director", salary_band: "AED 55K+", status: "New" },
   { id: "ld_002", company: "Falak Tech", role: "Finance Manager", salary_band: "AED 60K+", status: "Qualified" },
   { id: "ld_003", company: "Desert Labs", role: "Admin Lead", salary_band: "AED 50K+", status: "Contacted" },
 ];
+
+// list
 app.get("/api/leads", (req, res) => {
-  const auth = req.headers.authorization || "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  if (!token || token !== ADMIN_TOKEN) return res.status(401).json({ ok: false, error: "Unauthorized" });
-  res.json({ ok: true, data: SAMPLE_LEADS });
+  if (!requireAdmin(req, res)) return;
+  res.json({ ok: true, data: LEADS });
+});
+
+// create (persist in memory)
+app.post("/api/leads", (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  const { company, role, salary_band = "AED 50K+", status = "New" } = req.body || {};
+  if (!company || !role) {
+    return res.status(400).json({ ok: false, error: "company and role are required" });
+  }
+
+  const id = `ld_${(LEADS.length + 1).toString().padStart(3, "0")}`;
+  const lead = { id, company, role, salary_band, status };
+  LEADS.unshift(lead);
+  res.json({ ok: true, data: lead });
 });
 
 // --- static + SPA fallback ---
