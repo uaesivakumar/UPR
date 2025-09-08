@@ -21,4 +21,4 @@ COPY --from=build /app /app
 
 ENV NODE_ENV=production
 EXPOSE 10000
-CMD ["node", "server.js"]
+CMD ["node", "server/index.js"]
