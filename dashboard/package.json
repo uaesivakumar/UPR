@@ -1,47 +1,20 @@
-# ---------- BUILD STAGE (Debian/glibc) ----------
-FROM node:20-bookworm-slim AS build
-WORKDIR /app
-
-# Root (server) deps
-COPY package*.json ./
-RUN npm install --no-audit --no-fund
-
-# Copy server + scripts
-COPY server.js ./server.js
-COPY scripts/ ./scripts
-
-# Frontend deps & build
-WORKDIR /app/dashboard
-COPY dashboard/package*.json ./
-
-# Use plain install (avoids npm ci optional deps bug with native rollup/esbuild)
-RUN npm install --no-audit --no-fund
-
-# Copy the rest and build
-COPY dashboard/ ./
-RUN npm run build
-
-# ---------- RUNTIME STAGE (Debian/glibc) ----------
-FROM node:20-bookworm-slim AS runtime
-WORKDIR /app
-
-# Healthcheck tool
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
-  && rm -rf /var/lib/apt/lists/*
-
-# Copy server runtime bits
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/package*.json ./
-COPY --from=build /app/server.js ./server.js
-COPY --from=build /app/scripts ./scripts
-
-# Copy built dashboard only
-COPY --from=build /app/dashboard/dist ./dashboard/dist
-
-ENV NODE_ENV=production
-EXPOSE 10000
-
-HEALTHCHECK --interval=30s --timeout=5s --retries=5 \
-  CMD curl -fsS "http://localhost:${PORT:-10000}/health" || exit 1
-
-CMD ["sh", "-c", "node scripts/ensure-seed.js && node server.js"]
+{
+  "name": "upr-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build --logLevel debug",
+    "preview": "vite preview --port 5173"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.8.2"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.4.8"
+  }
+}
