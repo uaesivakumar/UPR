@@ -1,0 +1,7 @@
+node_modules
+*.log
+.DS_Store
+Archive.zip
+npm-debug.log*
+dashboard/node_modules
+dashboard/dist
