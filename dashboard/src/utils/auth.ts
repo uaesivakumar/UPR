@@ -1,105 +1,105 @@
 // dashboard/src/utils/auth.ts
-const KEY = "upr_session_token";
+// Centralized auth helpers for UPR Admin Console
 
+export const TOKEN_KEY = "upr_admin_token";
+
+/** Types */
+export interface VerifyResponse {
+  ok: boolean;
+  error?: string;
+}
+
+export interface AuthResult {
+  success: boolean;
+  message?: string;
+}
+
+/** Read token from localStorage */
 export function getToken(): string | null {
-  return localStorage.getItem(KEY);
-}
-export function setToken(token: string) {
-  localStorage.setItem(KEY, token);
-}
-export function clearToken() {
-  localStorage.removeItem(KEY);
-}
-export function isAuthed(): boolean {
-  return Boolean(getToken());
-}
-
-const API_BASE =
-  (import.meta.env.VITE_API_BASE?.toString().replace(/\/+$/, "") as string) || "";
-
-async function api(path: string, opts: RequestInit = {}) {
-  const token = getToken();
-  const headers = new Headers(opts.headers || {});
-  if (token) headers.set("Authorization", `Bearer ${token}`);
-
-  // Only set JSON content type when body is not FormData
-  const isForm = typeof FormData !== "undefined" && opts.body instanceof FormData;
-  if (!isForm && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-
-  const resp = await fetch(`${API_BASE}${path}`, { ...opts, headers });
-  return resp;
-}
-
-export async function login(username: string, password: string): Promise<boolean> {
-  const resp = await fetch(`${API_BASE}/api/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password }),
-  });
-  if (!resp.ok) return false;
-  const json = await resp.json();
-  if (json?.token) setToken(json.token);
-  return true;
-}
-
-export async function logout(): Promise<void> {
   try {
-    await api("/api/auth/logout", { method: "POST" });
-  } catch {}
+    return localStorage.getItem(TOKEN_KEY);
+  } catch (err) {
+    console.error("[auth] getToken failed:", err);
+    return null;
+  }
+}
+
+/** Persist token to localStorage */
+export function setToken(token: string): void {
+  try {
+    localStorage.setItem(TOKEN_KEY, token);
+  } catch (err) {
+    console.error("[auth] setToken failed:", err);
+  }
+}
+
+/** Remove token from localStorage */
+export function clearToken(): void {
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+  } catch (err) {
+    console.error("[auth] clearToken failed:", err);
+  }
+}
+
+/** Call backend to verify if a token is valid */
+export async function verifyToken(token: string): Promise<boolean> {
+  if (!token) return false;
+  try {
+    const res = await fetch("/api/auth/verify", {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return false;
+    const data: VerifyResponse = await res.json();
+    return data.ok === true;
+  } catch (err) {
+    console.error("[auth] verifyToken failed:", err);
+    return false;
+  }
+}
+
+/** Convenience: check current auth state using stored token */
+export async function isAuthed(): Promise<boolean> {
+  const token = getToken();
+  if (!token) return false;
+  return verifyToken(token);
+}
+
+/** Try to login with a given token */
+export async function loginWithToken(token: string): Promise<AuthResult> {
+  const valid = await verifyToken(token);
+  if (!valid) {
+    return { success: false, message: "Invalid token" };
+  }
+  setToken(token);
+  return { success: true };
+}
+
+/** Logout the current user */
+export function logout(): void {
   clearToken();
+  window.location.href = "/login";
 }
 
-export async function fetchLeads(params?: {
-  q?: string;
-  page?: number;
-  page_size?: number;
-  sort?: string;
-}): Promise<{ ok: boolean; data: any[]; total: number; page: number; page_size: number; sort: string }> {
-  const qs = new URLSearchParams();
-  if (params?.q) qs.set("q", params.q);
-  if (params?.page) qs.set("page", String(params.page));
-  if (params?.page_size) qs.set("page_size", String(params.page_size));
-  if (params?.sort) qs.set("sort", params.sort);
-  const resp = await api(`/api/leads?${qs.toString()}`, { method: "GET" });
-  if (!resp.ok) throw new Error("Failed to fetch leads");
-  return resp.json();
+/** Utility: get Authorization header */
+export function getAuthHeader(): Record<string, string> {
+  const token = getToken();
+  if (!token) return {};
+  return { Authorization: `Bearer ${token}` };
 }
 
-export async function createLead(payload: {
-  company: string;
-  role: string;
-  salary_band?: string;
-  status?: string;
-}): Promise<{ ok: boolean; data: any }> {
-  const resp = await api("/api/leads", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-  if (!resp.ok) throw new Error(await resp.text());
-  return resp.json();
-}
-
-export async function updateLead(
-  id: number,
-  payload: { company: string; role: string; salary_band?: string; status?: string }
-): Promise<{ ok: boolean; data: any }> {
-  const resp = await api(`/api/leads/${id}`, {
-    method: "PUT",
-    body: JSON.stringify(payload),
-  });
-  if (!resp.ok) throw new Error(await resp.text());
-  return resp.json();
-}
-
-export async function deleteLead(id: number): Promise<void> {
-  const resp = await api(`/api/leads/${id}`, { method: "DELETE" });
-  if (!resp.ok) throw new Error(await resp.text());
-}
-
-export async function uploadLeadsCsv(file: File): Promise<{ ok: boolean; imported: number }> {
-  const form = new FormData();
-  form.append("file", file);
-  const resp = await api("/api/leads/bulk", { method: "POST", body: form });
-  if (!resp.ok) throw new Error(await resp.text());
-  return resp.json();
+/** Utility: fetch wrapper with Authorization header */
+export async function authFetch(
+  url: string,
+  options: RequestInit = {}
+): Promise<Response> {
+  const token = getToken();
+  const headers: HeadersInit = {
+    ...(options.headers || {}),
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  return fetch(url, { ...options, headers });
 }

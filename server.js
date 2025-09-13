@@ -18,6 +18,9 @@ const PORT = process.env.PORT || 10000;
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "admin";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "supersecret";
 
+// NEW: Admin bearer token (optional). If set, can be used instead of session.
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "";
+
 // DB pool (Render/Supabase)
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -37,10 +40,19 @@ const readBearer = (req) => {
   const h = req.headers.authorization || "";
   return h.startsWith("Bearer ") ? h.slice(7) : "";
 };
+
+// Accept either a valid session token OR the ADMIN_TOKEN (if defined)
+const hasAccess = (token) => {
+  if (!token) return false;
+  if (SESSIONS.has(token)) return true;
+  if (ADMIN_TOKEN && token === ADMIN_TOKEN) return true;
+  return false;
+};
+
 const requireSession = (req, res) => {
   const t = readBearer(req);
   if (!t) return res.status(401).json({ ok: false, error: "Missing token" });
-  if (!SESSIONS.has(t)) return res.status(401).json({ ok: false, error: "Invalid session" });
+  if (!hasAccess(t)) return res.status(401).json({ ok: false, error: "Invalid session" });
   return true;
 };
 
@@ -55,6 +67,7 @@ app.get("/__diag", async (_req, res) => {
   res.json({
     ok: true,
     admin_username_set: Boolean(process.env.ADMIN_USERNAME),
+    admin_token_set: Boolean(ADMIN_TOKEN),
     clientDir,
     index_exists: fs.existsSync(indexHtml),
     db_ok,
@@ -73,7 +86,7 @@ app.get("/__ls", (_req, res) => {
   }
 });
 
-// ---- Auth: username/password ----
+// ---- Auth: username/password (session-based) ----
 app.post("/api/auth/login", (req, res) => {
   const { username, password } = req.body || {};
   if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
@@ -88,6 +101,21 @@ app.post("/api/auth/logout", (req, res) => {
   const t = readBearer(req);
   if (t) SESSIONS.delete(t);
   res.json({ ok: true });
+});
+
+// ---- NEW: Auth: bearer ADMIN_TOKEN verification ----
+// Frontend Login (token mode) will call this with Authorization: Bearer <token>
+app.get("/api/auth/verify", (req, res) => {
+  try {
+    const token = readBearer(req);
+    // Spec: verify strictly against ADMIN_TOKEN
+    if (!ADMIN_TOKEN || token !== ADMIN_TOKEN) {
+      return res.status(401).json({ ok: false, error: "unauthorized" });
+    }
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: "server_error" });
+  }
 });
 
 // ---- Leads (Postgres) ----
