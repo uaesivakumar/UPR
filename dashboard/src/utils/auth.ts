@@ -1,5 +1,5 @@
 // dashboard/src/utils/auth.ts
-// Single source of truth for auth in the dashboard
+// Single source of truth for auth in the dashboard (admin-token header flow)
 
 const TOKEN_KEY = "upr_token";
 
@@ -22,7 +22,7 @@ export function getAuthHeader(): Record<string, string> {
   return t ? { "x-admin-token": t } : {};
 }
 
-/** Fetch wrapper that automatically adds the admin header and handles 401s */
+/** Fetch wrapper that adds admin header and handles 401 */
 export async function authFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers || {});
   const auth = getAuthHeader();
@@ -44,8 +44,40 @@ export function logout(): void {
   }
 }
 
+/**
+ * Verify an admin token by calling an admin-only endpoint.
+ * We POST an empty bulk payload:
+ *  - 403 => invalid token
+ *  - 200/400/422 => endpoint reached with token (valid)
+ */
+export async function verifyToken(token: string | null | undefined): Promise<boolean> {
+  if (!token) return false;
+  try {
+    const res = await fetch("/api/hr-leads/bulk", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-admin-token": token,
+      },
+      body: JSON.stringify({ items: [] }),
+    });
+    if (res.status === 403 || res.status === 401) return false;
+    // 200/400/422 means we passed adminOnly and hit handler
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Try to verify, then persist the token if valid */
+export async function loginWithToken(token: string): Promise<boolean> {
+  const ok = await verifyToken(token);
+  if (ok) setToken(token);
+  return ok;
+}
+
 /* --------------------------------------------------------------------
-   Back-compat aliases (pages may import these names):
+   Back-compat aliases (some pages import these names):
    - getAdminToken: same as getToken()
    - adminFetch:    same as authFetch()
 --------------------------------------------------------------------- */
