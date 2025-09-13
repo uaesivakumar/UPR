@@ -5,3 +5,9 @@ dashboard/dist
 npm-debug.log*
 .DS_Store
 Archive.zip
+
+# deps
+node_modules/
+dashboard/node_modules/
+# build output
+dashboard/dist/
