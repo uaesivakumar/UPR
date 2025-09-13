@@ -20,7 +20,14 @@ RUN npm ci || npm install --no-audit --no-fund
 
 # Copy the rest of the dashboard source and build
 COPY dashboard/ ./
-RUN echo "=== PAGES LIST ===" && ls -la src/pages && npm run build
+# Copy the rest of the dashboard source and build
+COPY dashboard/ ./
+
+# ⬇️ TEMP DEBUG: list files so we can catch case/path issues on Linux
+RUN echo "=== PAGES LIST ===" && ls -la src/pages && \
+    echo "=== COMPONENTS LIST ===" && ls -la src/components && \
+    echo "=== ROOT SRC LIST ===" && ls -la src && \
+    npm run build
 RUN npm run build
 
 # ---------- RUNTIME STAGE ----------
