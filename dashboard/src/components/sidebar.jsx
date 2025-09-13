@@ -6,7 +6,7 @@ import { useCallback } from "react";
 /**
  * Sidebar with:
  * - App brand
- * - Nav links (Dashboard, Leads, Enrichment, Messages)
+ * - Nav links (Dashboard, Companies, HR Leads, Enrichment, Messages)
  * - Logout button (calls /api/auth/logout best-effort, clears token, redirects to /login)
  *
  * Tailwind-only, minimal and clean.
@@ -32,14 +32,13 @@ export default function Sidebar() {
 
   const linkBase =
     "flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition";
-  const active =
-    "bg-gray-900 text-white shadow";
-  const inactive =
-    "text-gray-700 hover:bg-gray-100";
+  const active = "bg-gray-900 text-white shadow";
+  const inactive = "text-gray-700 hover:bg-gray-100";
 
   const nav = [
     { to: "/", label: "Dashboard", icon: DashboardIcon },
-    { to: "/leads", label: "Leads", icon: LeadsIcon },
+    { to: "/companies", label: "Companies", icon: CompaniesIcon }, // renamed
+    { to: "/hr-leads", label: "HR Leads", icon: HRLeadsIcon },     // new
     { to: "/enrichment", label: "Enrichment", icon: EnrichmentIcon },
     { to: "/messages", label: "Messages", icon: MessagesIcon },
   ];
@@ -51,7 +50,9 @@ export default function Sidebar() {
         <div className="flex items-center gap-2">
           <LogoIcon />
           <div className="flex flex-col leading-tight">
-            <span className="text-base font-semibold text-gray-900">UAE Premium Radar</span>
+            <span className="text-base font-semibold text-gray-900">
+              UAE Premium Radar
+            </span>
             <span className="text-xs text-gray-500">Admin Console</span>
           </div>
         </div>
@@ -66,6 +67,7 @@ export default function Sidebar() {
             className={({ isActive }) =>
               `${linkBase} ${isActive ? active : inactive}`
             }
+            end={to === "/"}
           >
             <Icon active={location.pathname === to} />
             <span>{label}</span>
@@ -106,7 +108,12 @@ function LogoIcon() {
 
 function DashboardIcon({ active }) {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" className={active ? "text-white" : "text-gray-600"}>
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      className={active ? "text-white" : "text-gray-600"}
+    >
       <path
         d="M3 3h8v8H3V3Zm10 0h8v5h-8V3ZM3 13h8v8H3v-8Zm10 7v-8h8v8h-8Z"
         fill="currentColor"
@@ -115,11 +122,34 @@ function DashboardIcon({ active }) {
   );
 }
 
-function LeadsIcon({ active }) {
+function CompaniesIcon({ active }) {
+  // simple "buildings" icon
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" className={active ? "text-white" : "text-gray-600"}>
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      className={active ? "text-white" : "text-gray-600"}
+    >
       <path
-        d="M4 4h16v2H4V4Zm0 7h16v2H4v-2Zm0 7h10v2H4v-2Z"
+        d="M3 21V6l8-3 8 3v15H3Zm2-2h5V7L5 8.8V19Zm7 0h5V9l-5-1.9V19Zm-4-7h2v2H8v-2Zm0-3h2v2H8V9Zm7 6h2v2h-2v-2Zm0-3h2v2h-2v-2Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+function HRLeadsIcon({ active }) {
+  // simple "person" icon
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      className={active ? "text-white" : "text-gray-600"}
+    >
+      <path
+        d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5Z"
         fill="currentColor"
       />
     </svg>
@@ -128,7 +158,12 @@ function LeadsIcon({ active }) {
 
 function EnrichmentIcon({ active }) {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" className={active ? "text-white" : "text-gray-600"}>
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      className={active ? "text-white" : "text-gray-600"}
+    >
       <path
         d="M12 2 2 7l10 5 10-5-10-5Zm0 7-7.5-3.75L12 3.5l7.5 3.75L12 9Zm-8 4 8 4 8-4v6l-8 4-8-4v-6Z"
         fill="currentColor"
@@ -139,7 +174,12 @@ function EnrichmentIcon({ active }) {
 
 function MessagesIcon({ active }) {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" className={active ? "text-white" : "text-gray-600"}>
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      className={active ? "text-white" : "text-gray-600"}
+    >
       <path
         d="M4 4h16v12H7l-3 3V4Zm2 4h12V6H6v2Zm0 4h8v-2H6v2Z"
         fill="currentColor"

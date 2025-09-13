@@ -1,32 +1,31 @@
 // dashboard/src/App.jsx
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import Sidebar from "./components/sidebar";           // file is 'sidebar.jsx' (lowercase)
-import Topbar from "./components/Topbar";             // file is 'Topbar.jsx' (capital T)
+import Sidebar from "./components/sidebar";
+import Topbar from "./components/Topbar";
 import ProtectedRoute from "./components/ProtectedRoute";
 
-import DashboardHome from "./pages/DashboardHome";    // 'DashboardHome.jsx'
-import CompaniesPage from "./pages/CompaniesPage";    // 'CompaniesPage.jsx'
-import HRLeads from "./pages/HRLeads";                // 'HRLeads.jsx'
-import EnrichmentPage from "./pages/EnrichmentPage";  // 'EnrichmentPage.jsx'
-import MessagesPage from "./pages/MessagesPage";      // 'MessagesPage.jsx'
-import Login from "./pages/Login";                    // 'Login.jsx'
+import DashboardHome from "./pages/DashboardHome";
+import CompaniesPage from "./pages/CompaniesPage";
+import HRLeads from "./pages/HRLeads";
+import EnrichmentPage from "./pages/EnrichmentPage";
+import MessagesPage from "./pages/MessagesPage";
+import Login from "./pages/Login";
 
 export default function App() {
   return (
     <BrowserRouter>
-      <div className="min-h-screen bg-gray-50">
-        <Topbar />
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 grid grid-cols-1 md:grid-cols-[240px_1fr] gap-6">
-          <aside className="md:sticky md:top-6 md:h-[calc(100vh-6rem)]">
-            <Sidebar />
-          </aside>
-          <main>
-            <Routes>
-              <Route path="/login" element={<Login />} />
-              <Route
-                path="/*"
-                element={
-                  <ProtectedRoute>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <div className="min-h-screen bg-gray-50">
+                <Topbar />
+                <div className="mx-auto max-w-7xl px-4 py-6 grid grid-cols-1 md:grid-cols-[220px_1fr] gap-6">
+                  <Sidebar />
+                  <div className="space-y-6">
                     <Routes>
                       <Route index element={<DashboardHome />} />
                       <Route path="companies" element={<CompaniesPage />} />
@@ -35,13 +34,13 @@ export default function App() {
                       <Route path="messages" element={<MessagesPage />} />
                       <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>
-                  </ProtectedRoute>
-                }
-              />
-            </Routes>
-          </main>
-        </div>
-      </div>
+                  </div>
+                </div>
+              </div>
+            </ProtectedRoute>
+          }
+        />
+      </Routes>
     </BrowserRouter>
   );
 }
