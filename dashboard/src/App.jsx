@@ -4,7 +4,6 @@ import Sidebar from "./components/sidebar";
 import Topbar from "./components/Topbar";
 import ProtectedRoute from "./components/ProtectedRoute";
 
-// Pages
 import DashboardHome from "./pages/DashboardHome.jsx";
 import CompaniesPage from "./pages/CompaniesPage.jsx";
 import HRLeads from "./pages/HRLeads.jsx";
@@ -14,10 +13,7 @@ import Login from "./pages/Login.jsx";
 
 import "./App.css";
 
-/**
- * Common shell used by all protected routes
- */
-function Layout() {
+function Shell() {
   return (
     <div className="min-h-screen flex bg-gray-50">
       <Sidebar />
@@ -37,19 +33,19 @@ export default function App() {
       {/* Public */}
       <Route path="/login" element={<Login />} />
 
-      {/* Protected */}
+      {/* Protected area */}
       <Route element={<ProtectedRoute />}>
-        <Route element={<Layout />}>
+        <Route element={<Shell />}>
           <Route index element={<DashboardHome />} />
           <Route path="companies" element={<CompaniesPage />} />
           <Route path="hr-leads" element={<HRLeads />} />
           <Route path="enrichment" element={<EnrichmentPage />} />
           <Route path="messages" element={<MessagesPage />} />
 
-          {/* Legacy/aliases */}
+          {/* Legacy alias */}
           <Route path="leads" element={<Navigate to="/companies" replace />} />
 
-          {/* Catch-all */}
+          {/* 404 → home */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Route>
