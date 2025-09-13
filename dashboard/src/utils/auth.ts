@@ -3,7 +3,6 @@
 
 export const TOKEN_KEY = "upr_admin_token";
 
-/** Types */
 export interface VerifyResponse {
   ok: boolean;
   error?: string;
