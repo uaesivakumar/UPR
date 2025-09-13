@@ -1,59 +1,46 @@
 // dashboard/src/App.jsx
-import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import Sidebar from "./components/sidebar";           // file is 'sidebar.jsx' (lowercase)
+import Topbar from "./components/Topbar";             // file is 'Topbar.jsx' (capital T)
+import ProtectedRoute from "./components/ProtectedRoute";
 
-import DashboardHome from "./pages/DashboardHome.jsx";
-import CompaniesPage from "./pages/CompaniesPage.jsx";
-import HRLeads from "./pages/HRLeads.jsx";
-import EnrichmentPage from "./pages/EnrichmentPage.jsx";
-import MessagesPage from "./pages/MessagesPage.jsx";
-
-// Optional pages you already have in the folder list:
-import AdminDashboard from "./pages/AdminDashboard.jsx";
-import Login from "./pages/Login.jsx";
-
-function NavItem({ to, children, end }) {
-  return (
-    <NavLink
-      to={to}
-      end={end}
-      className={({ isActive }) =>
-        `px-3 py-2 rounded-xl ${isActive ? "bg-blue-600 text-white" : "hover:bg-gray-100 text-gray-800"}`
-      }
-    >
-      {children}
-    </NavLink>
-  );
-}
+import DashboardHome from "./pages/DashboardHome";    // 'DashboardHome.jsx'
+import CompaniesPage from "./pages/CompaniesPage";    // 'CompaniesPage.jsx'
+import HRLeads from "./pages/HRLeads";                // 'HRLeads.jsx'
+import EnrichmentPage from "./pages/EnrichmentPage";  // 'EnrichmentPage.jsx'
+import MessagesPage from "./pages/MessagesPage";      // 'MessagesPage.jsx'
+import Login from "./pages/Login";                    // 'Login.jsx'
 
 export default function App() {
   return (
     <BrowserRouter>
       <div className="min-h-screen bg-gray-50">
-        <header className="sticky top-0 z-10 bg-white border-b">
-          <div className="mx-auto max-w-7xl px-4 py-3 flex items-center justify-between">
-            <div className="text-xl font-semibold">UPR — UAE Premium Radar</div>
-            <nav className="flex gap-2">
-              <NavItem to="/" end>Dashboard</NavItem>
-              <NavItem to="/companies">Targeted Companies</NavItem>
-              <NavItem to="/hr-leads">HR Leads</NavItem>
-              <NavItem to="/enrichment">Enrichment</NavItem>
-              <NavItem to="/messages">Messages</NavItem>
-            </nav>
-          </div>
-        </header>
-
-        <main className="mx-auto max-w-7xl px-4 py-6">
-          <Routes>
-            <Route path="/" element={<DashboardHome />} />
-            <Route path="/companies" element={<CompaniesPage />} />
-            <Route path="/hr-leads" element={<HRLeads />} />
-            <Route path="/enrichment" element={<EnrichmentPage />} />
-            <Route path="/messages" element={<MessagesPage />} />
-            <Route path="/admin" element={<AdminDashboard />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="*" element={<div className="text-sm text-gray-600">Not found.</div>} />
-          </Routes>
-        </main>
+        <Topbar />
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 grid grid-cols-1 md:grid-cols-[240px_1fr] gap-6">
+          <aside className="md:sticky md:top-6 md:h-[calc(100vh-6rem)]">
+            <Sidebar />
+          </aside>
+          <main>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route
+                path="/*"
+                element={
+                  <ProtectedRoute>
+                    <Routes>
+                      <Route index element={<DashboardHome />} />
+                      <Route path="companies" element={<CompaniesPage />} />
+                      <Route path="hr-leads" element={<HRLeads />} />
+                      <Route path="enrichment" element={<EnrichmentPage />} />
+                      <Route path="messages" element={<MessagesPage />} />
+                      <Route path="*" element={<Navigate to="/" replace />} />
+                    </Routes>
+                  </ProtectedRoute>
+                }
+              />
+            </Routes>
+          </main>
+        </div>
       </div>
     </BrowserRouter>
   );
