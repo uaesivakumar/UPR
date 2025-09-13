@@ -1,77 +1,52 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import Sidebar from "./components/sidebar.jsx";
-import Topbar from "./components/Topbar.jsx";
-import DashboardHome from "./pages/DashboardHome.jsx";
-import LeadsPage from "./pages/LeadsPage.jsx";
-import EnrichmentPage from "./pages/EnrichmentPage.jsx";
-import MessagesPage from "./pages/MessagesPage.jsx";
-import Login from "./pages/Login.jsx";
-import ProtectedRoute from "./components/ProtectedRoute.jsx";
+// dashboard/src/App.jsx
+import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
+import TargetedCompanies from "./pages/Leads.jsx";      // we reuse file, but it will call /api/companies
+import HRLeads from "./pages/HRLeads.jsx";              // new file below
+import Enrichment from "./pages/Enrichment.jsx";
+import Dashboard from "./pages/Dashboard.jsx";
+import Messages from "./pages/Messages.jsx";
 
-function Shell({ children }) {
+function NavItem({ to, children }) {
   return (
-    <div className="min-h-screen flex">
-      <Sidebar />
-      <div className="flex-1 flex flex-col">
-        <Topbar />
-        <main className="flex-1 p-4 md:p-6 bg-gray-50">{children}</main>
-      </div>
-    </div>
+    <NavLink
+      to={to}
+      className={({ isActive }) =>
+        `px-3 py-2 rounded-xl ${isActive ? "bg-blue-600 text-white" : "hover:bg-gray-100 text-gray-800"}`
+      }
+      end
+    >
+      {children}
+    </NavLink>
   );
 }
 
 export default function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        {/* Public */}
-        <Route path="/login" element={<Login />} />
+      <div className="min-h-screen bg-gray-50">
+        <header className="sticky top-0 z-10 bg-white border-b">
+          <div className="mx-auto max-w-7xl px-4 py-3 flex items-center justify-between">
+            <div className="text-xl font-semibold">UPR — UAE Premium Radar</div>
+            <nav className="flex gap-2">
+              <NavItem to="/">Dashboard</NavItem>
+              <NavItem to="/leads">Targeted Companies</NavItem>
+              <NavItem to="/hr-leads">HR Leads</NavItem>
+              <NavItem to="/enrichment">Enrichment</NavItem>
+              <NavItem to="/messages">Messages</NavItem>
+            </nav>
+          </div>
+        </header>
 
-        {/* Protected */}
-        <Route
-          path="/"
-          element={
-            <ProtectedRoute>
-              <Shell>
-                <DashboardHome />
-              </Shell>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/leads"
-          element={
-            <ProtectedRoute>
-              <Shell>
-                <LeadsPage />
-              </Shell>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/enrichment"
-          element={
-            <ProtectedRoute>
-              <Shell>
-                <EnrichmentPage />
-              </Shell>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/messages"
-          element={
-            <ProtectedRoute>
-              <Shell>
-                <MessagesPage />
-              </Shell>
-            </ProtectedRoute>
-          }
-        />
-
-        {/* Fallback */}
-        <Route path="*" element={<Login />} />
-      </Routes>
+        <main className="mx-auto max-w-7xl px-4 py-6">
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/leads" element={<TargetedCompanies />} />
+            <Route path="/hr-leads" element={<HRLeads />} />
+            <Route path="/enrichment" element={<Enrichment />} />
+            <Route path="/messages" element={<Messages />} />
+          </Routes>
+        </main>
+      </div>
     </BrowserRouter>
   );
 }
