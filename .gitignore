@@ -17,3 +17,9 @@ node_modules/
 dashboard/node_modules/
 # build
 dashboard/dist/
+
+# deps
+node_modules/
+dashboard/node_modules/
+# build
+dashboard/dist/
