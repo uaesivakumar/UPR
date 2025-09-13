@@ -12,23 +12,21 @@ COPY scripts/ ./scripts
 
 # ---- Frontend deps & build ----
 WORKDIR /app/dashboard
-# copy only dashboard manifests first (for layer caching)
+# Copy dashboard manifests first for cache efficiency
 COPY dashboard/package*.json ./
-
-# Use npm ci when lockfile is good, otherwise fall back to npm install
+# Use ci if lockfile OK; otherwise fallback to install (avoids lock mismatch failures)
 RUN npm ci || npm install --no-audit --no-fund
 
-# now copy the rest of the dashboard source
+# Copy the rest of the dashboard source
 COPY dashboard/ ./
-# build with more logs if needed (uncomment next line if you want debug logs)
-# RUN npm run build -- --logLevel debug
+# Build with verbose logs if something goes wrong
 RUN npm run build
 
 # ---------- RUNTIME STAGE ----------
 FROM node:20-alpine AS runtime
 WORKDIR /app
 
-# healthcheck tool
+# Healthcheck utility
 RUN apk add --no-cache curl
 
 # Copy server runtime bits
@@ -43,9 +41,9 @@ COPY --from=build /app/dashboard/dist ./dashboard/dist
 ENV NODE_ENV=production
 EXPOSE 10000
 
-# healthcheck
+# Healthcheck
 HEALTHCHECK --interval=30s --timeout=5s --retries=5 \
   CMD curl -fsS "http://localhost:${PORT:-10000}/health" || exit 1
 
-# start: auto-seed (no-op if table has rows), then boot server
+# Start: auto-seed (no-op if table already has rows), then boot server
 CMD ["sh", "-c", "node scripts/ensure-seed.js && node server.js"]

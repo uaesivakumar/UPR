@@ -90,11 +90,15 @@ export default function EnrichmentPage() {
       <div>
         <h1 className="text-2xl font-semibold text-gray-900">Enrichment</h1>
         <p className="text-sm text-gray-500">
-          Paste a company website / LinkedIn URL, or describe the target (e.g., “G42 UAE Finance Director”).
+          Paste a company website / LinkedIn URL, or describe the target (e.g.,
+          “G42 UAE Finance Director”).
         </p>
       </div>
 
-      <form onSubmit={runEnrichment} className="bg-white rounded-xl shadow p-4 md:p-5 space-y-3">
+      <form
+        onSubmit={runEnrichment}
+        className="bg-white rounded-xl shadow p-4 md:p-5 space-y-3"
+      >
         <label className="block text-sm font-medium text-gray-700">Input</label>
         <div className="flex flex-col md:flex-row gap-3">
           <input
@@ -124,8 +128,14 @@ export default function EnrichmentPage() {
             <h2 className="text-lg font-semibold text-gray-900">Company</h2>
             <div className="text-sm text-gray-700">
               <Row label="Name" value={result.company.name} />
-              <Row label="Website" value={linkOrText(result.company.website)} />
-              <Row label="LinkedIn" value={linkOrText(result.company.linkedin)} />
+              <Row
+                label="Website"
+                value={linkOrText(result.company.website)}
+              />
+              <Row
+                label="LinkedIn"
+                value={linkOrText(result.company.linkedin)}
+              />
               <Row label="HQ" value={result.company.hq || "—"} />
               <Row label="Industry" value={result.company.industry || "—"} />
               <Row label="Size" value={result.company.size || "—"} />
@@ -143,7 +153,10 @@ export default function EnrichmentPage() {
               </div>
               <div className="flex flex-wrap gap-2">
                 {result.tags.map((t) => (
-                  <span key={t} className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded-full">
+                  <span
+                    key={t}
+                    className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded-full"
+                  >
                     {t}
                   </span>
                 ))}
@@ -153,7 +166,9 @@ export default function EnrichmentPage() {
 
           <section className="lg:col-span-2 bg-white rounded-xl shadow p-5">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900">Suggested Contacts</h2>
+              <h2 className="text-lg font-semibold text-gray-900">
+                Suggested Contacts
+              </h2>
               {result.contacts.length > 0 && (
                 <select
                   className="border rounded-lg px-2 py-1 text-sm"
@@ -191,16 +206,31 @@ export default function EnrichmentPage() {
                         <td className="px-4 py-2">{c.title}</td>
                         <td className="px-4 py-2">{c.dept || "—"}</td>
                         <td className="px-4 py-2">
-                          {c.email ? <a className="underline" href={`mailto:${c.email}`}>{c.email}</a> : "—"}
+                          {c.email ? (
+                            <a className="underline" href={`mailto:${c.email}`}>
+                              {c.email}
+                            </a>
+                          ) : (
+                            "—"
+                          )}
                         </td>
                         <td className="px-4 py-2">
                           {c.linkedin ? (
-                            <a className="underline" href={c.linkedin} target="_blank" rel="noreferrer">
+                            <a
+                              className="underline"
+                              href={c.linkedin}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
                               Profile
                             </a>
-                          ) : "—"}
+                          ) : (
+                            "—"
+                          )}
                         </td>
-                        <td className="px-4 py-2">{Math.round(c.confidence * 100)}%</td>
+                        <td className="px-4 py-2">
+                          {Math.round(c.confidence * 100)}%
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -211,12 +241,20 @@ export default function EnrichmentPage() {
 
           <section className="lg:col-span-3 bg-white rounded-xl shadow p-5 space-y-3">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900">Outreach Draft</h2>
+              <h2 className="text-lg font-semibold text-gray-900">
+                Outreach Draft
+              </h2>
               <div className="flex gap-2">
-                <button onClick={() => copyToClipboard(result.outreachDraft)} className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50">
+                <button
+                  onClick={() => copyToClipboard(result.outreachDraft)}
+                  className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
+                >
                   Copy
                 </button>
-                <button onClick={saveAsLead} className="rounded-lg bg-gray-900 text-white px-3 py-1.5 text-sm hover:bg-gray-800">
+                <button
+                  onClick={saveAsLead}
+                  className="rounded-lg bg-gray-900 text-white px-3 py-1.5 text-sm hover:bg-gray-800"
+                >
                   Save as Lead
                 </button>
               </div>
@@ -224,11 +262,17 @@ export default function EnrichmentPage() {
             <textarea
               className="w-full min-h-[180px] border rounded-xl px-3 py-2"
               value={result.outreachDraft}
-              onChange={(e) => setResult((prev) => (prev ? { ...prev, outreachDraft: e.target.value } : prev))}
+              onChange={(e) =>
+                setResult((prev) =>
+                  prev ? { ...prev, outreachDraft: e.target.value } : prev
+                )
+              }
             />
             {primaryContact && (
               <p className="text-xs text-gray-500">
-                Primary contact: <span className="font-medium">{primaryContact.name}</span> — {primaryContact.title}
+                Primary contact:{" "}
+                <span className="font-medium">{primaryContact.name}</span> —{" "}
+                {primaryContact.title}
               </p>
             )}
           </section>
@@ -239,12 +283,17 @@ export default function EnrichmentPage() {
 }
 
 async function safeJson(resp) {
-  try { return await resp.json(); } catch { return null; }
+  try {
+    return await resp.json();
+  } catch {
+    return null;
+  }
 }
 
 async function copyToClipboard(text) {
-  try { await navigator.clipboard.writeText(text); }
-  catch {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
     const el = document.createElement("textarea");
     el.value = text;
     document.body.appendChild(el);
@@ -257,7 +306,9 @@ async function copyToClipboard(text) {
 function Row({ label, value }) {
   return (
     <div className="flex items-start justify-between gap-4 py-1">
-      <div className="text-xs uppercase text-gray-400 w-24 shrink-0">{label}</div>
+      <div className="text-xs uppercase text-gray-400 w-24 shrink-0">
+        {label}
+      </div>
       <div className="text-sm">{value}</div>
     </div>
   );

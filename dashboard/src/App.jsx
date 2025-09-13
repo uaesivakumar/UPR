@@ -1,13 +1,12 @@
-// dashboard/src/App.jsx
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import Sidebar from "./components/sidebar";
+import Sidebar from "./components/sidebar.jsx";
 import Topbar from "./components/Topbar.jsx";
-import DashboardHome from "./pages/DashboardHome";
-import LeadsPage from "./pages/LeadsPage";
-import EnrichmentPage from "./pages/EnrichmentPage";
-import MessagesPage from "./pages/MessagesPage";
-import Login from "./pages/Login";
-import ProtectedRoute from "./components/ProtectedRoute";
+import DashboardHome from "./pages/DashboardHome.jsx";
+import LeadsPage from "./pages/LeadsPage.jsx";
+import EnrichmentPage from "./pages/EnrichmentPage.jsx";
+import MessagesPage from "./pages/MessagesPage.jsx";
+import Login from "./pages/Login.jsx";
+import ProtectedRoute from "./components/ProtectedRoute.jsx";
 
 function Shell({ children }) {
   return (

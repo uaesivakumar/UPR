@@ -1,4 +1,3 @@
-// dashboard/src/components/Topbar.jsx
 import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { getToken, logout as clientLogout } from "../utils/auth";

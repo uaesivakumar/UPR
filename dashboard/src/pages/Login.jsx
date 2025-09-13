@@ -1,4 +1,3 @@
-// dashboard/src/pages/Login.jsx
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { getToken, setToken, verifyToken, loginWithToken } from "../utils/auth";
@@ -83,17 +82,13 @@ export default function Login() {
 
         <div className="mt-6 grid grid-cols-2 gap-2 bg-gray-100 p-1 rounded-xl">
           <button
-            className={`py-2 rounded-lg text-sm font-medium ${
-              mode === "token" ? "bg-white shadow" : "text-gray-600"
-            }`}
+            className={`py-2 rounded-lg text-sm font-medium ${mode === "token" ? "bg-white shadow" : "text-gray-600"}`}
             onClick={() => setMode("token")}
           >
             Admin Token
           </button>
           <button
-            className={`py-2 rounded-lg text-sm font-medium ${
-              mode === "password" ? "bg-white shadow" : "text-gray-600"
-            }`}
+            className={`py-2 rounded-lg text-sm font-medium ${mode === "password" ? "bg-white shadow" : "text-gray-600"}`}
             onClick={() => setMode("password")}
           >
             Username / Password
@@ -103,9 +98,7 @@ export default function Login() {
         {mode === "token" && (
           <form onSubmit={handleTokenLogin} className="mt-6 space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Admin Token
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Admin Token</label>
               <input
                 type="password"
                 value={adminToken}
@@ -116,13 +109,7 @@ export default function Login() {
                 autoFocus
               />
             </div>
-
-            {tokenErr && (
-              <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">
-                {tokenErr}
-              </div>
-            )}
-
+            {tokenErr && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{tokenErr}</div>}
             <button
               type="submit"
               disabled={tokenLoading}
@@ -130,19 +117,14 @@ export default function Login() {
             >
               {tokenLoading ? "Verifying…" : "Login"}
             </button>
-
-            <p className="text-xs text-gray-400">
-              The token is stored locally in this browser only.
-            </p>
+            <p className="text-xs text-gray-400">The token is stored locally in this browser only.</p>
           </form>
         )}
 
         {mode === "password" && (
           <form onSubmit={handlePasswordLogin} className="mt-6 space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Username
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
               <input
                 type="text"
                 value={username}
@@ -152,11 +134,8 @@ export default function Login() {
                 required
               />
             </div>
-
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Password
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
               <div className="relative">
                 <input
                   type={showPassword ? "text" : "password"}
@@ -175,13 +154,7 @@ export default function Login() {
                 </button>
               </div>
             </div>
-
-            {pwErr && (
-              <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">
-                {pwErr}
-              </div>
-            )}
-
+            {pwErr && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{pwErr}</div>}
             <button
               type="submit"
               disabled={pwLoading}
@@ -189,7 +162,6 @@ export default function Login() {
             >
               {pwLoading ? "Signing in…" : "Login"}
             </button>
-
             <p className="text-xs text-gray-400">
               Username/password creates a server session; a session token is stored locally to authorize API calls.
             </p>
