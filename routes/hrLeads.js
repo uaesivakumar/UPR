@@ -2,6 +2,7 @@
 import express from "express";
 import { pool } from "../utils/db.js";
 import { ok, bad } from "../utils/respond.js";
+import { adminOnly } from "../utils/adminOnly.js";
 import { isValidLeadStatus, isValidEmailStatus } from "../utils/validators.js";
 
 const router = express.Router();

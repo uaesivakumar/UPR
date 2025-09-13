@@ -1,58 +1,53 @@
 -- scripts/migrate.sql
 
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+-- idempotent helper
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'location_enum') THEN
+    CREATE TYPE location_enum AS ENUM ('Abu Dhabi','Dubai','Sharjah');
+  END IF;
+END$$;
 
+-- Targeted companies (formerly "leads")
 CREATE TABLE IF NOT EXISTS targeted_companies (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT NOT NULL,
-  type TEXT CHECK (type IN ('ALE','NON_ALE','Good Coded')),
-  locations TEXT[] DEFAULT '{}',
-  website_url TEXT,
-  linkedin_url TEXT,
-  about_blurb TEXT,
-  news_signals JSONB DEFAULT '[]'::jsonb,
-  hiring_signal BOOLEAN,
-  qscore INT DEFAULT 0,
-  status TEXT CHECK (status IN ('New','Contacted','Response Received','Converted','Declined')) DEFAULT 'New',
+  id            BIGSERIAL PRIMARY KEY,
+  name          TEXT NOT NULL,
+  website       TEXT,
+  linkedin      TEXT,
+  company_type  TEXT CHECK (company_type IN ('ALE','NON ALE','Good Coded')) DEFAULT 'NON ALE',
+  locations     location_enum[] DEFAULT '{}',
+  status        TEXT CHECK (status IN ('New','Contacted','Response Revd.','Converted','Declined')) DEFAULT 'New',
   status_remarks TEXT,
-  created_at TIMESTAMPTZ DEFAULT now(),
-  updated_at TIMESTAMPTZ DEFAULT now()
+  qscore        INT CHECK (qscore BETWEEN 0 AND 100) DEFAULT 0,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_tcompanies_unique_name ON targeted_companies (LOWER(name));
+-- Useful indexes
+CREATE INDEX IF NOT EXISTS idx_targeted_companies_name ON targeted_companies (lower(name));
+CREATE INDEX IF NOT EXISTS idx_targeted_companies_status ON targeted_companies (status);
+CREATE INDEX IF NOT EXISTS idx_targeted_companies_qscore ON targeted_companies (qscore);
+CREATE INDEX IF NOT EXISTS idx_targeted_companies_locations ON targeted_companies USING GIN (locations);
 
+-- HR leads table
 CREATE TABLE IF NOT EXISTS hr_leads (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id UUID NOT NULL REFERENCES targeted_companies(id) ON DELETE CASCADE,
-  name TEXT,
-  designation TEXT,
-  linkedin_url TEXT,
-  location TEXT,
-  role_keywords TEXT[],
-  mobile TEXT,
-  email TEXT,
-  email_status TEXT CHECK (email_status IN ('unknown','patterned','guessed','validated','bounced')) DEFAULT 'unknown',
-  lead_status TEXT CHECK (lead_status IN ('New','Contacted','Response Received','Follow-up 1','Follow-up 2','Follow-up 3','Follow-up 4','Converted','Declined')) DEFAULT 'New',
+  id             BIGSERIAL PRIMARY KEY,
+  company_id     BIGINT NOT NULL REFERENCES targeted_companies(id) ON DELETE CASCADE,
+  name           TEXT,
+  designation    TEXT,
+  linkedin_url   TEXT,
+  location       TEXT,
+  role           TEXT,
+  mobile         TEXT,
+  email          TEXT,
+  status         TEXT CHECK (status IN (
+                    'New','Contacted','Response rcvd',
+                    'Follow-up 1 stage','F-Up 2 stage','F-Up 3 stage','F-Up 4 stage',
+                    'Converted','Declined'
+                  )) DEFAULT 'New',
   status_remarks TEXT,
-  signal_feed JSONB DEFAULT '[]'::jsonb,
-  created_at TIMESTAMPTZ DEFAULT now(),
-  updated_at TIMESTAMPTZ DEFAULT now()
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_hr_leads_company ON hr_leads(company_id);
-
-CREATE TABLE IF NOT EXISTS news_items (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_name TEXT,
-  company_id UUID REFERENCES targeted_companies(id) ON DELETE SET NULL,
-  title TEXT,
-  summary TEXT,
-  url TEXT,
-  source TEXT,
-  published_at TIMESTAMPTZ,
-  tags TEXT[],
-  score INT DEFAULT 0,
-  ingested_at TIMESTAMPTZ DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_news_company ON news_items (LOWER(company_name));
+CREATE INDEX IF NOT EXISTS idx_hr_leads_company ON hr_leads (company_id);
+CREATE INDEX IF NOT EXISTS idx_hr_leads_status ON hr_leads (status);
+CREATE INDEX IF NOT EXISTS idx_hr_leads_email ON hr_leads (lower(email));
