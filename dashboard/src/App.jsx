@@ -1,25 +1,21 @@
 // dashboard/src/App.jsx
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Sidebar from "./components/sidebar";
-import ProtectedRoute from "./components/ProtectedRoute";
+import Topbar from "./components/Topbar";
 import DashboardHome from "./pages/DashboardHome";
 import LeadsPage from "./pages/LeadsPage";
 import EnrichmentPage from "./pages/EnrichmentPage";
 import MessagesPage from "./pages/MessagesPage";
 import Login from "./pages/Login";
+import ProtectedRoute from "./components/ProtectedRoute";
 
-function Shell() {
-  const location = useLocation();
+function Shell({ children }) {
   return (
-    <div className="min-h-screen flex bg-gray-50">
+    <div className="min-h-screen flex">
       <Sidebar />
-      <div className="flex-1 p-6">
-        <Routes location={location}>
-          <Route index element={<DashboardHome />} />
-          <Route path="leads" element={<LeadsPage />} />
-          <Route path="enrichment" element={<EnrichmentPage />} />
-          <Route path="messages" element={<MessagesPage />} />
-        </Routes>
+      <div className="flex-1 flex flex-col">
+        <Topbar />
+        <main className="flex-1 p-4 md:p-6 bg-gray-50">{children}</main>
       </div>
     </div>
   );
@@ -29,10 +25,53 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Public */}
         <Route path="/login" element={<Login />} />
-        <Route element={<ProtectedRoute />}>
-          <Route path="/*" element={<Shell />} />
-        </Route>
+
+        {/* Protected */}
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <Shell>
+                <DashboardHome />
+              </Shell>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/leads"
+          element={
+            <ProtectedRoute>
+              <Shell>
+                <LeadsPage />
+              </Shell>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/enrichment"
+          element={
+            <ProtectedRoute>
+              <Shell>
+                <EnrichmentPage />
+              </Shell>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/messages"
+          element={
+            <ProtectedRoute>
+              <Shell>
+                <MessagesPage />
+              </Shell>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Fallback */}
+        <Route path="*" element={<Login />} />
       </Routes>
     </BrowserRouter>
   );
