@@ -1,28 +1,3 @@
-node_modules
-dashboard/node_modules
-dashboard/dist
-*.log
-npm-debug.log*
-.DS_Store
-Archive.zip
-
-# deps
-node_modules/
-dashboard/node_modules/
-# build output
-dashboard/dist/
-
-# deps
-node_modules/
-dashboard/node_modules/
-# build
-dashboard/dist/
-
-# deps
-node_modules/
-dashboard/node_modules/
-# build
-dashboard/dist/
 node_modules/
 dashboard/node_modules/
 dashboard/dist/
