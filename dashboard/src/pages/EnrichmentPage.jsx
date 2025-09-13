@@ -3,11 +3,110 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { authFetch, adminFetch, getAdminToken } from "../utils/auth";
 
+/* ---------- helpers: robust normalization ---------- */
+const hasDot = (s) => typeof s === "string" && s.includes(".");
+const toDomain = (raw) => {
+  if (!raw) return null;
+  try {
+    if (/^https?:\/\//i.test(raw)) return new URL(raw).hostname.toLowerCase();
+  } catch {}
+  const d = String(raw).toLowerCase().replace(/[^a-z0-9.-]+/g, "");
+  return hasDot(d) ? d : null;
+};
+const toWebsite = (domain) => (domain ? `https://${domain}` : null);
+
+function normalizeEnrichPayload(data) {
+  // Expecting shape like:
+  // { company: { name, domain?, linkedin_url? }, contacts: [{ name, title, email?, email_guess?, linkedin_url?, score? }, ...] }
+  const c = data?.company || {};
+  const domain = toDomain(c.domain || c.website_url || c.website);
+  const website_url = toWebsite(domain);
+
+  const contacts = Array.isArray(data?.contacts)
+    ? data.contacts.map((x, i) => ({
+        id: String(i + 1),
+        name: x.name || "Decision Maker",
+        title: x.title || "Decision Maker",
+        dept: x.dept || null,
+        email: x.email || x.email_guess || null,
+        linkedin: x.linkedin || x.linkedin_url || null,
+        confidence: typeof x.score === "number" ? Math.min(Math.max(x.score, 0), 100) / 100 : 0,
+      }))
+    : [];
+
+  // very basic draft to avoid empty textarea
+  const primary = contacts[0];
+  const draft =
+    `Subject: Exploring alignment with ${c.name || "your company"}\n\n` +
+    `Hi ${primary?.name || "there"},\n\n` +
+    `We’re mapping premium employers in the UAE and thought ${c.name || "your company"} might be a fit. ` +
+    `Would you be open to a quick chat?\n\nThanks,\n—`;
+
+  return {
+    company: {
+      name: c.name || "",
+      linkedin_url: c.linkedin_url || c.linkedin || null,
+      domain,
+      website_url,
+      website: website_url, // for older render helpers below
+      hq: c.hq || null,
+      industry: c.industry || null,
+      size: c.size || null,
+      locations: Array.isArray(c.locations) ? c.locations : (c.hq ? [c.hq] : []),
+      type: c.type || null,
+      notes: c.notes || null,
+    },
+    contacts,
+    score: typeof data?.score === "number" ? data.score : 0,
+    tags: Array.isArray(data?.tags) ? data.tags : [],
+    outreachDraft: data?.outreachDraft || draft,
+  };
+}
+
+async function safeJson(resp) {
+  try { return await resp.json(); } catch { return null; }
+}
+
+async function copyToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const el = document.createElement("textarea");
+    el.value = text || "";
+    document.body.appendChild(el);
+    el.select();
+    document.execCommand("copy");
+    document.body.removeChild(el);
+  }
+}
+
+function Row({ label, value }) {
+  return (
+    <div className="flex items-start justify-between gap-4 py-1">
+      <div className="text-xs uppercase text-gray-400 w-24 shrink-0">{label}</div>
+      <div className="text-sm break-all">{value}</div>
+    </div>
+  );
+}
+
+function linkOrText(url) {
+  if (!url) return "—";
+  const safe = url.startsWith("http") ? url : (hasDot(url) ? `https://${url}` : null);
+  return safe ? (
+    <a className="underline" href={safe} target="_blank" rel="noreferrer">
+      {url}
+    </a>
+  ) : (
+    url
+  );
+}
+
+/* ---------- page ---------- */
 export default function EnrichmentPage() {
   const [sp] = useSearchParams();
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState(null);
+  const [err, setErr] = useState("");
 
   const [result, setResult] = useState(null);
   const [primaryContactId, setPrimaryContactId] = useState(null);
@@ -27,32 +126,33 @@ export default function EnrichmentPage() {
 
   async function runEnrichment(e) {
     e.preventDefault();
-    setErr(null);
+    setErr("");
     setResult(null);
     setPrimaryContactId(null);
 
-    if (!query.trim()) {
+    const q = query.trim();
+    if (!q) {
       setErr("Please enter a company URL, LinkedIn, or a descriptive query.");
       return;
     }
 
     setLoading(true);
     try {
-      // NOTE: backend mounts the router at /api/enrich
-      const res = await authFetch("/api/enrich/run", {
+      // Correct endpoint & body shape
+      const res = await authFetch("/api/enrich", {
         method: "POST",
-        body: JSON.stringify({ query: query.trim() }),
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ input: q }),
       });
-      if (!res.ok) {
-        const data = await safeJson(res);
-        throw new Error(data?.error || "Enrichment failed");
+      const data = await safeJson(res);
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || `HTTP ${res.status}`);
       }
-      const data = await res.json();
-      if (!data?.ok || !data?.data) throw new Error("Invalid response");
-      setResult(data.data);
-      setPrimaryContactId(data.data.contacts?.[0]?.id ?? null);
+      const normalized = normalizeEnrichPayload(data.data || {});
+      setResult(normalized);
+      setPrimaryContactId(normalized.contacts?.[0]?.id ?? null);
     } catch (e) {
-      setErr(e?.message || "Something went wrong");
+      setErr(e?.message || "Enrichment failed");
     } finally {
       setLoading(false);
     }
@@ -69,13 +169,12 @@ export default function EnrichmentPage() {
       return;
     }
 
-    // Build payload for /api/hr-leads/from-enrichment
     const company = {
       name: result.company.name,
       type: result.company.type ?? null,
       locations: result.company.locations ?? (result.company.hq ? [result.company.hq] : []),
-      website_url: result.company.website ?? null,
-      linkedin_url: result.company.linkedin ?? null,
+      website_url: result.company.website_url || result.company.website || null,
+      linkedin_url: result.company.linkedin_url ?? null,
     };
 
     const c = primaryContact;
@@ -100,13 +199,14 @@ export default function EnrichmentPage() {
     const payload = {
       company,
       contact,
-      status: "New", // backend defaults to "New"; set explicitly for clarity
+      status: "New",
       notes: (result.outreachDraft ? "Draft present. " : "") + "Saved from Enrichment UI",
     };
 
     try {
       const res = await adminFetch("/api/hr-leads/from-enrichment", {
         method: "POST",
+        headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
       });
       const data = await safeJson(res);
@@ -128,10 +228,7 @@ export default function EnrichmentPage() {
         </p>
       </div>
 
-      <form
-        onSubmit={runEnrichment}
-        className="bg-white rounded-xl shadow p-4 md:p-5 space-y-3"
-      >
+      <form onSubmit={runEnrichment} className="bg-white rounded-xl shadow p-4 md:p-5 space-y-3">
         <label className="block text-sm font-medium text-gray-700">Input</label>
         <div className="flex flex-col md:flex-row gap-3">
           <input
@@ -160,9 +257,9 @@ export default function EnrichmentPage() {
           <section className="lg:col-span-1 bg-white rounded-xl shadow p-5 space-y-2">
             <h2 className="text-lg font-semibold text-gray-900">Company</h2>
             <div className="text-sm text-gray-700">
-              <Row label="Name" value={result.company.name} />
-              <Row label="Website" value={linkOrText(result.company.website)} />
-              <Row label="LinkedIn" value={linkOrText(result.company.linkedin)} />
+              <Row label="Name" value={result.company.name || "—"} />
+              <Row label="Website" value={linkOrText(result.company.website || result.company.website_url)} />
+              <Row label="LinkedIn" value={linkOrText(result.company.linkedin_url)} />
               <Row label="HQ" value={result.company.hq || "—"} />
               <Row label="Industry" value={result.company.industry || "—"} />
               <Row label="Size" value={result.company.size || "—"} />
@@ -179,11 +276,8 @@ export default function EnrichmentPage() {
                 <span className="font-medium">{result.score}/100</span>
               </div>
               <div className="flex flex-wrap gap-2">
-                {result.tags.map((t) => (
-                  <span
-                    key={t}
-                    className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded-full"
-                  >
+                {(result.tags || []).map((t) => (
+                  <span key={t} className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded-full">
                     {t}
                   </span>
                 ))}
@@ -193,9 +287,7 @@ export default function EnrichmentPage() {
 
           <section className="lg:col-span-2 bg-white rounded-xl shadow p-5">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900">
-                Suggested Contacts
-              </h2>
+              <h2 className="text-lg font-semibold text-gray-900">Suggested Contacts</h2>
               {result.contacts.length > 0 && (
                 <select
                   className="border rounded-lg px-2 py-1 text-sm"
@@ -233,31 +325,18 @@ export default function EnrichmentPage() {
                         <td className="px-4 py-2">{c.title}</td>
                         <td className="px-4 py-2">{c.dept || "—"}</td>
                         <td className="px-4 py-2">
-                          {c.email ? (
-                            <a className="underline" href={`mailto:${c.email}`}>
-                              {c.email}
-                            </a>
-                          ) : (
-                            "—"
-                          )}
+                          {c.email ? <a className="underline" href={`mailto:${c.email}`}>{c.email}</a> : "—"}
                         </td>
                         <td className="px-4 py-2">
                           {c.linkedin ? (
-                            <a
-                              className="underline"
-                              href={c.linkedin}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
+                            <a className="underline" href={c.linkedin} target="_blank" rel="noreferrer">
                               Profile
                             </a>
                           ) : (
                             "—"
                           )}
                         </td>
-                        <td className="px-4 py-2">
-                          {Math.round((c.confidence ?? 0) * 100)}%
-                        </td>
+                        <td className="px-4 py-2">{Math.round((c.confidence ?? 0) * 100)}%</td>
                       </tr>
                     ))}
                   </tbody>
@@ -268,9 +347,7 @@ export default function EnrichmentPage() {
 
           <section className="lg:col-span-3 bg-white rounded-xl shadow p-5 space-y-3">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900">
-                Outreach Draft
-              </h2>
+              <h2 className="text-lg font-semibold text-gray-900">Outreach Draft</h2>
               <div className="flex gap-2">
                 <button
                   onClick={() => copyToClipboard(result.outreachDraft)}
@@ -290,63 +367,17 @@ export default function EnrichmentPage() {
               className="w-full min-h-[180px] border rounded-xl px-3 py-2"
               value={result.outreachDraft}
               onChange={(e) =>
-                setResult((prev) =>
-                  prev ? { ...prev, outreachDraft: e.target.value } : prev
-                )
+                setResult((prev) => (prev ? { ...prev, outreachDraft: e.target.value } : prev))
               }
             />
             {primaryContact && (
               <p className="text-xs text-gray-500">
-                Primary contact:{" "}
-                <span className="font-medium">{primaryContact.name}</span> —{" "}
-                {primaryContact.title}
+                Primary contact: <span className="font-medium">{primaryContact.name}</span> — {primaryContact.title}
               </p>
             )}
           </section>
         </div>
       )}
     </div>
-  );
-}
-
-async function safeJson(resp) {
-  try {
-    return await resp.json();
-  } catch {
-    return null;
-  }
-}
-
-async function copyToClipboard(text) {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    const el = document.createElement("textarea");
-    el.value = text;
-    document.body.appendChild(el);
-    el.select();
-    document.execCommand("copy");
-    document.body.removeChild(el);
-  }
-}
-
-function Row({ label, value }) {
-  return (
-    <div className="flex items-start justify-between gap-4 py-1">
-      <div className="text-xs uppercase text-gray-400 w-24 shrink-0">
-        {label}
-      </div>
-      <div className="text-sm">{value}</div>
-    </div>
-  );
-}
-
-function linkOrText(url) {
-  if (!url) return "—";
-  const safe = url.startsWith("http") ? url : `https://${url}`;
-  return (
-    <a className="underline" href={safe} target="_blank" rel="noreferrer">
-      {url}
-    </a>
   );
 }
