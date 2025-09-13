@@ -18,7 +18,7 @@ const PORT = process.env.PORT || 10000;
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "admin";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "supersecret";
 
-// ---- Admin token (for direct token login) ----
+// ---- Admin token ----
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "";
 
 // ---- DB pool ----
@@ -33,14 +33,13 @@ app.use(express.json());
 const clientDir = path.join(__dirname, "dashboard", "dist");
 const indexHtml = path.join(clientDir, "index.html");
 
-// ---- Sessions (in-memory) ----
+// ---- Sessions ----
 const SESSIONS = new Set();
 const makeToken = () => crypto.randomUUID();
 const readBearer = (req) => {
   const h = req.headers.authorization || "";
   return h.startsWith("Bearer ") ? h.slice(7) : "";
 };
-
 const hasAccess = (token) => {
   if (!token) return false;
   if (SESSIONS.has(token)) return true;
@@ -52,34 +51,25 @@ const hasAccess = (token) => {
 app.get("/health", (_req, res) => res.json({ ok: true }));
 app.get("/__diag", async (_req, res) => {
   let db_ok = false;
+  let leads_count = null;
   try {
     const r = await pool.query("select 1 as ok");
     db_ok = r.rows?.[0]?.ok === 1;
-  } catch {}
+    const c = await pool.query("select count(*)::int as c from leads");
+    leads_count = c.rows?.[0]?.c ?? 0;
+  } catch (e) {
+    console.error("diag db error:", e);
+  }
   res.json({
     ok: true,
     admin_username_set: Boolean(process.env.ADMIN_USERNAME),
-    admin_token_set: Boolean(ADMIN_TOKEN),
-    clientDir,
-    index_exists: fs.existsSync(indexHtml),
+    admin_token_set: Boolean(process.env.ADMIN_TOKEN),
     db_ok,
+    leads_count,
   });
-});
-app.get("/__ls", (_req, res) => {
-  try {
-    const root = fs.readdirSync(__dirname);
-    const dash = fs.existsSync(path.join(__dirname, "dashboard"))
-      ? fs.readdirSync(path.join(__dirname, "dashboard"))
-      : null;
-    const dist = fs.existsSync(clientDir) ? fs.readdirSync(clientDir) : null;
-    res.json({ ok: true, root, dash, dist });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e) });
-  }
 });
 
 // ---- Public auth routes ----
-// Session login (returns a bearer token)
 app.post("/api/auth/login", (req, res) => {
   const { username, password } = req.body || {};
   if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
@@ -89,8 +79,6 @@ app.post("/api/auth/login", (req, res) => {
   }
   return res.status(401).json({ ok: false, error: "Invalid credentials" });
 });
-
-// Verify ADMIN_TOKEN (for token mode)
 app.get("/api/auth/verify", (req, res) => {
   try {
     const token = readBearer(req);
@@ -104,12 +92,8 @@ app.get("/api/auth/verify", (req, res) => {
   }
 });
 
-// ---- DRY auth middleware for /api/* (after public auth endpoints) ----
-const EXEMPT = new Set([
-  "/api/auth/login",
-  "/api/auth/verify",
-]);
-
+// ---- DRY auth middleware ----
+const EXEMPT = new Set(["/api/auth/login", "/api/auth/verify"]);
 app.use("/api", (req, res, next) => {
   if (EXEMPT.has(req.path)) return next();
   const t = readBearer(req);
@@ -119,14 +103,14 @@ app.use("/api", (req, res, next) => {
   return next();
 });
 
-// ---- Protected auth route ----
+// ---- Protected auth logout ----
 app.post("/api/auth/logout", (req, res) => {
   const t = readBearer(req);
   if (t) SESSIONS.delete(t);
   res.json({ ok: true });
 });
 
-// ---- Leads (Postgres) ----
+// ---- Leads ----
 app.get("/api/leads", async (_req, res) => {
   try {
     const { rows } = await pool.query(
@@ -138,7 +122,6 @@ app.get("/api/leads", async (_req, res) => {
     res.status(500).json({ ok: false, error: "DB error" });
   }
 });
-
 app.post("/api/leads", async (req, res) => {
   const { company, role, salary_band = "AED 50K+", status = "New" } = req.body || {};
   if (!company || !role) {
@@ -176,9 +159,7 @@ app.post("/api/enrichment/run", (req, res) => {
         companyName = (query.split(",")[0] || query).trim() || companyName;
       }
       companyName = companyName.charAt(0).toUpperCase() + companyName.slice(1);
-    } catch {
-      /* keep default */
-    }
+    } catch {}
 
     const payload = {
       company: {
@@ -191,33 +172,9 @@ app.post("/api/enrichment/run", (req, res) => {
         notes: "Auto-generated mock enrichment. Replace with real provider later.",
       },
       contacts: [
-        {
-          id: "c1",
-          name: "Finance Director (UAE)",
-          title: "Finance Director",
-          dept: "Finance",
-          email: null,
-          linkedin: null,
-          confidence: 0.86,
-        },
-        {
-          id: "c2",
-          name: "Head of HR (MENA)",
-          title: "Head of Human Resources",
-          dept: "HR",
-          email: null,
-          linkedin: null,
-          confidence: 0.74,
-        },
-        {
-          id: "c3",
-          name: "Admin / Payroll Lead",
-          title: "Payroll Lead",
-          dept: "Admin",
-          email: null,
-          linkedin: null,
-          confidence: 0.69,
-        },
+        { id: "c1", name: "Finance Director (UAE)", title: "Finance Director", dept: "Finance", email: null, linkedin: null, confidence: 0.86 },
+        { id: "c2", name: "Head of HR (MENA)", title: "Head of Human Resources", dept: "HR", email: null, linkedin: null, confidence: 0.74 },
+        { id: "c3", name: "Admin / Payroll Lead", title: "Payroll Lead", dept: "Admin", email: null, linkedin: null, confidence: 0.69 },
       ],
       score: 78,
       tags: ["High-salary", "UAE presence", "Growth"],
@@ -249,3 +206,4 @@ app.get(/.*/, (_req, res) => {
 app.listen(PORT, () => {
   console.log(`[UPR] Server listening on :${PORT}`);
 });
+  
