@@ -1,104 +1,71 @@
 // dashboard/src/utils/auth.ts
-// Centralized auth helpers for UPR Admin Console
+// Centralized auth + admin helpers for the dashboard (TypeScript)
 
-export const TOKEN_KEY = "upr_admin_token";
+//
+// ──────────────────────────────────────────────────────────────────────────────
+// User auth token helpers (non-admin)
+// ──────────────────────────────────────────────────────────────────────────────
+//
 
-export interface VerifyResponse {
-  ok: boolean;
-  error?: string;
+const AUTH_TOKEN_KEY = "AUTH_TOKEN";
+
+export function setAuthToken(token: string) {
+  localStorage.setItem(AUTH_TOKEN_KEY, token || "");
 }
 
-export interface AuthResult {
-  success: boolean;
-  message?: string;
+export function getAuthToken(): string {
+  return localStorage.getItem(AUTH_TOKEN_KEY) || "";
 }
 
-/** Read token from localStorage */
-export function getToken(): string | null {
-  try {
-    return localStorage.getItem(TOKEN_KEY);
-  } catch (err) {
-    console.error("[auth] getToken failed:", err);
-    return null;
-  }
-}
-
-/** Persist token to localStorage */
-export function setToken(token: string): void {
-  try {
-    localStorage.setItem(TOKEN_KEY, token);
-  } catch (err) {
-    console.error("[auth] setToken failed:", err);
-  }
-}
-
-/** Remove token from localStorage */
-export function clearToken(): void {
-  try {
-    localStorage.removeItem(TOKEN_KEY);
-  } catch (err) {
-    console.error("[auth] clearToken failed:", err);
-  }
-}
-
-/** Call backend to verify if a token is valid */
-export async function verifyToken(token: string): Promise<boolean> {
-  if (!token) return false;
-  try {
-    const res = await fetch("/api/auth/verify", {
-      method: "GET",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) return false;
-    const data: VerifyResponse = await res.json();
-    return data.ok === true;
-  } catch (err) {
-    console.error("[auth] verifyToken failed:", err);
-    return false;
-  }
-}
-
-/** Convenience: check current auth state using stored token */
-export async function isAuthed(): Promise<boolean> {
-  const token = getToken();
-  if (!token) return false;
-  return verifyToken(token);
-}
-
-/** Try to login with a given token */
-export async function loginWithToken(token: string): Promise<AuthResult> {
-  const valid = await verifyToken(token);
-  if (!valid) {
-    return { success: false, message: "Invalid token" };
-  }
-  setToken(token);
-  return { success: true };
-}
-
-/** Logout the current user */
-export function logout(): void {
-  clearToken();
-  window.location.href = "/login";
-}
-
-/** Utility: get Authorization header */
+/** Returns Authorization header if a user token exists */
 export function getAuthHeader(): Record<string, string> {
-  const token = getToken();
-  if (!token) return {};
-  return { Authorization: `Bearer ${token}` };
+  const t = getAuthToken();
+  return t ? { Authorization: `Bearer ${t}` } : {};
 }
 
-/** Utility: fetch wrapper with Authorization header */
-export async function authFetch(
-  url: string,
-  options: RequestInit = {}
-): Promise<Response> {
-  const token = getToken();
-  const headers: HeadersInit = {
-    ...(options.headers || {}),
-  };
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-  return fetch(url, { ...options, headers });
+/** fetch wrapper that automatically merges JSON + auth headers */
+export async function authFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  const headers = {
+    "Content-Type": "application/json",
+    ...(init.headers || {}),
+    ...getAuthHeader(),
+  } as Record<string, string>;
+
+  return fetch(input, { ...init, headers });
+}
+
+//
+// ──────────────────────────────────────────────────────────────────────────────
+// Admin token helpers (x-admin-token)
+// ──────────────────────────────────────────────────────────────────────────────
+//
+
+const ADMIN_TOKEN_KEY = "ADMIN_TOKEN";
+
+/** Persist admin token in localStorage */
+export function setAdminToken(token: string) {
+  localStorage.setItem(ADMIN_TOKEN_KEY, token || "");
+}
+
+/** Read admin token from localStorage */
+export function getAdminToken(): string {
+  return localStorage.getItem(ADMIN_TOKEN_KEY) || "";
+}
+
+/** Returns { "x-admin-token": "<token>" } when present */
+export function getAdminHeaders(): Record<string, string> {
+  const t = getAdminToken();
+  return t ? { "x-admin-token": t } : {};
+}
+
+/** fetch wrapper that merges JSON + user auth + admin headers */
+export async function adminFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  const headers = {
+    "Content-Type": "application/json",
+    ...(init.headers || {}),
+    ...getAuthHeader(),
+    ...getAdminHeaders(),
+  } as Record<string, string>;
+
+  return fetch(input, { ...init, headers });
 }
