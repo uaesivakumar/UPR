@@ -43,3 +43,6 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=5 \
   CMD curl -fsS "http://localhost:${PORT:-10000}/health" || exit 1
 
 CMD ["sh", "-c", "node scripts/ensure-seed.js && node server.js"]
+
+# Build frontend (verbose logging to pinpoint issues)
+RUN npm ci && npm run build -- --logLevel debug
