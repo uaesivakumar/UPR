@@ -1,20 +1,20 @@
 {
-  "name": "upr-dashboard",
+  "name": "upr",
+  "version": "1.0.0",
+  "description": "UPR server + React dashboard (Docker/Render)",
   "private": true,
-  "version": "0.0.0",
   "type": "module",
+  "main": "server.js",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build --logLevel debug",
-    "preview": "vite preview --port 5173"
+    "start": "node server.js",
+    "db:init": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f ./db/init.sql",
+    "seed": "node scripts/ensure-seed.js"
   },
   "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-router-dom": "^7.8.2"
-  },
-  "devDependencies": {
-    "@vitejs/plugin-react": "^4.3.1",
-    "vite": "^5.4.8"
+    "cors": "^2.8.5",
+    "csv-parse": "^6.1.0",
+    "express": "^5.1.0",
+    "multer": "^2.0.2",
+    "pg": "^8.16.3"
   }
 }
