@@ -1,7 +1,7 @@
 // dashboard/src/App.jsx
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Sidebar from "./components/sidebar";
-import Topbar from "./components/Topbar";
+import Topbar from "./components/Topbar.jsx";
 import DashboardHome from "./pages/DashboardHome";
 import LeadsPage from "./pages/LeadsPage";
 import EnrichmentPage from "./pages/EnrichmentPage";

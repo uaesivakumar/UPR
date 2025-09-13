@@ -1,49 +1,67 @@
+// dashboard/src/components/Topbar.jsx
+import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { clearToken } from "../utils/auth";
+import { getToken, logout as clientLogout } from "../utils/auth";
 
-export default function Topbar({ title = "Dashboard", onSearch, onAdd, rightSlot }) {
+export default function Topbar() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [q, setQ] = useState("");
 
-  function logout() {
-    clearToken();
-    navigate("/login", { replace: true });
+  async function onLogout() {
+    try {
+      const token = getToken();
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+    } catch {}
+    clientLogout(); // clears token + redirects to /login
   }
 
-  const showAdd = typeof onAdd === "function";
-  const showSearch = typeof onSearch === "function";
+  function onAddLead() {
+    if (location.pathname !== "/leads") {
+      navigate("/leads#add");
+    } else {
+      window.dispatchEvent(new CustomEvent("focus-add-lead"));
+    }
+  }
+
+  function onSearch(e) {
+    e.preventDefault();
+    const query = q.trim();
+    if (!query) return;
+    navigate(`/enrichment?q=${encodeURIComponent(query)}`);
+    setQ("");
+  }
 
   return (
-    <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <div className="min-w-0">
-        <h1 className="truncate text-2xl font-semibold">{title}</h1>
-        <p className="mt-1 text-sm text-gray-500">{location.pathname.replace("/", "") || "home"}</p>
-      </div>
-
-      <div className="flex w-full items-center gap-3 sm:w-auto">
-        {showSearch && (
+    <header className="sticky top-0 z-20 h-16 bg-white/90 backdrop-blur border-b border-gray-200">
+      <div className="h-full px-4 md:px-6 flex items-center gap-3">
+        <form onSubmit={onSearch} className="flex-1 max-w-xl">
           <input
-            onChange={(e) => onSearch(e.target.value)}
-            placeholder="Search companies, roles…"
-            className="w-full sm:w-72 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:ring-2 focus:ring-gray-900"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search companies, LinkedIn URLs, or roles…"
+            className="w-full rounded-xl border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-gray-800"
           />
-        )}
-        {showAdd && (
+        </form>
+        <div className="flex items-center gap-2">
           <button
-            onClick={onAdd}
-            className="rounded-xl bg-gray-900 px-4 py-2 text-sm font-medium text-white shadow hover:bg-gray-800"
+            onClick={onAddLead}
+            className="rounded-xl bg-gray-900 text-white px-3 py-2 text-sm font-medium hover:bg-gray-800"
           >
-            Add Lead
+            + Add Lead
           </button>
-        )}
-        {rightSlot}
-        <button
-          onClick={logout}
-          className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium hover:bg-gray-50"
-        >
-          Logout
-        </button>
+          <button
+            onClick={onLogout}
+            className="rounded-xl border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50"
+            aria-label="Log out"
+          >
+            Logout
+          </button>
+        </div>
       </div>
-    </div>
+    </header>
   );
 }
