@@ -3,6 +3,7 @@ import { aiEnrichFromInput } from "../utils/ai.js";
 import { detectPattern, generateEmail, generateCandidates } from "../utils/emailPatterns.js";
 import { verifyEmail } from "../utils/emailVerify.js";
 import { getDomainPattern, setDomainPattern } from "../utils/patternCache.js";
+import { fetchContactsFromProviders } from "../utils/providers/sourcing.js";
 
 const router = express.Router();
 
@@ -18,14 +19,12 @@ const SMTP_VERIFY_MAX = Math.max(0, Number(process.env.SMTP_VERIFY_MAX || 3));
 
 /* ------------------------------ helpers ----------------------------- */
 const GENERIC_MAILBOX = /^(info|contact|admin|office|hello|support|careers|jobs|hr|payroll|finance|accounts|team|help|sales|pr|media|press|recruitment|talent|onboarding|noreply|no-reply)@/i;
+const ROLE_ONLY_NAME = /^(hr|ta|talent|recruit(ment|er)?|people|payroll|finance|accounts|admin|office|operations|onboarding)\s*(head|lead|manager|director|specialist|officer)?$/i;
 
 function cleanStr(s) { if (!s) return null; const t = String(s).trim(); return t.length ? t : null; }
 function titleCase(s) { if (!s) return s; return String(s).toLowerCase().replace(/\b([a-z])/g, (m, c) => c.toUpperCase()); }
 function normalizeUrl(u) { if (!u) return null; const s = String(u).trim(); if (!s) return null; if (/^https?:\/\//i.test(s)) return s; return `https://${s}`; }
-function extractDomainFromUrl(u) {
-  try { const url = new URL(u); return url.hostname; }
-  catch { const s = String(u || "").trim().toLowerCase(); if (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(s)) return s; return null; }
-}
+function extractDomainFromUrl(u) { try { const url = new URL(u); return url.hostname; } catch { const s = String(u || "").trim().toLowerCase(); if (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(s)) return s; return null; } }
 
 function companyFromAI(raw) {
   const c = raw?.company || raw?.data?.company || raw || {};
@@ -63,6 +62,12 @@ function contactFromAI(c) {
     score: typeof c.score === "number" ? c.score : null,
   };
 }
+function isRealPersonName(name) {
+  const n = cleanStr(name);
+  if (!n) return false;
+  if (ROLE_ONLY_NAME.test(n)) return false;
+  return /\s/.test(n) && n.split(/\s+/).some((p) => p.length >= 2);
+}
 function seedPairs(contacts) {
   if (!Array.isArray(contacts)) return [];
   return contacts
@@ -79,7 +84,6 @@ async function enrichEmailsForContacts(company, contacts) {
     extractDomainFromUrl(company?.linkedin) ||
     null;
 
-  // If no domain → mark unknown if missing
   if (!domain) {
     for (const c of contacts) {
       if (!c?.email && !c?.email_guess) c.email_status = c.email_status || "unknown";
@@ -103,19 +107,17 @@ async function enrichEmailsForContacts(company, contacts) {
   for (const c of contacts) {
     if (!c) continue;
 
-    // keep provided emails if they are not generic mailboxes
     if (c.email) {
-      if (GENERIC_MAILBOX.test(String(c.email).toLowerCase())) {
-        c.email_status = "generic";
-        c.email = null;
-      } else {
+      if (/^.+@.+$/.test(c.email) && !GENERIC_MAILBOX.test(String(c.email).toLowerCase())) {
         c.email_status = c.email_status || "validated";
         continue;
+      } else {
+        c.email = null;
+        c.email_status = "generic";
       }
     }
 
-    // Need a person name to generate anything
-    if (!c.name) { c.email_status = c.email_status || "unknown"; continue; }
+    if (!isRealPersonName(c.name)) { c.email_status = c.email_status || "unknown"; continue; }
 
     let guess = null;
     if (pattern_id) {
@@ -139,13 +141,7 @@ async function enrichEmailsForContacts(company, contacts) {
       continue;
     }
 
-    // Optional SMTP verification (rate-limited per request)
-    if (
-      SMTP_VERIFY_ENABLED &&
-      verifyCount < SMTP_VERIFY_MAX &&
-      c.email_status !== "validated" &&
-      c.email_guess
-    ) {
+    if (SMTP_VERIFY_ENABLED && verifyCount < SMTP_VERIFY_MAX && c.email_status !== "validated" && c.email_guess) {
       try {
         const vr = await verifyEmail(c.email_guess);
         if (vr?.status === "valid") {
@@ -159,66 +155,61 @@ async function enrichEmailsForContacts(company, contacts) {
         }
       } catch {
         c.email_status = c.email_status || "patterned";
-      } finally {
-        verifyCount += 1;
-      }
+      } finally { verifyCount += 1; }
     }
   }
 
-  // Final pass: drop rows that are still generic/named-missing
-  return contacts.filter((c) => {
-    const hasName = !!cleanStr(c?.name);
-    const useEmail = c?.email || c?.email_guess;
-    const isGeneric = GENERIC_MAILBOX.test(String(useEmail || "").toLowerCase());
-    return hasName && !isGeneric;
-  });
+  return contacts.filter((c) => isRealPersonName(c?.name) && !(GENERIC_MAILBOX.test(String((c?.email || c?.email_guess || "")).toLowerCase())));
 }
 
 /** Simple quality fallback if provider doesn't return one. */
 function computeQuality(company, contacts, tags = []) {
   let score = 50;
   const factors = [];
-  if (company?.hq && /united arab emirates|dubai|abu dhabi/i.test(company.hq)) {
-    score += 10; factors.push({ label: "UAE HQ/Presence", impact: 10, detail: company.hq });
-  }
-  if (company?.size && /10,?000\+|5000\+|enterprise|group/i.test(company.size)) {
-    score += 8; factors.push({ label: "Enterprise size", impact: 8, detail: company.size });
-  }
-  if (Array.isArray(tags) && tags.some((t) => /hiring|expansion|new office|contract/i.test(t))) {
-    score += 7; factors.push({ label: "Recent hiring/expansion signal", impact: 7 });
-  }
-  if (Array.isArray(contacts) && contacts.length >= 3) {
-    score += 6; factors.push({ label: "Decision makers found", impact: 6, detail: `${contacts.length} contacts` });
-  }
-  if (company?.industry) {
-    score += 4; factors.push({ label: "Industry fit", impact: 4, detail: company.industry });
-  }
+  if (company?.hq && /united arab emirates|dubai|abu dhabi/i.test(company.hq)) { score += 10; factors.push({ label: "UAE HQ/Presence", impact: 10, detail: company.hq }); }
+  if (company?.size && /10,?000\+|5000\+|enterprise|group/i.test(company.size)) { score += 8; factors.push({ label: "Enterprise size", impact: 8, detail: company.size }); }
+  if (Array.isArray(tags) && tags.some((t) => /hiring|expansion|new office|contract/i.test(t))) { score += 7; factors.push({ label: "Recent hiring/expansion signal", impact: 7 }); }
+  if (Array.isArray(contacts) && contacts.length >= 3) { score += 6; factors.push({ label: "Decision makers found", impact: 6, detail: `${contacts.length} contacts` }); }
+  if (company?.industry) { score += 4; factors.push({ label: "Industry fit", impact: 4, detail: company.industry }); }
   score = Math.max(0, Math.min(100, score));
   return { score, factors };
 }
 
 /* -------------------------------- route ----------------------------- */
-/**
- * POST /api/enrich
- * body: { input: string, departments?: string[] }
- * returns: { ok, data: { company, contacts[], outreachDraft?, quality:{score,factors[]}, _meta:{ model, duration_ms } } }
- */
 router.post("/", async (req, res) => {
   const started = Date.now();
   const input = cleanStr(req.body?.input);
-  const departments = Array.isArray(req.body?.departments) ? req.body.departments : null;
+  const departments = Array.isArray(req.body?.departments) ? req.body.departments : ["hr","hrbp","ta","payroll","finance","admin","office_admin","onboarding"];
   if (!input) return res.status(400).json({ ok: false, error: "input required" });
 
   try {
+    // 1) LLM → company normalization + seed contacts (may include placeholders)
     const aiResp = await aiEnrichFromInput(input, { departments });
 
     const company = companyFromAI(aiResp);
     const contactsRaw = Array.isArray(aiResp?.contacts) ? aiResp.contacts : [];
-    let contacts = contactsRaw.map(contactFromAI);
+    let contacts = contactsRaw.map(contactFromAI).filter((c) => isRealPersonName(c?.name));
 
-    // enrich emails & remove generic mailboxes / nameless rows
+    // 2) Provider fallback (Apollo) if too few real people
+    if (!contacts || contacts.length < 2) {
+      const fromProviders = await fetchContactsFromProviders({ company, departments, min: 3 });
+      if (Array.isArray(fromProviders) && fromProviders.length) {
+        contacts = [...contacts, ...fromProviders];
+      }
+      // Dedup by name
+      const seen = new Set();
+      contacts = contacts.filter((c) => {
+        const k = (c.name || "").toLowerCase();
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+    }
+
+    // 3) Email enrichment (pattern + optional SMTP)
     contacts = await enrichEmailsForContacts(company, contacts);
 
+    // 4) Quality
     let quality = null;
     if (aiResp?.quality && typeof aiResp.quality.score === "number") {
       quality = { score: aiResp.quality.score, factors: Array.isArray(aiResp.quality.factors) ? aiResp.quality.factors : [] };
