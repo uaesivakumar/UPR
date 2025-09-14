@@ -1,112 +1,24 @@
 // dashboard/src/pages/EnrichmentPage.jsx
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { authFetch, adminFetch, getAdminToken } from "../utils/auth";
+import { authFetch, adminFetch } from "../utils/auth";
 
 /* ---------- helpers: robust normalization ---------- */
-const hasDot = (s) => typeof s === "string" && s.includes(".");
-const toDomain = (raw) => {
-  if (!raw) return null;
-  try {
-    if (/^https?:\/\//i.test(raw)) return new URL(raw).hostname.toLowerCase();
-  } catch {}
-  const d = String(raw).toLowerCase().replace(/[^a-z0-9.-]+/g, "");
-  return hasDot(d) ? d : null;
-};
-const toWebsite = (domain) => (domain ? `https://${domain}` : null);
-
-function normalizeEnrichPayload(data) {
-  // Expecting shape like:
-  // { company: { name, domain?, linkedin_url? }, contacts: [{ name, title, email?, email_guess?, linkedin_url?, score? }, ...] }
-  const c = data?.company || {};
-  const domain = toDomain(c.domain || c.website_url || c.website);
-  const website_url = toWebsite(domain);
-
-  const contacts = Array.isArray(data?.contacts)
-    ? data.contacts.map((x, i) => ({
-        id: String(i + 1),
-        name: x.name || "Decision Maker",
-        title: x.title || "Decision Maker",
-        dept: x.dept || null,
-        email: x.email || x.email_guess || null,
-        linkedin: x.linkedin || x.linkedin_url || null,
-        confidence: typeof x.score === "number" ? Math.min(Math.max(x.score, 0), 100) / 100 : 0,
-      }))
-    : [];
-
-  // very basic draft to avoid empty textarea
-  const primary = contacts[0];
-  const draft =
-    `Subject: Exploring alignment with ${c.name || "your company"}\n\n` +
-    `Hi ${primary?.name || "there"},\n\n` +
-    `We’re mapping premium employers in the UAE and thought ${c.name || "your company"} might be a fit. ` +
-    `Would you be open to a quick chat?\n\nThanks,\n—`;
-
-  return {
-    company: {
-      name: c.name || "",
-      linkedin_url: c.linkedin_url || c.linkedin || null,
-      domain,
-      website_url,
-      website: website_url, // for older render helpers below
-      hq: c.hq || null,
-      industry: c.industry || null,
-      size: c.size || null,
-      locations: Array.isArray(c.locations) ? c.locations : (c.hq ? [c.hq] : []),
-      type: c.type || null,
-      notes: c.notes || null,
-    },
-    contacts,
-    score: typeof data?.score === "number" ? data.score : 0,
-    tags: Array.isArray(data?.tags) ? data.tags : [],
-    outreachDraft: data?.outreachDraft || draft,
-  };
+function normStr(v) {
+  if (!v) return null;
+  const s = String(v).trim();
+  return s || null;
+}
+function asArray(v) {
+  if (!v) return [];
+  return Array.isArray(v) ? v : [v];
 }
 
-async function safeJson(resp) {
-  try { return await resp.json(); } catch { return null; }
-}
-
-async function copyToClipboard(text) {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    const el = document.createElement("textarea");
-    el.value = text || "";
-    document.body.appendChild(el);
-    el.select();
-    document.execCommand("copy");
-    document.body.removeChild(el);
-  }
-}
-
-function Row({ label, value }) {
-  return (
-    <div className="flex items-start justify-between gap-4 py-1">
-      <div className="text-xs uppercase text-gray-400 w-24 shrink-0">{label}</div>
-      <div className="text-sm break-all">{value}</div>
-    </div>
-  );
-}
-
-function linkOrText(url) {
-  if (!url) return "—";
-  const safe = url.startsWith("http") ? url : (hasDot(url) ? `https://${url}` : null);
-  return safe ? (
-    <a className="underline" href={safe} target="_blank" rel="noreferrer">
-      {url}
-    </a>
-  ) : (
-    url
-  );
-}
-
-/* ---------- page ---------- */
 export default function EnrichmentPage() {
   const [sp] = useSearchParams();
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState("");
+  const [err, setErr] = useState(null);
 
   const [result, setResult] = useState(null);
   const [primaryContactId, setPrimaryContactId] = useState(null);
@@ -126,33 +38,70 @@ export default function EnrichmentPage() {
 
   async function runEnrichment(e) {
     e.preventDefault();
-    setErr("");
+    setErr(null);
     setResult(null);
     setPrimaryContactId(null);
 
-    const q = query.trim();
-    if (!q) {
+    if (!query.trim()) {
       setErr("Please enter a company URL, LinkedIn, or a descriptive query.");
       return;
     }
 
     setLoading(true);
     try {
-      // Correct endpoint & body shape
-      const res = await authFetch("/api/enrich", {
+      // Call the backend enrich endpoint (no auth required)
+      const res = await fetch("/api/enrich", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ input: q }),
+        body: JSON.stringify({ input: query.trim() }),
       });
-      const data = await safeJson(res);
-      if (!res.ok || !data?.ok) {
-        throw new Error(data?.error || `HTTP ${res.status}`);
+      if (!res.ok) {
+        const data = await safeJson(res);
+        throw new Error(data?.error || "Enrichment failed");
       }
-      const normalized = normalizeEnrichPayload(data.data || {});
-      setResult(normalized);
-      setPrimaryContactId(normalized.contacts?.[0]?.id ?? null);
+      const data = await res.json();
+      if (!data?.ok || !data?.data) throw new Error("Invalid response");
+
+      // Normalize a bit to keep UI stable no matter the backing model
+      const d = data.data || {};
+      const company = {
+        name: normStr(d.company?.name),
+        website: normStr(d.company?.website || d.company?.website_url),
+        linkedin: normStr(d.company?.linkedin || d.company?.linkedin_url),
+        hq: normStr(d.company?.hq),
+        industry: normStr(d.company?.industry),
+        size: normStr(d.company?.size),
+        notes: normStr(d.company?.notes),
+        locations: asArray(d.company?.locations),
+        type: normStr(d.company?.type),
+      };
+
+      const contacts = asArray(d.contacts).map((c) => ({
+        id: c.id || cryptoRandomId(),
+        name: normStr(c.name),
+        title: normStr(c.title || c.designation),
+        dept: normStr(c.dept),
+        email: normStr(c.email),
+        email_guess: normStr(c.email_guess),
+        email_status: normStr(c.email_status) || "unknown",
+        linkedin: normStr(c.linkedin || c.linkedin_url),
+        confidence: typeof c.confidence === "number" ? c.confidence : (typeof c.score === "number" ? c.score / 100 : 0),
+      }));
+
+      const view = {
+        company,
+        contacts,
+        tags: asArray(d.tags),
+        score: typeof d.score === "number" ? d.score : 0,
+        outreachDraft:
+          normStr(d.outreachDraft) ||
+          `Subject: Partnership with ${company.name || "your team"}\n\nHi ${contacts[0]?.name || "there"},\n\n…`,
+      };
+
+      setResult(view);
+      setPrimaryContactId(contacts[0]?.id ?? null);
     } catch (e) {
-      setErr(e?.message || "Enrichment failed");
+      setErr(e?.message || "Something went wrong");
     } finally {
       setLoading(false);
     }
@@ -163,18 +112,17 @@ export default function EnrichmentPage() {
       alert("No company to save.");
       return;
     }
-    const adminToken = getAdminToken();
-    if (!adminToken) {
-      alert("Admin token missing. Open the Admin page and save your ADMIN_TOKEN first.");
-      return;
-    }
 
+    // Build payload for /api/hr-leads/from-enrichment (auth required; uses JWT)
     const company = {
       name: result.company.name,
       type: result.company.type ?? null,
-      locations: result.company.locations ?? (result.company.hq ? [result.company.hq] : []),
-      website_url: result.company.website_url || result.company.website || null,
-      linkedin_url: result.company.linkedin_url ?? null,
+      locations:
+        result.company.locations?.length
+          ? result.company.locations
+          : (result.company.hq ? [result.company.hq] : []),
+      website_url: result.company.website ?? null,
+      linkedin_url: result.company.linkedin ?? null,
     };
 
     const c = primaryContact;
@@ -184,8 +132,8 @@ export default function EnrichmentPage() {
           designation: c.title ?? "Decision Maker",
           linkedin_url: c.linkedin ?? null,
           location: c.dept ?? result.company.hq ?? null,
-          email: c.email ?? null,
-          email_status: c.email ? "validated" : "unknown",
+          email: c.email ?? c.email_guess ?? null,
+          email_status: c.email ? "validated" : (c.email_guess ? "patterned" : "unknown"),
         }
       : {
           name: "Decision Maker",
@@ -206,8 +154,8 @@ export default function EnrichmentPage() {
     try {
       const res = await adminFetch("/api/hr-leads/from-enrichment", {
         method: "POST",
-        headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
+        headers: { "content-type": "application/json" },
       });
       const data = await safeJson(res);
       if (!res.ok || !data?.ok) {
@@ -215,7 +163,7 @@ export default function EnrichmentPage() {
       }
       alert("Lead saved ✅");
     } catch (e) {
-      alert(e?.message || "Failed to save lead");
+      alert(e?.message || "Failed to save lead (are you logged in?)");
     }
   }
 
@@ -228,7 +176,10 @@ export default function EnrichmentPage() {
         </p>
       </div>
 
-      <form onSubmit={runEnrichment} className="bg-white rounded-xl shadow p-4 md:p-5 space-y-3">
+      <form
+        onSubmit={runEnrichment}
+        className="bg-white rounded-xl shadow p-4 md:p-5 space-y-3"
+      >
         <label className="block text-sm font-medium text-gray-700">Input</label>
         <div className="flex flex-col md:flex-row gap-3">
           <input
@@ -258,8 +209,8 @@ export default function EnrichmentPage() {
             <h2 className="text-lg font-semibold text-gray-900">Company</h2>
             <div className="text-sm text-gray-700">
               <Row label="Name" value={result.company.name || "—"} />
-              <Row label="Website" value={linkOrText(result.company.website || result.company.website_url)} />
-              <Row label="LinkedIn" value={linkOrText(result.company.linkedin_url)} />
+              <Row label="Website" value={linkOrText(result.company.website)} />
+              <Row label="LinkedIn" value={linkOrText(result.company.linkedin)} />
               <Row label="HQ" value={result.company.hq || "—"} />
               <Row label="Industry" value={result.company.industry || "—"} />
               <Row label="Size" value={result.company.size || "—"} />
@@ -276,8 +227,11 @@ export default function EnrichmentPage() {
                 <span className="font-medium">{result.score}/100</span>
               </div>
               <div className="flex flex-wrap gap-2">
-                {(result.tags || []).map((t) => (
-                  <span key={t} className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded-full">
+                {result.tags.map((t) => (
+                  <span
+                    key={t}
+                    className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded-full"
+                  >
                     {t}
                   </span>
                 ))}
@@ -287,7 +241,9 @@ export default function EnrichmentPage() {
 
           <section className="lg:col-span-2 bg-white rounded-xl shadow p-5">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900">Suggested Contacts</h2>
+              <h2 className="text-lg font-semibold text-gray-900">
+                Suggested Contacts
+              </h2>
               {result.contacts.length > 0 && (
                 <select
                   className="border rounded-lg px-2 py-1 text-sm"
@@ -321,22 +277,35 @@ export default function EnrichmentPage() {
                   <tbody>
                     {result.contacts.map((c) => (
                       <tr key={c.id} className="border-t border-gray-200">
-                        <td className="px-4 py-2">{c.name}</td>
-                        <td className="px-4 py-2">{c.title}</td>
+                        <td className="px-4 py-2">{c.name || "—"}</td>
+                        <td className="px-4 py-2">{c.title || "—"}</td>
                         <td className="px-4 py-2">{c.dept || "—"}</td>
                         <td className="px-4 py-2">
-                          {c.email ? <a className="underline" href={`mailto:${c.email}`}>{c.email}</a> : "—"}
+                          {c.email || c.email_guess ? (
+                            <a className="underline" href={`mailto:${c.email || c.email_guess}`}>
+                              {c.email || c.email_guess}
+                            </a>
+                          ) : (
+                            "—"
+                          )}
                         </td>
                         <td className="px-4 py-2">
                           {c.linkedin ? (
-                            <a className="underline" href={c.linkedin} target="_blank" rel="noreferrer">
+                            <a
+                              className="underline"
+                              href={c.linkedin}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
                               Profile
                             </a>
                           ) : (
                             "—"
                           )}
                         </td>
-                        <td className="px-4 py-2">{Math.round((c.confidence ?? 0) * 100)}%</td>
+                        <td className="px-4 py-2">
+                          {Math.round((c.confidence ?? 0) * 100)}%
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -347,7 +316,9 @@ export default function EnrichmentPage() {
 
           <section className="lg:col-span-3 bg-white rounded-xl shadow p-5 space-y-3">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900">Outreach Draft</h2>
+              <h2 className="text-lg font-semibold text-gray-900">
+                Outreach Draft
+              </h2>
               <div className="flex gap-2">
                 <button
                   onClick={() => copyToClipboard(result.outreachDraft)}
@@ -367,12 +338,16 @@ export default function EnrichmentPage() {
               className="w-full min-h-[180px] border rounded-xl px-3 py-2"
               value={result.outreachDraft}
               onChange={(e) =>
-                setResult((prev) => (prev ? { ...prev, outreachDraft: e.target.value } : prev))
+                setResult((prev) =>
+                  prev ? { ...prev, outreachDraft: e.target.value } : prev
+                )
               }
             />
             {primaryContact && (
               <p className="text-xs text-gray-500">
-                Primary contact: <span className="font-medium">{primaryContact.name}</span> — {primaryContact.title}
+                Primary contact:{" "}
+                <span className="font-medium">{primaryContact.name}</span> —{" "}
+                {primaryContact.title}
               </p>
             )}
           </section>
@@ -380,4 +355,52 @@ export default function EnrichmentPage() {
       )}
     </div>
   );
+}
+
+async function safeJson(resp) {
+  try {
+    return await resp.json();
+  } catch {
+    return null;
+  }
+}
+
+async function copyToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const el = document.createElement("textarea");
+    el.value = text || "";
+    document.body.appendChild(el);
+    el.select();
+    document.execCommand("copy");
+    document.body.removeChild(el);
+  }
+}
+
+function Row({ label, value }) {
+  return (
+    <div className="flex items-start justify-between gap-4 py-1">
+      <div className="text-xs uppercase text-gray-400 w-24 shrink-0">
+        {label}
+      </div>
+      <div className="text-sm">{value || "—"}</div>
+    </div>
+  );
+}
+
+function linkOrText(url) {
+  if (!url) return "—";
+  const safe = url.startsWith("http") ? url : `https://${url}`;
+  return (
+    <a className="underline" href={safe} target="_blank" rel="noreferrer">
+      {url}
+    </a>
+  );
+}
+
+function cryptoRandomId() {
+  // tiny random id for client-only rows
+  if (crypto?.randomUUID) return crypto.randomUUID();
+  return "id_" + Math.random().toString(36).slice(2);
 }
