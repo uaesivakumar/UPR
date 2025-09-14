@@ -1,85 +1,67 @@
 // dashboard/src/utils/auth.ts
-// Single source of truth for auth in the dashboard (admin-token header flow)
 
-const TOKEN_KEY = "upr_token";
+// Storage keys
+const KEY = "upr_admin_jwt";
 
-/** Basic token helpers */
+// --- token store ---
 export function getToken(): string | null {
-  try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
+  try { return localStorage.getItem(KEY); } catch { return null; }
 }
-export function setToken(token: string | null): void {
-  try {
-    if (token) localStorage.setItem(TOKEN_KEY, token);
-    else localStorage.removeItem(TOKEN_KEY);
-  } catch {}
+export function setToken(t: string) {
+  try { localStorage.setItem(KEY, t); } catch {}
 }
-export function clearToken(): void { setToken(null); }
-export function isAuthed(): boolean { return Boolean(getToken()); }
+export function clearToken() {
+  try { localStorage.removeItem(KEY); } catch {}
+}
 
-/** Header helper for admin-protected API routes */
+// --- headers & fetch helpers ---
 export function getAuthHeader(): Record<string, string> {
   const t = getToken();
-  return t ? { "x-admin-token": t } : {};
+  return t ? { Authorization: `Bearer ${t}` } : {};
 }
 
-/** Fetch wrapper that adds admin header and handles 401 */
 export async function authFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers || {});
   const auth = getAuthHeader();
   for (const [k, v] of Object.entries(auth)) headers.set(k, v);
   const res = await fetch(input, { ...init, headers });
   if (res.status === 401) {
-    try { clearToken(); } finally {
-      if (typeof window !== "undefined") window.location.href = "/login";
-    }
+    try { clearToken(); } finally { if (typeof window !== "undefined") window.location.href = "/login"; }
     throw new Error("Unauthorized");
   }
   return res;
 }
 
-/** Log out client-side and bounce to login */
-export function logout(): void {
-  try { clearToken(); } finally {
-    if (typeof window !== "undefined") window.location.href = "/login";
+// Back-compat alias used in some calls
+export const adminFetch = authFetch;
+
+// --- login / verify / logout ---
+export async function loginWithPassword(username: string, password: string): Promise<void> {
+  const res = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  const data = await safeJson(res);
+  if (!res.ok || !data?.ok || !data?.token) {
+    throw new Error(data?.error || "Login failed");
   }
+  setToken(data.token);
 }
 
-/**
- * Verify an admin token by calling an admin-only endpoint.
- * We POST an empty bulk payload:
- *  - 403 => invalid token
- *  - 200/400/422 => endpoint reached with token (valid)
- */
-export async function verifyToken(token: string | null | undefined): Promise<boolean> {
-  if (!token) return false;
+export async function verifyToken(): Promise<boolean> {
   try {
-    const res = await fetch("/api/hr-leads/bulk", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-admin-token": token,
-      },
-      body: JSON.stringify({ items: [] }),
-    });
-    if (res.status === 403 || res.status === 401) return false;
-    // 200/400/422 means we passed adminOnly and hit handler
-    return true;
+    const res = await authFetch("/api/auth/verify");
+    return res.ok;
   } catch {
     return false;
   }
 }
 
-/** Try to verify, then persist the token if valid */
-export async function loginWithToken(token: string): Promise<boolean> {
-  const ok = await verifyToken(token);
-  if (ok) setToken(token);
-  return ok;
+export function logout(): void {
+  try { clearToken(); } finally { if (typeof window !== "undefined") window.location.href = "/login"; }
 }
 
-/* --------------------------------------------------------------------
-   Back-compat aliases (some pages import these names):
-   - getAdminToken: same as getToken()
-   - adminFetch:    same as authFetch()
---------------------------------------------------------------------- */
-export const getAdminToken = getToken;
-export const adminFetch = authFetch;
+async function safeJson(resp: Response) {
+  try { return await resp.json(); } catch { return null; }
+}

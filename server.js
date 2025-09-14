@@ -2,10 +2,11 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { fileURLToPath, pathToFileURL } from "url";
+import { fileURLToPath } from "url";
 
 import { pool } from "./utils/db.js";
 import { adminOnly } from "./utils/adminOnly.js";
+import { signAdminJwt } from "./utils/jwt.js";
 
 import companiesRouter from "./routes/companies.js";
 import hrLeadsRouter from "./routes/hrLeads.js";
@@ -33,9 +34,24 @@ app.get("/__diag", async (_req, res) => {
   }
 });
 
-// ---------- Admin token verification (used by dashboard login) ----------
+// ---------- Auth (username/password) ----------
+const ADMIN_USER = process.env.ADMIN_USER || "";
+const ADMIN_PASS = process.env.ADMIN_PASS || "";
+
+app.post("/api/auth/login", (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) {
+    return res.status(400).json({ ok: false, error: "username and password required" });
+  }
+  if (username === ADMIN_USER && password === ADMIN_PASS) {
+    const token = signAdminJwt();
+    return res.json({ ok: true, token });
+  }
+  return res.status(401).json({ ok: false, error: "invalid credentials" });
+});
+
+// Used by dashboard to validate stored token
 app.get("/api/admin/verify", adminOnly, (_req, res) => res.json({ ok: true }));
-// Back-compat alias
 app.get("/api/auth/verify", adminOnly, (_req, res) => res.json({ ok: true }));
 
 // ---------- API ----------
@@ -48,43 +64,9 @@ app.use("/api/enrich", enrichRouter);
 const dashboardDist = path.join(__dirname, "dashboard", "dist");
 if (fs.existsSync(dashboardDist)) {
   app.use(express.static(dashboardDist));
-  // SPA fallback
-  app.get("*", (_req, res) => {
-    res.sendFile(path.join(dashboardDist, "index.html"));
-  });
-}
-
-// ---------- Optional background worker boot ----------
-function bootSourcingWorker() {
-  const enabled =
-    String(process.env.SOURCING_WORKER_ENABLED ?? "false").toLowerCase() === "true";
-  if (!enabled) {
-    console.log("[worker] disabled (SOURCING_WORKER_ENABLED!=true). Skipping.");
-    return;
-  }
-  const workerPath = path.join(__dirname, "workers", "sourcingWorker.js");
-  if (!fs.existsSync(workerPath)) {
-    console.warn("[worker] sourcingWorker.js not found. Skipping.");
-    return;
-  }
-  (async () => {
-    try {
-      const url = pathToFileURL(workerPath).href;
-      const mod = await import(url);
-      if (typeof mod.startSourcingWorker === "function") {
-        mod.startSourcingWorker();
-        console.log("[worker] sourcing worker started.");
-      } else {
-        console.warn("[worker] Module has no startSourcingWorker(). Skipping.");
-      }
-    } catch (e) {
-      console.error("[worker] failed to start sourcing worker:", e);
-    }
-  })();
+  app.get("*", (_req, res) => res.sendFile(path.join(dashboardDist, "index.html")));
 }
 
 app.listen(PORT, () => {
   console.log(`UPR backend listening on ${PORT}`);
-  // fire-and-forget
-  bootSourcingWorker();
 });
