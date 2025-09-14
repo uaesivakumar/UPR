@@ -1,10 +1,6 @@
 import express from "express";
 import { aiEnrichFromInput } from "../utils/ai.js";
-import {
-  detectEmailPattern,
-  generateEmail,
-  generateCandidates,
-} from "../utils/emailPatterns.js";
+import { detectPattern, generateEmail, generateCandidates } from "../utils/emailPatterns.js";
 import { verifyEmail } from "../utils/emailVerify.js";
 import { getDomainPattern, setDomainPattern } from "../utils/patternCache.js";
 
@@ -20,10 +16,7 @@ const OPENAI_MODEL =
 const SMTP_VERIFY_ENABLED =
   (process.env.SMTP_VERIFY_ENABLED || "false").toLowerCase() === "true";
 
-const SMTP_VERIFY_MAX = Math.max(
-  0,
-  Number(process.env.SMTP_VERIFY_MAX || 3)
-);
+const SMTP_VERIFY_MAX = Math.max(0, Number(process.env.SMTP_VERIFY_MAX || 3));
 
 /* ------------------------------ helpers ----------------------------- */
 
@@ -53,8 +46,8 @@ function extractDomainFromUrl(u) {
     const url = new URL(u);
     return url.hostname;
   } catch {
-    // not a URL, try raw domain
-    if (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(String(u))) return String(u).toLowerCase();
+    const s = String(u || "").trim().toLowerCase();
+    if (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(s)) return s;
     return null;
   }
 }
@@ -70,7 +63,6 @@ function companyFromAI(raw) {
     size: cleanStr(c.size) || null,
     type: cleanStr(c.type) || null,
     notes: cleanStr(c.notes) || null,
-    // best-effort locations array if present
     locations: Array.isArray(c.locations)
       ? c.locations.filter(Boolean)
       : c.hq
@@ -104,8 +96,23 @@ function contactFromAI(c) {
 }
 
 /**
- * Infer domain → pattern → guessed emails for contacts without email.
- * Optionally verify a limited number of guesses with SMTP providers.
+ * Build {name,email} pairs for pattern detection.
+ */
+function seedPairs(contacts) {
+  if (!Array.isArray(contacts)) return [];
+  return contacts
+    .map((c) => ({
+      name: cleanStr(c?.name) || null,
+      email: cleanStr(c?.email) || null,
+    }))
+    .filter((p) => p.name && p.email && p.email.includes("@"));
+}
+
+/**
+ * Guess/verify emails for contacts that lack a real email using:
+ *  1) cached pattern from patternCache
+ *  2) detectPattern(pairs) if we have seed emails
+ *  3) generateCandidates fallback (choose first)
  */
 async function enrichEmailsForContacts(company, contacts) {
   if (!Array.isArray(contacts) || contacts.length === 0) return contacts;
@@ -115,75 +122,85 @@ async function enrichEmailsForContacts(company, contacts) {
     extractDomainFromUrl(company?.linkedin) ||
     null;
 
-  if (!domain) return contacts;
-
-  // If any real emails exist, use them as seeds
-  const seedEmails = contacts
-    .map((c) => c?.email)
-    .filter(Boolean)
-    .map(String);
-
-  // Try cache first
-  let pattern = await getDomainPattern(domain);
-
-  // If no cached pattern, try to detect from seeds
-  if (!pattern && seedEmails.length) {
-    pattern = detectEmailPattern(domain, seedEmails) || null;
-    if (pattern) {
-      await setDomainPattern(domain, pattern);
-    }
-  }
-
-  // If still no pattern, propose candidates using names and pick the most consistent
-  if (!pattern) {
-    const namePairs = contacts
-      .map((c) => {
-        const n = String(c?.name || "").trim();
-        if (!n) return null;
-        const parts = n.split(/\s+/);
-        return { first: parts[0] || "", last: parts.slice(1).join("") || "" };
-      })
-      .filter(Boolean);
-
-    const candidates = generateCandidates(domain, namePairs);
-    // Heuristic: pick the candidate format that appears most frequently/validly forms emails
-    if (candidates?.length) {
-      pattern = candidates[0]?.pattern || null; // utils should prefer by score
-      if (pattern) {
-        await setDomainPattern(domain, pattern);
+  if (!domain) {
+    // No domain → just mark unknown if missing
+    for (const c of contacts) {
+      if (!c?.email && !c?.email_guess) {
+        c.email_status = c.email_status || "unknown";
       }
     }
+    return contacts;
   }
 
-  // Assign guessed emails when missing
+  // 1) cache
+  const cached = await getDomainPattern(domain);
+  let pattern_id = cached?.pattern_id || null;
+
+  // 2) detect from seeds if no cache
+  if (!pattern_id) {
+    const pairs = seedPairs(contacts);
+    const detected = detectPattern(pairs);
+    if (detected) {
+      pattern_id = detected;
+      await setDomainPattern({
+        domain,
+        pattern_id,
+        source: "detectPattern(seeds)",
+        example: pairs[0]?.email || null,
+      });
+    }
+  }
+
+  // 3) assign guesses
   let verifyCount = 0;
+
   for (const c of contacts) {
     if (!c) continue;
 
-    // if already have a verified email, mark status and continue
+    // keep provided emails
     if (c.email) {
-      c.email_status = c.email_status || "validated"; // treat provided as validated (or leave as-is)
+      c.email_status = c.email_status || "validated";
       continue;
     }
 
-    if (!pattern || !c.name) {
-      // Unable to guess confidently
-      if (!c.email_guess) c.email_status = c.email_status || "unknown";
+    // Need a name to generate anything
+    if (!c.name) {
+      c.email_status = c.email_status || "unknown";
       continue;
     }
 
-    // derive first/last
-    const parts = String(c.name).trim().split(/\s+/);
-    const first = parts[0] || "";
-    const last = parts.slice(1).join("") || "";
+    let guess = null;
 
-    const guess = generateEmail({ first, last }, pattern, domain);
+    if (pattern_id) {
+      // generateEmail(name, domain, pattern_id)
+      guess = generateEmail(c.name, domain, pattern_id);
+    } else {
+      // fallback: generateCandidates(name, domain) then pick the first
+      const cand = generateCandidates(c.name, domain, 1);
+      if (Array.isArray(cand) && cand.length) {
+        pattern_id = cand[0]?.pattern_id || pattern_id;
+        guess = cand[0]?.email || null;
+
+        if (cand[0]?.pattern_id) {
+          await setDomainPattern({
+            domain,
+            pattern_id: cand[0].pattern_id,
+            source: "generateCandidates(fallback)",
+            example: guess,
+          });
+        }
+      }
+    }
+
     if (guess) {
       c.email_guess = c.email_guess || guess;
       c.email_status = c.email_status || "patterned";
+    } else {
+      c.email_status = c.email_status || "unknown";
+      continue;
     }
 
-    // optional SMTP verification with rate-limit per request
+    // Optional SMTP verification (rate-limited per request)
     if (
       SMTP_VERIFY_ENABLED &&
       verifyCount < SMTP_VERIFY_MAX &&
@@ -192,18 +209,24 @@ async function enrichEmailsForContacts(company, contacts) {
     ) {
       try {
         const vr = await verifyEmail(c.email_guess);
-        // normalize verify result
-        if (vr?.status === "valid" || vr?.result === "valid") {
+        if (vr?.status === "valid") {
           c.email = c.email_guess;
           c.email_status = "validated";
-        } else if (vr?.status === "invalid" || vr?.result === "invalid") {
+          await setDomainPattern({
+            domain,
+            pattern_id,
+            source: "smtp-verify",
+            example: c.email,
+            incrementVerified: true,
+          });
+        } else if (vr?.status === "invalid") {
           c.email_status = "bounced";
         } else {
-          // unknown / catch-all / unverifiable
+          // unknown / catch-all → keep as patterned
           c.email_status = c.email_status || "patterned";
         }
       } catch {
-        // swallow verification errors; keep guess as patterned
+        // swallow verifier exceptions
         c.email_status = c.email_status || "patterned";
       } finally {
         verifyCount += 1;
@@ -230,20 +253,23 @@ router.post("/", async (req, res) => {
   }
 
   try {
-    // 1) Call LLM / provider
+    // 1) Provider / LLM
     const aiResp = await aiEnrichFromInput(input);
 
-    // aiResp is expected to include { company, contacts, outreachDraft, model? }
+    // 2) Normalize fields
     const company = companyFromAI(aiResp);
     const contactsRaw = Array.isArray(aiResp?.contacts) ? aiResp.contacts : [];
     const contacts = contactsRaw.map(contactFromAI);
 
-    // 2) Email enrichment (pattern, guess, optional verify)
+    // 3) Email enrichment
     await enrichEmailsForContacts(company, contacts);
 
-    // 3) Response meta
+    // 4) Meta
     const duration_ms = Date.now() - started;
-    const model = aiResp?.model || OPENAI_MODEL;
+    const model =
+      aiResp?.model ||
+      aiResp?.meta?.llm ||
+      OPENAI_MODEL;
 
     const payload = {
       company,
@@ -258,13 +284,11 @@ router.post("/", async (req, res) => {
     return res.json({ ok: true, data: payload });
   } catch (e) {
     const duration_ms = Date.now() - started;
-    return res
-      .status(500)
-      .json({
-        ok: false,
-        error: e?.message || "enrichment failed",
-        _meta: { model: OPENAI_MODEL, duration_ms },
-      });
+    return res.status(500).json({
+      ok: false,
+      error: e?.message || "enrichment failed",
+      _meta: { model: OPENAI_MODEL, duration_ms },
+    });
   }
 });
 
