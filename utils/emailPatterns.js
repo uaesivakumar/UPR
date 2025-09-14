@@ -1,164 +1,266 @@
 // utils/emailPatterns.js
-// Exports:
-//   - detectPattern(pairs) -> pattern_id | null
-//   - generateEmail(name, domain, pattern_id) -> string | null
-//   - generateCandidates(name, domain, limit=5) -> [{ pattern_id, email }]
+// ESM module. Provides helpers to generate candidate emails and detect a domain pattern
+// from known seed emails. Exports:
+//   - detectEmailPattern({ domain, seeds? }) -> string|null
+//   - generateEmail({ first, last, domain, pattern }) -> string
+//   - generateCandidates({ first, last, domain, limit? }) -> string[]
+//
+// Back-compat aliases also exported:
+//   - detectPattern (alias of detectEmailPattern)
+//   - buildCandidates (alias of generateCandidates)
 //
 // Notes:
-// - pattern_id is a *string* label like "first.last", "flast", etc.
-// - name is assumed "First Last" (middle names ignored).
-// - domain should be root like "example.com".
+// - "seeds" is an optional array of known valid emails for this domain;
+//   if absent, detection returns null and callers should try SMTP verify on candidates.
+// - Pattern identifiers (lowercase):
+//     first.last, firstlast, first_last, first-last,
+//     f.last, f_last, f-last, flast, firstl,
+//     last.first, lastfirst, last_first, last-first,
+//     l.first, lfirst
+//
+// All generation is lowercase with ASCII-safe sanitization.
 
-/** Split "First M Last" → {first, last} (lowercased, alnum only) */
-function splitName(name = "") {
-  const parts = String(name)
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
-  if (!parts.length) return { first: null, last: null };
-
-  const first = sanitize(parts[0]);
-  const last = parts.length > 1 ? sanitize(parts[parts.length - 1]) : null;
-  return { first, last };
+const SAFE = /[a-z]/;
+function sanitizeNamePart(s) {
+  if (!s) return "";
+  // keep letters/numbers, strip punctuation/accents (basic)
+  return String(s)
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "") // diacritics
+    .replace(/[^a-z0-9]/g, "");
 }
 
-/** Lowercase alnum-only for local-part generation */
-function sanitize(s = "") {
-  return String(s).toLowerCase().replace(/[^a-z0-9]/g, "");
+function firstInitial(s) {
+  const t = sanitizeNamePart(s);
+  return t ? t[0] : "";
 }
 
-/** Normalize domain by stripping protocol / www. */
-function normalizeDomain(d = "") {
-  let dom = String(d).trim().toLowerCase();
-  dom = dom.replace(/^https?:\/\//, "").replace(/^www\./, "");
-  // keep only host portion
-  const slash = dom.indexOf("/");
-  if (slash >= 0) dom = dom.slice(0, slash);
-  return dom || null;
+function lastInitial(s) {
+  const t = sanitizeNamePart(s);
+  return t ? t[0] : "";
 }
 
-/** Known pattern implementations (local part only) */
-const PATTERNS = {
-  "first.last": ({ first, last }) => (first && last ? `${first}.${last}` : null),
-  "first_last": ({ first, last }) => (first && last ? `${first}_${last}` : null),
-  "first-last": ({ first, last }) => (first && last ? `${first}-${last}` : null),
-
-  "flast": ({ first, last }) => (first && last ? `${first[0]}${last}` : null),
-  "firstl": ({ first, last }) => (first && last ? `${first}${last[0]}` : null),
-  "f.last": ({ first, last }) => (first && last ? `${first[0]}.${last}` : null),
-  "first.l": ({ first, last }) => (first && last ? `${first}.${last[0]}` : null),
-  "f_last": ({ first, last }) => (first && last ? `${first[0]}_${last}` : null),
-
-  "firstlast": ({ first, last }) => (first && last ? `${first}${last}` : null),
-  "lastfirst": ({ first, last }) => (first && last ? `${last}${first}` : null),
-
-  "first": ({ first }) => (first ? first : null),
-  "last": ({ last }) => (last ? last : null),
-  "lfirst": ({ first, last }) => (first && last ? `${last[0]}${first}` : null),
-  "lastf": ({ first, last }) => (first && last ? `${last}${first[0]}` : null),
-};
-
-/** Generate local part by pattern_id, then assemble full email */
-export function generateEmail(name, domain, pattern_id) {
-  if (!name || !domain || !pattern_id) return null;
-  const { first, last } = splitName(name);
-  if (!first) return null;
-
-  const dom = normalizeDomain(domain);
-  if (!dom) return null;
-
-  const fn = PATTERNS[pattern_id];
-  if (!fn) return null;
-
-  const local = fn({ first, last });
-  if (!local) return null;
-
-  return `${local}@${dom}`;
-}
-
-/** Try to detect the pattern that best fits given pairs [{name, email}] */
-export function detectPattern(pairs = []) {
-  // Prepare votes across patterns
-  const voteMap = new Map(Object.keys(PATTERNS).map((k) => [k, 0]));
-
-  let totalComparable = 0;
-
-  for (const p of pairs) {
-    const name = p?.name || "";
-    const email = (p?.email || "").toLowerCase();
-    if (!name || !email.includes("@")) continue;
-
-    const { first, last } = splitName(name);
-    if (!first) continue;
-
-    const [local, dom] = email.split("@");
-    if (!local || !dom) continue;
-
-    totalComparable++;
-
-    for (const [patternId, fn] of Object.entries(PATTERNS)) {
-      const candidate = fn({ first, last });
-      if (candidate && candidate === local) {
-        voteMap.set(patternId, (voteMap.get(patternId) || 0) + 1);
-      }
-    }
+function normDomain(domain) {
+  if (!domain) return null;
+  try {
+    const u = new URL(domain.startsWith("http") ? domain : `https://${domain}`);
+    return u.hostname.toLowerCase();
+  } catch {
+    return String(domain).toLowerCase().replace(/^mailto:/, "").replace(/^@/, "");
   }
-
-  // If we never had anything to compare, return null
-  if (!totalComparable) return null;
-
-  // Find the pattern with the highest votes
-  let bestId = null;
-  let bestVotes = 0;
-  let ties = 0;
-
-  for (const [patternId, votes] of voteMap.entries()) {
-    if (votes > bestVotes) {
-      bestVotes = votes;
-      bestId = patternId;
-      ties = 0;
-    } else if (votes === bestVotes && votes > 0) {
-      ties++;
-    }
-  }
-
-  // Avoid returning a guess on ties or zero-vote results
-  if (!bestVotes || ties > 0) return null;
-
-  return bestId;
 }
 
-/** Produce a small set of candidate emails for a name + domain */
-export function generateCandidates(name, domain, limit = 5) {
-  const dom = normalizeDomain(domain);
-  if (!name || !dom) return [];
+export const PATTERNS = [
+  "first.last",
+  "firstlast",
+  "first_last",
+  "first-last",
+
+  "f.last",
+  "f_last",
+  "f-last",
+  "flast",
+  "firstl",
+
+  "last.first",
+  "lastfirst",
+  "last_first",
+  "last-first",
+
+  "l.first",
+  "lfirst",
+];
+
+/**
+ * Turn (first,last,domain,pattern) into an email.
+ */
+export function generateEmail({ first, last, domain, pattern }) {
+  const f = sanitizeNamePart(first);
+  const l = sanitizeNamePart(last);
+  const d = normDomain(domain);
+  if (!d || (!f && !l)) return null;
+
+  switch (String(pattern).toLowerCase()) {
+    case "first.last":
+      return `${f}.${l}@${d}`;
+    case "firstlast":
+      return `${f}${l}@${d}`;
+    case "first_last":
+      return `${f}_${l}@${d}`;
+    case "first-last":
+      return `${f}-${l}@${d}`;
+
+    case "f.last":
+      return `${firstInitial(f)}.${l}@${d}`;
+    case "f_last":
+      return `${firstInitial(f)}_${l}@${d}`;
+    case "f-last":
+      return `${firstInitial(f)}-${l}@${d}`;
+    case "flast":
+      return `${firstInitial(f)}${l}@${d}`;
+    case "firstl":
+      return `${f}${lastInitial(l)}@${d}`;
+
+    case "last.first":
+      return `${l}.${f}@${d}`;
+    case "lastfirst":
+      return `${l}${f}@${d}`;
+    case "last_first":
+      return `${l}_${f}@${d}`;
+    case "last-first":
+      return `${l}-${f}@${d}`;
+
+    case "l.first":
+      return `${lastInitial(l)}.${f}@${d}`;
+    case "lfirst":
+      return `${lastInitial(l)}${f}@${d}`;
+
+    default:
+      // sensible default
+      return `${f}.${l}@${d}`;
+  }
+}
+
+/**
+ * Generate a ranked list of likely candidate emails for a person at a domain.
+ */
+export function generateCandidates({ first, last, domain, limit = 10 }) {
+  const f = sanitizeNamePart(first);
+  const l = sanitizeNamePart(last);
+  const d = normDomain(domain);
+  if (!d || (!f && !l)) return [];
+
+  // order by global prevalence
   const order = [
     "first.last",
     "flast",
     "firstlast",
-    "first",
-    "last",
+    "f.last",
+    "firstl",
     "first_last",
     "first-last",
-    "f.last",
-    "lastf",
-    "first.l",
-    "firstl",
+    "last.first",
+    "l.first",
     "lastfirst",
-    "f_last",
     "lfirst",
+    "last_first",
+    "last-first",
   ];
 
   const out = [];
-  const seen = new Set();
-
-  for (const pattern_id of order) {
-    const email = generateEmail(name, dom, pattern_id);
-    if (!email) continue;
-    if (seen.has(email)) continue;
-    seen.add(email);
-    out.push({ pattern_id, email });
+  for (const p of order) {
+    const email = generateEmail({ first: f, last: l, domain: d, pattern: p });
+    if (email && SAFE.test(email)) out.push(email);
     if (out.length >= limit) break;
   }
   return out;
 }
+
+/**
+ * Detect the dominant email pattern for a domain from known seed emails.
+ * If no seeds are provided or detection is ambiguous, returns null.
+ *
+ * @param {Object} opts
+ * @param {String} opts.domain - The domain to detect for (e.g., "petrofac.com")
+ * @param {Array<String>} [opts.seeds] - Known valid emails for this domain
+ * @returns {String|null} pattern id
+ */
+export function detectEmailPattern({ domain, seeds = [] } = {}) {
+  const d = normDomain(domain);
+  const emails = Array.isArray(seeds) ? seeds : [];
+  if (!d || emails.length === 0) return null;
+
+  // extract name parts from seeds like john.smith@domain
+  const rows = emails
+    .map((e) => String(e).toLowerCase().trim())
+    .filter((e) => e.endsWith(`@${d}`))
+    .map((e) => e.split("@")[0])
+    .map((local) => {
+      // attempt to decompose common patterns to [first,last]
+      // we try several splitters; if we can't safely parse, skip
+      let first = null;
+      let last = null;
+
+      const trySet = (a, b) => {
+        if (a && b) {
+          first = sanitizeNamePart(a);
+          last = sanitizeNamePart(b);
+        }
+      };
+
+      if (local.includes(".")) {
+        const [a, b] = local.split(".");
+        trySet(a, b);
+      }
+      if ((!first || !last) && local.includes("_")) {
+        const [a, b] = local.split("_");
+        trySet(a, b);
+      }
+      if ((!first || !last) && local.includes("-")) {
+        const [a, b] = local.split("-");
+        trySet(a, b);
+      }
+      if ((!first || !last) && local.length >= 2) {
+        // heuristics for flast / firstl
+        // flast: jsmith
+        // firstl: johns
+        const m = local.match(/^([a-z])([a-z]+)$/);
+        if (m) {
+          first = m[1];
+          last = m[2];
+        } else if (local.length > 2) {
+          // lastfirst or firstlast — ambiguous; give up
+        }
+      }
+
+      return first && last ? { first, last, local } : null;
+    })
+    .filter(Boolean);
+
+  if (!rows.length) return null;
+
+  // vote the pattern that best recreates the local part
+  const votes = new Map(); // pattern -> count
+  for (const r of rows) {
+    for (const p of PATTERNS) {
+      const email = generateEmail({ first: r.first, last: r.last, domain: d, pattern: p });
+      const local = email ? email.split("@")[0] : "";
+      if (local === r.local) {
+        votes.set(p, (votes.get(p) || 0) + 1);
+      }
+    }
+  }
+
+  if (votes.size === 0) return null;
+
+  // pick the most voted pattern; break ties by our global order preference
+  const pref = new Map(PATTERNS.map((p, i) => [p, i]));
+  let best = null;
+  let bestCount = -1;
+  let bestPref = Infinity;
+
+  for (const [p, count] of votes.entries()) {
+    const prefRank = pref.get(p) ?? 999;
+    if (count > bestCount || (count === bestCount && prefRank < bestPref)) {
+      best = p;
+      bestCount = count;
+      bestPref = prefRank;
+    }
+  }
+
+  return best || null;
+}
+
+// -------- Backwards-compat aliases --------
+export const detectPattern = detectEmailPattern;
+export const buildCandidates = generateCandidates;
+
+export default {
+  detectEmailPattern,
+  generateEmail,
+  generateCandidates,
+  detectPattern: detectEmailPattern,
+  buildCandidates: generateCandidates,
+  PATTERNS,
+};
