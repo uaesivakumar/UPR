@@ -3,20 +3,15 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
-import bcrypt from "bcryptjs";
 
 import { pool } from "./utils/db.js";
 import { adminOnly } from "./utils/adminOnly.js";
 
-// API routers
 import companiesRouter from "./routes/companies.js";
 import hrLeadsRouter from "./routes/hrLeads.js";
 import newsRouter from "./routes/news.js";
 import enrichRouter from "./routes/enrich.js";
-import statsRouter from "./routes/stats.js"; // <-- NEW
-
-// JWT helpers (support whichever export name your utils/jwt.js provides)
-import * as jwtUtil from "./utils/jwt.js";
+import { signJwt } from "./utils/jwt.js"; // username/password login
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -34,85 +29,98 @@ app.get("/__diag", async (_req, res) => {
   try {
     await pool.query("SELECT 1");
     res.json({ ok: true, db_ok: true });
-  } catch {
-    res.status(500).json({ ok: false, db_ok: false });
+  } catch (err) {
+    res.status(500).json({ ok: false, db_ok: false, error: String(err?.message || err) });
   }
 });
 
-// ---------- Auth (username/password + JWT) ----------
-const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "";
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
-const ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH || "";
-
-// Pick whichever exists in utils/jwt.js
-const signToken =
-  jwtUtil.signAdminJwt || jwtUtil.signJwt || jwtUtil.sign || (() => { throw new Error("No signer in utils/jwt.js"); });
-
+// ---------- Auth (username/password only) ----------
 app.post("/api/auth/login", async (req, res) => {
   try {
     const { username, password } = req.body || {};
+    const u = process.env.ADMIN_USERNAME || "admin";
+    const p = process.env.ADMIN_PASSWORD || "admin123";
+
     if (!username || !password) {
-      return res.status(400).json({ ok: false, error: "username and password required" });
+      return res.status(400).json({ ok: false, error: "missing credentials" });
     }
-    if (!ADMIN_USERNAME || (!ADMIN_PASSWORD && !ADMIN_PASSWORD_HASH)) {
-      return res.status(500).json({ ok: false, error: "server auth not configured" });
-    }
-
-    const userOk = username === ADMIN_USERNAME;
-    let passOk = false;
-
-    if (ADMIN_PASSWORD_HASH) {
-      try {
-        passOk = await bcrypt.compare(password, ADMIN_PASSWORD_HASH);
-      } catch {
-        passOk = false;
-      }
-    } else {
-      passOk = password === ADMIN_PASSWORD;
-    }
-
-    if (!userOk || !passOk) {
+    if (String(username) !== String(u) || String(password) !== String(p)) {
       return res.status(401).json({ ok: false, error: "invalid credentials" });
     }
-
-    const token = signToken({ sub: ADMIN_USERNAME, role: "admin" }, { expiresIn: "30d" });
+    const token = signJwt({ sub: "admin", role: "admin" }, "12h");
     return res.json({ ok: true, token });
   } catch (e) {
-    console.error("login error:", e);
     return res.status(500).json({ ok: false, error: "login failed" });
   }
 });
 
-// Verification used by the dashboard client
+// Handy verify endpoint for the dashboard
 app.get("/api/auth/verify", adminOnly, (_req, res) => res.json({ ok: true }));
-// Back-compat (old UI)
-app.get("/api/admin/verify", adminOnly, (_req, res) => res.json({ ok: true }));
 
-// ---------- API ----------
+// ---------- Stats (for DashboardHome) ----------
+app.get("/api/stats", adminOnly, async (_req, res) => {
+  const safeCount = async (sql) => {
+    try {
+      const { rows } = await pool.query(sql);
+      return Number(rows?.[0]?.count || 0);
+    } catch {
+      return 0;
+    }
+  };
+  const companies = await safeCount(`SELECT COUNT(*) FROM companies`);
+  const leads     = await safeCount(`SELECT COUNT(*) FROM hr_leads`);
+  const new7d     = await safeCount(`SELECT COUNT(*) FROM hr_leads WHERE created_at >= NOW() - INTERVAL '7 days'`);
+  // Outreach: if you have a messages/outreach table, replace this; otherwise we approximate:
+  const outreach  = await safeCount(`SELECT COUNT(*) FROM hr_leads WHERE status ILIKE 'contacted' OR status ILIKE 'outreach%'`);
+
+  let recent = [];
+  try {
+    const { rows } = await pool.query(`
+      SELECT id, company_name, role, status, created_at
+      FROM hr_leads
+      ORDER BY created_at DESC NULLS LAST
+      LIMIT 5
+    `);
+    recent = rows || [];
+  } catch {
+    recent = [];
+  }
+
+  res.json({
+    ok: true,
+    data: { companies, leads, outreach, new7d, recent }
+  });
+});
+
+// ---------- API Routers ----------
 app.use("/api/companies", companiesRouter);
 app.use("/api/hr-leads", hrLeadsRouter);
 app.use("/api/news", newsRouter);
 app.use("/api/enrich", enrichRouter);
-app.use("/api/stats", statsRouter); // <-- NEW
 
 // ---------- Static (dashboard SPA) ----------
 const dashboardDist = path.join(__dirname, "dashboard", "dist");
+
+// serve static assets (cache) but *not* index.html
 if (fs.existsSync(dashboardDist)) {
-  // Cache built assets, but always fetch a fresh index.html so new deploys reflect immediately
-  app.use(express.static(dashboardDist, { maxAge: "1h", immutable: true }));
+  app.use(
+    express.static(dashboardDist, {
+      setHeaders: (res, filePath) => {
+        // don’t cache HTML (especially index.html)
+        if (filePath.endsWith(".html")) {
+          res.setHeader("Cache-Control", "no-store, must-revalidate");
+        }
+      },
+    })
+  );
 
-  // SPA fallback – mark HTML as no-store so browsers don't keep old shells
-  app.get("*", (_req, res) => {
-    res.setHeader("Cache-Control", "no-store");
-    res.sendFile(path.join(dashboardDist, "index.html"));
+  const indexFile = path.join(dashboardDist, "index.html");
+
+  // SPA fallback: anything not under /api/* returns index.html with no-store
+  app.get(/^(?!\/api\/).*/, (_req, res) => {
+    res.setHeader("Cache-Control", "no-store, must-revalidate");
+    res.sendFile(indexFile);
   });
-}
-
-// ---------- Optional worker banner ----------
-if ((process.env.SOURCING_WORKER_ENABLED || "").toLowerCase() === "true") {
-  console.log("[worker] enabled (external worker process should be running).");
-} else {
-  console.log("[worker] disabled (SOURCING_WORKER_ENABLED!=true). Skipping.");
 }
 
 app.listen(PORT, () => {
