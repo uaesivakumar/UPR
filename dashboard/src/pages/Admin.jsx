@@ -1,181 +1,220 @@
 // dashboard/src/pages/Admin.jsx
-import { useEffect, useMemo, useState } from "react";
-import { adminFetch, getAdminToken, setAdminToken } from "../utils/auth";
+import { useEffect, useState } from "react";
+import { authFetch, logout } from "../utils/auth";
 
 export default function Admin() {
-  const [token, setToken] = useState("");
-  const [busy1, setBusy1] = useState(false);
-  const [busy2, setBusy2] = useState(false);
-  const [resp1, setResp1] = useState("");
-  const [resp2, setResp2] = useState("");
+  const [verifyMsg, setVerifyMsg] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    setToken(getAdminToken());
-  }, []);
-
-  const exampleEnrichment = useMemo(
-    () => ({
-      company: {
-        name: "G42",
-        type: "ALE",
-        locations: ["Abu Dhabi"],
-        website_url: "https://g42.ai",
-        linkedin_url: "https://www.linkedin.com/company/g42ai/",
+  // demo payloads
+  const [enrichmentJson, setEnrichmentJson] = useState(() =>
+    JSON.stringify(
+      {
+        company: {
+          name: "Acme Corp",
+          type: "Private",
+          locations: ["Dubai"],
+          website_url: "https://acme.example",
+          linkedin_url: "https://www.linkedin.com/company/acme",
+        },
+        contact: {
+          name: "Jane Doe",
+          designation: "HR Director",
+          linkedin_url: "https://www.linkedin.com/in/janedoe",
+          location: "Dubai",
+          email: "jane.doe@acme.example",
+          email_status: "validated",
+        },
+        status: "New",
+        notes: "Saved from Admin page",
       },
-      contact: {
-        name: "Jane HR",
-        designation: "Head of Talent",
-        linkedin_url: "https://linkedin.com/in/jane-doe",
-        location: "Abu Dhabi",
-        email: "jane.doe@g42.ai",
-        email_status: "guessed",
-      },
-      status: "Contacted",
-      notes: "Imported from admin UI test",
-    }),
-    []
+      null,
+      2
+    )
   );
 
-  const exampleBulk = useMemo(
-    () => ({
-      items: [
+  const [bulkJson, setBulkJson] = useState(() =>
+    JSON.stringify(
+      [
         {
-          company_name: "G42",
-          name: "John Smith",
-          designation: "Recruitment Lead",
-          linkedin_url: "https://linkedin.com/in/john-smith",
-          location: "Dubai",
-          email: "john.smith@g42.ai",
-          email_status: "patterned",
-          lead_status: "New",
+          company: {
+            name: "Beta LLC",
+            locations: ["Abu Dhabi"],
+            website_url: "https://beta.example",
+          },
+          contact: { name: "Ali Khan", designation: "TA Manager", email: null },
+          status: "New",
+          notes: "Bulk import 1",
         },
         {
-          company_name: "ADNOC",
-          name: "Sara Ali",
-          designation: "TA Manager",
-          location: "Abu Dhabi",
-          email_status: "unknown",
+          company: { name: "Gamma FZ-LLC", locations: ["Dubai"] },
+          contact: { name: "Sara Lee", designation: "HRBP", email: "sara@gamma.example" },
+          status: "New",
+          notes: "Bulk import 2",
         },
       ],
-    }),
-    []
+      null,
+      2
+    )
   );
 
-  const [payload1, setPayload1] = useState(JSON.stringify(exampleEnrichment, null, 2));
-  const [payload2, setPayload2] = useState(JSON.stringify(exampleBulk, null, 2));
+  useEffect(() => {
+    // quick verify on load (optional)
+    (async () => {
+      try {
+        const res = await authFetch("/api/admin/verify");
+        setVerifyMsg(res.ok ? "✅ Admin verified" : "❌ Not authorized");
+      } catch {
+        setVerifyMsg("❌ Not authorized");
+      }
+    })();
+  }, []);
 
-  function saveToken() {
-    setAdminToken(token.trim());
-    alert("Admin token saved.");
-  }
-
-  async function callFromEnrichment() {
-    setBusy1(true);
-    setResp1("");
+  async function doVerify() {
+    setBusy(true);
+    setVerifyMsg("");
     try {
-      const res = await adminFetch("/api/hr-leads/from-enrichment", {
-        method: "POST",
-        body: payload1,
-      });
-      const text = await res.text();
-      setResp1(text);
+      const res = await authFetch("/api/admin/verify");
+      setVerifyMsg(res.ok ? "✅ Admin verified" : "❌ Not authorized");
     } catch (e) {
-      setResp1(String(e));
+      setVerifyMsg("❌ Not authorized");
     } finally {
-      setBusy1(false);
+      setBusy(false);
     }
   }
 
-  async function callBulk() {
-    setBusy2(true);
-    setResp2("");
+  async function saveFromEnrichment() {
+    setBusy(true);
     try {
-      const res = await adminFetch("/api/hr-leads/bulk", {
+      let payload;
+      try {
+        payload = JSON.parse(enrichmentJson);
+      } catch {
+        alert("Enrichment JSON is invalid.");
+        return;
+      }
+      const res = await authFetch("/api/hr-leads/from-enrichment", {
         method: "POST",
-        body: payload2,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
       });
-      const text = await res.text();
-      setResp2(text);
+      const data = await safeJson(res);
+      if (!res.ok || !data?.ok) throw new Error(data?.error || "Save failed");
+      alert("Saved ✅");
     } catch (e) {
-      setResp2(String(e));
+      alert(e?.message || "Save failed");
     } finally {
-      setBusy2(false);
+      setBusy(false);
+    }
+  }
+
+  async function bulkImport() {
+    setBusy(true);
+    try {
+      let rows;
+      try {
+        rows = JSON.parse(bulkJson);
+        if (!Array.isArray(rows)) throw new Error("Bulk JSON must be an array");
+      } catch (e) {
+        alert(e.message || "Bulk JSON is invalid.");
+        return;
+      }
+      const res = await authFetch("/api/hr-leads/bulk", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ items: rows }),
+      });
+      const data = await safeJson(res);
+      if (!res.ok || !data?.ok) throw new Error(data?.error || "Bulk import failed");
+      alert(`Imported ${data.count ?? rows.length} rows ✅`);
+    } catch (e) {
+      alert(e?.message || "Bulk import failed");
+    } finally {
+      setBusy(false);
     }
   }
 
   return (
     <div className="space-y-8">
       <header>
-        <h1 className="text-2xl font-semibold text-gray-900">Admin Tools</h1>
+        <h1 className="text-2xl font-semibold text-gray-900">Admin</h1>
         <p className="text-sm text-gray-500">
-          Provide your admin token, then exercise admin-only endpoints.
+          You’re authenticated with username/password. Admin actions below use your JWT automatically.
         </p>
       </header>
 
       <section className="bg-white rounded-xl shadow p-5 space-y-3">
-        <h2 className="text-lg font-semibold text-gray-900">Admin Token</h2>
-        <div className="flex gap-3 items-center">
-          <input
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-            placeholder="paste ADMIN_TOKEN"
-            className="flex-1 rounded-xl border border-gray-300 px-3 py-2"
-          />
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900">Session</h2>
+          <div className="flex gap-2">
+            <button
+              onClick={doVerify}
+              disabled={busy}
+              className="rounded-lg bg-gray-900 text-white px-3 py-1.5 text-sm hover:bg-gray-800 disabled:opacity-60"
+            >
+              Verify Admin
+            </button>
+            <button
+              onClick={() => logout()}
+              className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+        <p className="text-sm">{verifyMsg}</p>
+      </section>
+
+      <section className="bg-white rounded-xl shadow p-5 space-y-3">
+        <h2 className="text-lg font-semibold text-gray-900">Save From Enrichment JSON</h2>
+        <p className="text-sm text-gray-500">
+          POST <code className="bg-gray-100 px-1 rounded">/api/hr-leads/from-enrichment</code>
+        </p>
+        <textarea
+          className="w-full min-h-[220px] border rounded-xl px-3 py-2 font-mono text-xs"
+          value={enrichmentJson}
+          onChange={(e) => setEnrichmentJson(e.target.value)}
+        />
+        <div className="flex justify-end">
           <button
-            onClick={saveToken}
-            className="rounded-xl bg-gray-900 text-white px-4 py-2 font-medium hover:bg-gray-800"
+            onClick={saveFromEnrichment}
+            disabled={busy}
+            className="rounded-lg bg-gray-900 text-white px-3 py-1.5 text-sm hover:bg-gray-800 disabled:opacity-60"
           >
             Save
           </button>
         </div>
-        <p className="text-xs text-gray-500">
-          Stored in <code>localStorage.ADMIN_TOKEN</code>.
+      </section>
+
+      <section className="bg-white rounded-xl shadow p-5 space-y-3">
+        <h2 className="text-lg font-semibold text-gray-900">Bulk Import</h2>
+        <p className="text-sm text-gray-500">
+          POST <code className="bg-gray-100 px-1 rounded">/api/hr-leads/bulk</code> with{" "}
+          <code className="bg-gray-100 px-1 rounded">{`{ items: [...] }`}</code>
         </p>
-      </section>
-
-      <section className="bg-white rounded-xl shadow p-5 space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">POST /api/hr-leads/from-enrichment</h2>
+        <textarea
+          className="w-full min-h-[220px] border rounded-xl px-3 py-2 font-mono text-xs"
+          value={bulkJson}
+          onChange={(e) => setBulkJson(e.target.value)}
+        />
+        <div className="flex justify-end">
           <button
-            onClick={callFromEnrichment}
-            disabled={busy1}
-            className="rounded-xl bg-gray-900 text-white px-4 py-2 text-sm hover:bg-gray-800 disabled:opacity-60"
+            onClick={bulkImport}
+            disabled={busy}
+            className="rounded-lg bg-gray-900 text-white px-3 py-1.5 text-sm hover:bg-gray-800 disabled:opacity-60"
           >
-            {busy1 ? "Sending…" : "Send"}
+            Import
           </button>
         </div>
-        <textarea
-          className="w-full min-h-[220px] border rounded-xl px-3 py-2 font-mono text-sm"
-          value={payload1}
-          onChange={(e) => setPayload1(e.target.value)}
-        />
-        <div className="text-xs uppercase text-gray-400">Response</div>
-        <pre className="w-full min-h-[120px] border rounded-xl p-3 bg-gray-50 overflow-auto text-xs">
-{resp1 || ""}
-        </pre>
-      </section>
-
-      <section className="bg-white rounded-xl shadow p-5 space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">POST /api/hr-leads/bulk</h2>
-          <button
-            onClick={callBulk}
-            disabled={busy2}
-            className="rounded-xl bg-gray-900 text-white px-4 py-2 text-sm hover:bg-gray-800 disabled:opacity-60"
-          >
-            {busy2 ? "Sending…" : "Send"}
-          </button>
-        </div>
-        <textarea
-          className="w-full min-h-[220px] border rounded-xl px-3 py-2 font-mono text-sm"
-          value={payload2}
-          onChange={(e) => setPayload2(e.target.value)}
-        />
-        <div className="text-xs uppercase text-gray-400">Response</div>
-        <pre className="w-full min-h-[120px] border rounded-xl p-3 bg-gray-50 overflow-auto text-xs">
-{resp2 || ""}
-        </pre>
       </section>
     </div>
   );
+}
+
+async function safeJson(res) {
+  try {
+    return await res.json();
+  } catch {
+    return null;
+  }
 }
