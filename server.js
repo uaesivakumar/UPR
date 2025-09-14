@@ -11,6 +11,8 @@ import companiesRouter from "./routes/companies.js";
 import hrLeadsRouter from "./routes/hrLeads.js";
 import newsRouter from "./routes/news.js";
 import enrichRouter from "./routes/enrich.js";
+import sourcingRouter from "./routes/sourcing.js";
+import { startSourcingWorker } from "./workers/sourcingWorker.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -34,25 +36,20 @@ app.get("/__diag", async (_req, res) => {
 });
 
 // ---------- Admin token verification (used by dashboard login) ----------
-app.get("/api/admin/verify", adminOnly, (_req, res) => {
-  res.json({ ok: true });
-});
-// Alias if the UI calls /api/auth/verify
-app.get("/api/auth/verify", adminOnly, (_req, res) => {
-  res.json({ ok: true });
-});
+app.get("/api/admin/verify", adminOnly, (_req, res) => res.json({ ok: true }));
+app.get("/api/auth/verify", adminOnly, (_req, res) => res.json({ ok: true })); // alias
 
 // ---------- API ----------
 app.use("/api/companies", companiesRouter);
 app.use("/api/hr-leads", hrLeadsRouter);
 app.use("/api/news", newsRouter);
 app.use("/api/enrich", enrichRouter);
+app.use("/api/sourcing", sourcingRouter);
 
 // ---------- Static (dashboard SPA) ----------
 const dashboardDist = path.join(__dirname, "dashboard", "dist");
 if (fs.existsSync(dashboardDist)) {
   app.use(express.static(dashboardDist));
-  // SPA fallback
   app.get("*", (_req, res) => {
     res.sendFile(path.join(dashboardDist, "index.html"));
   });
@@ -60,4 +57,10 @@ if (fs.existsSync(dashboardDist)) {
 
 app.listen(PORT, () => {
   console.log(`UPR backend listening on ${PORT}`);
+  if (process.env.ENABLE_SOURCING_WORKER === "1") {
+    console.log("Starting sourcing worker…");
+    startSourcingWorker();
+  } else {
+    console.log("Sourcing worker disabled (set ENABLE_SOURCING_WORKER=1 to enable).");
+  }
 });
