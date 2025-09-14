@@ -1,9 +1,7 @@
-// routes/enrich.js
 import express from "express";
-import { ok, bad } from "../utils/respond.js";
 import { aiEnrichFromInput } from "../utils/ai.js";
 import {
-  detectPattern,
+  detectEmailPattern,
   generateEmail,
   generateCandidates,
 } from "../utils/emailPatterns.js";
@@ -12,157 +10,261 @@ import { getDomainPattern, setDomainPattern } from "../utils/patternCache.js";
 
 const router = express.Router();
 
-const VERIFY_ENABLED = (process.env.SMTP_VERIFY_ENABLED || "true")
-  .toLowerCase()
-  === "true";
-const VERIFY_MAX = Number(process.env.SMTP_VERIFY_MAX || 3);
+/* ------------------------------- config ------------------------------ */
 
-/** Normalize a domain from company fields */
-function extractDomain(company = {}) {
-  let domain = company.domain || null;
-  if (!domain && company.website) {
-    try {
-      const u = new URL(company.website);
-      domain = u.hostname;
-    } catch {
-      /* ignore */
-    }
-  }
-  if (domain) domain = String(domain).replace(/^www\./i, "").toLowerCase();
-  return domain || null;
+const OPENAI_MODEL =
+  process.env.OPENAI_MODEL ||
+  process.env.VITE_OPENAI_MODEL ||
+  "gpt-4o-mini";
+
+const SMTP_VERIFY_ENABLED =
+  (process.env.SMTP_VERIFY_ENABLED || "false").toLowerCase() === "true";
+
+const SMTP_VERIFY_MAX = Math.max(
+  0,
+  Number(process.env.SMTP_VERIFY_MAX || 3)
+);
+
+/* ------------------------------ helpers ----------------------------- */
+
+function cleanStr(s) {
+  if (!s) return null;
+  const t = String(s).trim();
+  return t.length ? t : null;
 }
 
-async function runPipeline(input) {
-  const data = await aiEnrichFromInput(String(input).trim());
+function titleCase(s) {
+  if (!s) return s;
+  return String(s)
+    .toLowerCase()
+    .replace(/\b([a-z])/g, (m, c) => c.toUpperCase());
+}
 
-  // --- 1) Determine domain and check pattern cache
-  const domain = extractDomain(data.company);
-  let cachedPat = null;
-  if (domain) {
-    const cached = await getDomainPattern(domain);
-    cachedPat = cached?.pattern_id || null;
+function normalizeUrl(u) {
+  if (!u) return null;
+  const s = String(u).trim();
+  if (!s) return null;
+  if (/^https?:\/\//i.test(s)) return s;
+  return `https://${s}`;
+}
+
+function extractDomainFromUrl(u) {
+  try {
+    const url = new URL(u);
+    return url.hostname;
+  } catch {
+    // not a URL, try raw domain
+    if (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(String(u))) return String(u).toLowerCase();
+    return null;
+  }
+}
+
+function companyFromAI(raw) {
+  const c = raw?.company || raw?.data?.company || raw || {};
+  const out = {
+    name: cleanStr(c.name) ? titleCase(c.name) : null,
+    website: normalizeUrl(c.website ?? c.website_url),
+    linkedin: normalizeUrl(c.linkedin ?? c.linkedin_url),
+    hq: cleanStr(c.hq) || cleanStr(c.location) || null,
+    industry: cleanStr(c.industry) || null,
+    size: cleanStr(c.size) || null,
+    type: cleanStr(c.type) || null,
+    notes: cleanStr(c.notes) || null,
+    // best-effort locations array if present
+    locations: Array.isArray(c.locations)
+      ? c.locations.filter(Boolean)
+      : c.hq
+      ? [c.hq]
+      : [],
+  };
+  return out;
+}
+
+function contactFromAI(c) {
+  if (!c) return null;
+  const name = cleanStr(c.name);
+  const title = cleanStr(c.title || c.role);
+  const dept = cleanStr(c.dept || c.department);
+  const linkedin = normalizeUrl(c.linkedin || c.linkedin_url);
+  const email = cleanStr(c.email);
+  const email_guess = cleanStr(c.email_guess);
+
+  return {
+    id: c.id || undefined,
+    name: name || null,
+    title: title || null,
+    dept: dept || null,
+    linkedin: linkedin || null,
+    email: email || null,
+    email_guess: email_guess || null,
+    email_status: cleanStr(c.email_status) || null,
+    confidence: typeof c.confidence === "number" ? c.confidence : null,
+    score: typeof c.score === "number" ? c.score : null,
+  };
+}
+
+/**
+ * Infer domain → pattern → guessed emails for contacts without email.
+ * Optionally verify a limited number of guesses with SMTP providers.
+ */
+async function enrichEmailsForContacts(company, contacts) {
+  if (!Array.isArray(contacts) || contacts.length === 0) return contacts;
+
+  const domain =
+    extractDomainFromUrl(company?.website) ||
+    extractDomainFromUrl(company?.linkedin) ||
+    null;
+
+  if (!domain) return contacts;
+
+  // If any real emails exist, use them as seeds
+  const seedEmails = contacts
+    .map((c) => c?.email)
+    .filter(Boolean)
+    .map(String);
+
+  // Try cache first
+  let pattern = await getDomainPattern(domain);
+
+  // If no cached pattern, try to detect from seeds
+  if (!pattern && seedEmails.length) {
+    pattern = detectEmailPattern(domain, seedEmails) || null;
+    if (pattern) {
+      await setDomainPattern(domain, pattern);
+    }
   }
 
-  // --- 2) Detect pattern from any name/email pairs present
-  const pairs = (data.contacts || [])
-    .filter((c) => c?.name && c?.email && String(c.email).includes("@"))
-    .map((c) => ({ name: c.name, email: c.email }));
+  // If still no pattern, propose candidates using names and pick the most consistent
+  if (!pattern) {
+    const namePairs = contacts
+      .map((c) => {
+        const n = String(c?.name || "").trim();
+        if (!n) return null;
+        const parts = n.split(/\s+/);
+        return { first: parts[0] || "", last: parts.slice(1).join("") || "" };
+      })
+      .filter(Boolean);
 
-  const detectedPat = detectPattern(pairs);
-  const choosePat = cachedPat || detectedPat || null;
-
-  // --- 3) Populate missing emails via pattern or candidates
-  if (domain && Array.isArray(data.contacts)) {
-    for (const c of data.contacts) {
-      if (!c) continue;
-      const needsGuess = !c.email && !c.email_guess && c.name;
-      if (!needsGuess) continue;
-
-      if (choosePat) {
-        const guess = generateEmail(c.name, domain, choosePat);
-        if (guess) {
-          c.email_guess = guess;
-          c.email_status = c.email_status || "patterned";
-        }
-      } else {
-        const candidates = generateCandidates(c.name, domain, 1);
-        if (candidates?.[0]?.email) {
-          c.email_guess = candidates[0].email;
-          c.email_status = c.email_status || "patterned";
-        }
+    const candidates = generateCandidates(domain, namePairs);
+    // Heuristic: pick the candidate format that appears most frequently/validly forms emails
+    if (candidates?.length) {
+      pattern = candidates[0]?.pattern || null; // utils should prefer by score
+      if (pattern) {
+        await setDomainPattern(domain, pattern);
       }
     }
   }
 
-  // --- 4) Verify a handful (deduped) and mark statuses
-  let validatedAny = false;
-  if (VERIFY_ENABLED && domain && Array.isArray(data.contacts) && VERIFY_MAX > 0) {
-    const targets = [];
-    for (const c of data.contacts) {
-      if (c?.email) targets.push(c.email);
-      if (c?.email_guess) targets.push(c.email_guess);
+  // Assign guessed emails when missing
+  let verifyCount = 0;
+  for (const c of contacts) {
+    if (!c) continue;
+
+    // if already have a verified email, mark status and continue
+    if (c.email) {
+      c.email_status = c.email_status || "validated"; // treat provided as validated (or leave as-is)
+      continue;
     }
 
-    const seen = new Set();
-    const toCheck = [];
-    for (const e of targets) {
-      const v = String(e || "").toLowerCase();
-      if (!v || seen.has(v)) continue;
-      seen.add(v);
-      toCheck.push(v);
-      if (toCheck.length >= VERIFY_MAX) break;
+    if (!pattern || !c.name) {
+      // Unable to guess confidently
+      if (!c.email_guess) c.email_status = c.email_status || "unknown";
+      continue;
     }
 
-    for (const email of toCheck) {
+    // derive first/last
+    const parts = String(c.name).trim().split(/\s+/);
+    const first = parts[0] || "";
+    const last = parts.slice(1).join("") || "";
+
+    const guess = generateEmail({ first, last }, pattern, domain);
+    if (guess) {
+      c.email_guess = c.email_guess || guess;
+      c.email_status = c.email_status || "patterned";
+    }
+
+    // optional SMTP verification with rate-limit per request
+    if (
+      SMTP_VERIFY_ENABLED &&
+      verifyCount < SMTP_VERIFY_MAX &&
+      c.email_status !== "validated" &&
+      c.email_guess
+    ) {
       try {
-        const r = await verifyEmail(email);
-        const hit = data.contacts.find(
-          (c) => c?.email?.toLowerCase() === email || c?.email_guess?.toLowerCase() === email
-        );
-        if (!hit) continue;
-
-        if (r.status === "valid") {
-          validatedAny = true;
-          hit.email_status = "validated";
-          if (!hit.email) hit.email = email;
-        } else if (r.status === "invalid") {
-          hit.email_status = "bounced";
+        const vr = await verifyEmail(c.email_guess);
+        // normalize verify result
+        if (vr?.status === "valid" || vr?.result === "valid") {
+          c.email = c.email_guess;
+          c.email_status = "validated";
+        } else if (vr?.status === "invalid" || vr?.result === "invalid") {
+          c.email_status = "bounced";
+        } else {
+          // unknown / catch-all / unverifiable
+          c.email_status = c.email_status || "patterned";
         }
       } catch {
-        // ignore transient verifier errors
+        // swallow verification errors; keep guess as patterned
+        c.email_status = c.email_status || "patterned";
+      } finally {
+        verifyCount += 1;
       }
     }
   }
 
-  // --- 5) Persist pattern if useful
-  if (domain) {
-    const patToPersist = choosePat || detectedPat;
-    if (patToPersist && (validatedAny || !cachedPat)) {
-      const example = pairs?.[0] || null;
-      await setDomainPattern({
-        domain,
-        pattern_id: patToPersist,
-        source: cachedPat ? "verify" : (pairs.length ? "import" : "llm"),
-        example,
-        incrementVerified: validatedAny,
-      });
-    }
-  }
-
-  return data;
+  return contacts;
 }
+
+/* -------------------------------- route ----------------------------- */
 
 /**
  * POST /api/enrich
- * Body: { input: string }
+ * body: { input: string }
+ * returns: { ok, data: { company, contacts[], outreachDraft?, _meta: { model, duration_ms } } }
  */
 router.post("/", async (req, res) => {
-  try {
-    const input = req.body?.input ?? req.body?.query ?? "";
-    if (!input || !String(input).trim()) return bad(res, "input required");
+  const started = Date.now();
+  const input = cleanStr(req.body?.input);
 
-    const data = await runPipeline(input);
-    return ok(res, data);
-  } catch (e) {
-    console.error("enrich error:", e);
-    return bad(res, e?.message || "enrichment failed", 500);
+  if (!input) {
+    return res.status(400).json({ ok: false, error: "input required" });
   }
-});
 
-/**
- * Back-compat for older UI: POST /api/enrich/run
- * Body: { query: string }
- */
-router.post("/run", async (req, res) => {
   try {
-    const query = req.body?.query ?? "";
-    if (!query || !String(query).trim()) return bad(res, "query required");
+    // 1) Call LLM / provider
+    const aiResp = await aiEnrichFromInput(input);
 
-    const data = await runPipeline(query);
-    return ok(res, data);
+    // aiResp is expected to include { company, contacts, outreachDraft, model? }
+    const company = companyFromAI(aiResp);
+    const contactsRaw = Array.isArray(aiResp?.contacts) ? aiResp.contacts : [];
+    const contacts = contactsRaw.map(contactFromAI);
+
+    // 2) Email enrichment (pattern, guess, optional verify)
+    await enrichEmailsForContacts(company, contacts);
+
+    // 3) Response meta
+    const duration_ms = Date.now() - started;
+    const model = aiResp?.model || OPENAI_MODEL;
+
+    const payload = {
+      company,
+      contacts,
+      outreachDraft: cleanStr(aiResp?.outreachDraft) || null,
+      _meta: {
+        model,
+        duration_ms,
+      },
+    };
+
+    return res.json({ ok: true, data: payload });
   } catch (e) {
-    console.error("enrich/run error:", e);
-    return bad(res, e?.message || "enrichment failed", 500);
+    const duration_ms = Date.now() - started;
+    return res
+      .status(500)
+      .json({
+        ok: false,
+        error: e?.message || "enrichment failed",
+        _meta: { model: OPENAI_MODEL, duration_ms },
+      });
   }
 });
 

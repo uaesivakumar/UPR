@@ -1,16 +1,65 @@
-// dashboard/src/pages/EnrichmentPage.jsx
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { authFetch } from "../utils/auth";
 
+/* ----------------------------- LLM Status ----------------------------- */
+/** Always-visible LLM status pill.
+ *  status: "idle" | "running" | "ok" | "error"
+ */
+function LLMStatus({ status = "idle", model = null, durationMs = null, errorText = null }) {
+  const tone =
+    {
+      idle: "bg-gray-100 text-gray-700 border border-gray-200",
+      running: "bg-blue-50 text-blue-700 border border-blue-200",
+      ok: "bg-green-50 text-green-700 border border-green-200",
+      error: "bg-red-50 text-red-700 border border-red-200",
+    }[status] || "bg-gray-100 text-gray-700 border border-gray-200";
+
+  return (
+    <div className="mb-4 flex items-center justify-between">
+      <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm ${tone}`}>
+        <span
+          className={`inline-block w-2 h-2 rounded-full ${
+            status === "running" ? "animate-pulse bg-current opacity-90" : "bg-current opacity-60"
+          }`}
+        />
+        <span className="font-medium">LLM</span>
+        <span className="opacity-80">
+          {status === "idle" && "idle"}
+          {status === "running" && "working…"}
+          {status === "ok" && (model || "ready")}
+          {status === "error" && "error"}
+        </span>
+        {status === "ok" && typeof durationMs === "number" && (
+          <span className="opacity-70">• {Math.max(0, Math.round(durationMs))} ms</span>
+        )}
+      </div>
+      {status === "error" && errorText && <div className="text-sm text-red-700">{errorText}</div>}
+    </div>
+  );
+}
+
+/* ----------------------------- Page ----------------------------- */
+
 export default function EnrichmentPage() {
   const [sp] = useSearchParams();
+
+  // input + validation
   const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
 
+  // request/response state
+  const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
+
+  // selection
   const [primaryContactId, setPrimaryContactId] = useState(null);
+
+  // LLM badge state
+  const [llmStatus, setLlmStatus] = useState("idle"); // "idle" | "running" | "ok" | "error"
+  const [llmModel, setLlmModel] = useState(null);
+  const [llmDuration, setLlmDuration] = useState(null);
+  const [llmErrText, setLlmErrText] = useState(null);
 
   // read ?q= from URL if present
   useEffect(() => {
@@ -21,10 +70,11 @@ export default function EnrichmentPage() {
   const primaryContact = useMemo(() => {
     if (!result || !result.contacts?.length) return null;
     const pick =
-      result.contacts.find((c) => c.id === primaryContactId) ??
-      result.contacts[0];
+      result.contacts.find((c) => c.id === primaryContactId) ?? result.contacts[0];
     return pick ?? null;
   }, [result, primaryContactId]);
+
+  const isBlank = (s) => !s || s.trim().length === 0;
 
   async function runEnrichment(e) {
     e.preventDefault();
@@ -33,17 +83,25 @@ export default function EnrichmentPage() {
     setPrimaryContactId(null);
 
     const input = query.trim();
-    if (!input) {
+    if (isBlank(input)) {
       setErr("input required");
       return;
     }
 
     setLoading(true);
+
+    // LLM badge → running
+    setLlmStatus("running");
+    setLlmModel(null);
+    setLlmDuration(null);
+    setLlmErrText(null);
+
     const t0 = performance.now();
     try {
       // Backend expects: POST /api/enrich  { input }
       const res = await authFetch("/api/enrich", {
         method: "POST",
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({ input }),
       });
 
@@ -53,25 +111,43 @@ export default function EnrichmentPage() {
       }
 
       const payload = data.data || {};
+
+      // Normalize meta for the badge
+      const duration_ms =
+        (payload?._meta && typeof payload._meta.duration_ms === "number" && payload._meta.duration_ms) ||
+        (typeof data?.duration_ms === "number" && data.duration_ms) ||
+        Math.round(performance.now() - t0);
+
+      const model =
+        (payload?._meta && payload._meta.model) ||
+        payload?.meta?.model ||
+        data?.model ||
+        (import.meta.env?.VITE_OPENAI_MODEL || "openai");
+
       // attach basic meta if backend didn’t
-      const duration_ms = Math.round(performance.now() - t0);
-      payload.meta = {
-        llm: payload?.meta?.llm ?? "openai",
-        model: payload?.meta?.model ?? (import.meta.env.VITE_OPENAI_MODEL || "gpt-4o-mini"),
-        duration_ms: payload?.meta?.duration_ms ?? duration_ms,
+      payload._meta = {
+        model,
+        duration_ms,
         used: true,
       };
 
       setResult(payload);
       setPrimaryContactId(payload.contacts?.[0]?.id ?? null);
+
+      // LLM badge → ok
+      setLlmModel(model);
+      setLlmDuration(duration_ms);
+      setLlmStatus("ok");
     } catch (e) {
       setErr(e?.message || "Something went wrong");
+      setLlmErrText(e?.message || "Unknown error");
+      setLlmStatus("error");
     } finally {
       setLoading(false);
     }
   }
 
-  async function saveAsLead() {
+  const saveAsLead = useCallback(async () => {
     if (!result || !result.company?.name) {
       alert("No company to save.");
       return;
@@ -81,8 +157,7 @@ export default function EnrichmentPage() {
       name: result.company.name,
       type: result.company.type ?? null,
       locations:
-        result.company.locations ??
-        (result.company.hq ? [result.company.hq] : []),
+        result.company.locations ?? (result.company.hq ? [result.company.hq] : []),
       website_url: result.company.website ?? null,
       linkedin_url: result.company.linkedin ?? null,
     };
@@ -95,7 +170,8 @@ export default function EnrichmentPage() {
           linkedin_url: c.linkedin ?? null,
           location: c.dept ?? result.company.hq ?? null,
           email: c.email ?? c.email_guess ?? null,
-          email_status: c.email_status || (c.email ? "validated" : (c.email_guess ? "patterned" : "unknown")),
+          email_status:
+            c.email_status || (c.email ? "validated" : c.email_guess ? "patterned" : "unknown"),
         }
       : {
           name: "Decision Maker",
@@ -110,14 +186,13 @@ export default function EnrichmentPage() {
       company,
       contact,
       status: "New",
-      notes:
-        (result.outreachDraft ? "Draft present. " : "") +
-        "Saved from Enrichment UI",
+      notes: (result.outreachDraft ? "Draft present. " : "") + "Saved from Enrichment UI",
     };
 
     try {
       const res = await authFetch("/api/hr-leads/from-enrichment", {
         method: "POST",
+        headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
       });
       const data = await safeJson(res);
@@ -128,38 +203,46 @@ export default function EnrichmentPage() {
     } catch (e) {
       alert(e?.message || "Failed to save lead");
     }
-  }
+  }, [result, primaryContact]);
 
   return (
     <div className="space-y-8">
+      {/* Always-visible LLM status */}
+      <LLMStatus
+        status={llmStatus}
+        model={llmModel}
+        durationMs={llmDuration}
+        errorText={llmErrText}
+      />
+
       {/* Header */}
       <div>
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-semibold text-gray-900">Enrichment</h1>
-          {/* LLM usage badge */}
-          {result?.meta?.used && (
+          {/* Legacy in-card badge retained (shows only when a result exists) */}
+          {result?._meta?.used && (
             <span className="inline-flex items-center gap-1 text-xs font-medium rounded-full bg-indigo-50 text-indigo-700 px-2 py-1">
               <SparklesIcon />
-              {result?.meta?.model || "LLM"} · {result?.meta?.duration_ms ?? 0}ms
+              {result?._meta?.model || "LLM"} · {result?._meta?.duration_ms ?? 0}ms
             </span>
           )}
         </div>
         <p className="text-sm text-gray-500">
-          Paste a company website / LinkedIn URL, or describe the target (e.g.,
-          “G42 UAE Finance Director”).
+          Paste a company website / LinkedIn URL, or describe the target (e.g., “G42 UAE Finance
+          Director”).
         </p>
       </div>
 
       {/* Input */}
-      <form
-        onSubmit={runEnrichment}
-        className="bg-white rounded-xl shadow p-4 md:p-5 space-y-3"
-      >
+      <form onSubmit={runEnrichment} className="bg-white rounded-xl shadow p-4 md:p-5 space-y-3">
         <label className="block text-sm font-medium text-gray-700">Input</label>
         <div className="flex flex-col md:flex-row gap-3">
           <input
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              if (err && e.target.value.trim().length > 0) setErr(null); // clear inline error once valid
+            }}
             placeholder="https://company.com  |  https://linkedin.com/company/...  |  'ADGM fintech HR head UAE'"
             className="flex-1 rounded-xl border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-gray-800"
           />
@@ -185,13 +268,13 @@ export default function EnrichmentPage() {
           <section className="lg:col-span-1 bg-white rounded-xl shadow p-5 space-y-2">
             <h2 className="text-lg font-semibold text-gray-900">Company</h2>
             <div className="text-sm text-gray-700">
-              <Row label="Name" value={result.company.name || "—"} />
-              <Row label="Website" value={linkOrText(result.company.website)} />
-              <Row label="LinkedIn" value={linkOrText(result.company.linkedin)} />
-              <Row label="HQ" value={result.company.hq || "—"} />
-              <Row label="Industry" value={result.company.industry || "—"} />
-              <Row label="Size" value={result.company.size || "—"} />
-              {result.company.notes && (
+              <Row label="Name" value={result.company?.name || "—"} />
+              <Row label="Website" value={linkOrText(result.company?.website)} />
+              <Row label="LinkedIn" value={linkOrText(result.company?.linkedin)} />
+              <Row label="HQ" value={result.company?.hq || "—"} />
+              <Row label="Industry" value={result.company?.industry || "—"} />
+              <Row label="Size" value={result.company?.size || "—"} />
+              {result.company?.notes && (
                 <div className="mt-2">
                   <div className="text-xs uppercase text-gray-400">Notes</div>
                   <p className="mt-1">{result.company.notes}</p>
@@ -205,10 +288,7 @@ export default function EnrichmentPage() {
               </div>
               <div className="flex flex-wrap gap-2">
                 {(result.tags || []).map((t) => (
-                  <span
-                    key={t}
-                    className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded-full"
-                  >
+                  <span key={t} className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded-full">
                     {t}
                   </span>
                 ))}
@@ -219,9 +299,7 @@ export default function EnrichmentPage() {
           {/* Contacts table */}
           <section className="lg:col-span-2 bg-white rounded-xl shadow p-5">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900">
-                Suggested Contacts
-              </h2>
+              <h2 className="text-lg font-semibold text-gray-900">Suggested Contacts</h2>
               {result.contacts?.length > 0 && (
                 <select
                   className="border rounded-lg px-2 py-1 text-sm"
@@ -229,7 +307,7 @@ export default function EnrichmentPage() {
                   onChange={(e) => setPrimaryContactId(e.target.value)}
                 >
                   {result.contacts.map((c) => (
-                    <option key={c.id} value={c.id}>
+                    <option key={c.id || `${c.name}-${c.email || c.email_guess || "x"}`} value={c.id}>
                       {c.name} — {c.title}
                     </option>
                   ))}
@@ -237,45 +315,39 @@ export default function EnrichmentPage() {
               )}
             </div>
 
-            {(!result.contacts || result.contacts.length === 0) ? (
+            {!result.contacts || result.contacts.length === 0 ? (
               <div className="mt-4 text-sm text-gray-500">No contacts found.</div>
             ) : (
               <div className="mt-4 overflow-x-auto">
                 <table className="min-w-full text-sm">
                   <ContactsThead />
                   <tbody>
-                    {result.contacts.map((c) => (
-                      <tr key={c.id} className="border-t border-gray-200">
-                        <td className="px-4 py-2 whitespace-nowrap">{c.name || "—"}</td>
-                        <td className="px-4 py-2">{c.title || "—"}</td>
-                        <td className="px-4 py-2">{c.dept || "—"}</td>
-                        <td className="px-4 py-2">
-                          {renderEmailCell(c)}
-                        </td>
-                        <td className="px-4 py-2">
-                          {c.linkedin ? (
-                            <a
-                              className="underline"
-                              href={c.linkedin}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              Profile
-                            </a>
-                          ) : (
-                            "—"
-                          )}
-                        </td>
-                        <td className="px-4 py-2">
-                          {Math.round((c.confidence ?? 0) * 100)}%
-                        </td>
-                        <td className="px-4 py-2">
-                          <span className={statusPillClass(c.email_status)}>
-                            {prettyStatus(c.email_status)}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
+                    {result.contacts.map((c) => {
+                      const key = c.id || `${c.name}-${c.email || c.email_guess || "x"}`;
+                      return (
+                        <tr key={key} className="border-top border-gray-200">
+                          <td className="px-4 py-2 whitespace-nowrap">{c.name || "—"}</td>
+                          <td className="px-4 py-2">{c.title || "—"}</td>
+                          <td className="px-4 py-2">{c.dept || "—"}</td>
+                          <td className="px-4 py-2">{renderEmailCell(c)}</td>
+                          <td className="px-4 py-2">
+                            {c.linkedin ? (
+                              <a className="underline" href={c.linkedin} target="_blank" rel="noreferrer">
+                                Profile
+                              </a>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
+                          <td className="px-4 py-2">{Math.round((c.confidence ?? 0) * 100)}%</td>
+                          <td className="px-4 py-2">
+                            <span className={statusPillClass(c.email_status)}>
+                              {prettyStatus(c.email_status)}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -285,9 +357,7 @@ export default function EnrichmentPage() {
           {/* Outreach editor */}
           <section className="lg:col-span-3 bg-white rounded-xl shadow p-5 space-y-3">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900">
-                Outreach Draft
-              </h2>
+              <h2 className="text-lg font-semibold text-gray-900">Outreach Draft</h2>
               <div className="flex gap-2">
                 <button
                   onClick={() => copyToClipboard(result.outreachDraft || "")}
@@ -307,15 +377,12 @@ export default function EnrichmentPage() {
               className="w-full min-h-[180px] border rounded-xl px-3 py-2"
               value={result.outreachDraft || ""}
               onChange={(e) =>
-                setResult((prev) =>
-                  prev ? { ...prev, outreachDraft: e.target.value } : prev
-                )
+                setResult((prev) => (prev ? { ...prev, outreachDraft: e.target.value } : prev))
               }
             />
             {primaryContact && (
               <p className="text-xs text-gray-500">
-                Primary contact:{" "}
-                <span className="font-medium">{primaryContact.name}</span> —{" "}
+                Primary contact: <span className="font-medium">{primaryContact.name}</span> —{" "}
                 {primaryContact.title}
               </p>
             )}
@@ -370,9 +437,7 @@ async function copyToClipboard(text) {
 function Row({ label, value }) {
   return (
     <div className="flex items-start justify-between gap-4 py-1">
-      <div className="text-xs uppercase text-gray-400 w-24 shrink-0">
-        {label}
-      </div>
+      <div className="text-xs uppercase text-gray-400 w-24 shrink-0">{label}</div>
       <div className="text-sm">{value ?? "—"}</div>
     </div>
   );
@@ -388,12 +453,7 @@ function linkOrText(url) {
   );
 }
 
-/**
- * Helper requested: renderEmailCell
- * - Shows a `mailto:` link if email is present.
- * - Falls back to guessed email with a subtle “(guess)” tag.
- * - Returns "—" when neither is available.
- */
+/** Render email cell with mailto + '(guess)' tag if needed */
 function renderEmailCell(c) {
   const email = c.email || c.email_guess || null;
   if (!email) return "—";
@@ -424,7 +484,7 @@ function statusPillClass(s) {
   if (v === "bounced" || v === "invalid")
     return "text-[10px] px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200";
   if (v === "patterned" || v === "guessed")
-    return "text-[10px] px-2 py-0.5 rounded-full bg-slate-50 text-slate-700 border border-slate-200";
+    return "text-[10px] px-2 py-0.5 rounded-full bg-slate-50 text-slate-700 border-slate-200 border";
   return "text-[10px] px-2 py-0.5 rounded-full bg-gray-50 text-gray-700 border border-gray-200";
 }
 
