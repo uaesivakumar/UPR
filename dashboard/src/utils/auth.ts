@@ -1,42 +1,47 @@
 // dashboard/src/utils/auth.ts
+const TOKEN_KEY = "upr_admin_jwt";
 
-// Storage keys
-const KEY = "upr_admin_jwt";
-
-// --- token store ---
 export function getToken(): string | null {
-  try { return localStorage.getItem(KEY); } catch { return null; }
+  try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
 }
-export function setToken(t: string) {
-  try { localStorage.setItem(KEY, t); } catch {}
+export function setToken(t: string): void {
+  try { localStorage.setItem(TOKEN_KEY, t); } catch {}
 }
-export function clearToken() {
-  try { localStorage.removeItem(KEY); } catch {}
+export function clearToken(): void {
+  try { localStorage.removeItem(TOKEN_KEY); } catch {}
 }
 
-// --- headers & fetch helpers ---
 export function getAuthHeader(): Record<string, string> {
   const t = getToken();
   return t ? { Authorization: `Bearer ${t}` } : {};
 }
 
-export async function authFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+/**
+ * authFetch with optional noRedirect mode (so /login doesn't loop).
+ * If opts.noRedirect === true, a 401 is returned to the caller without redirecting.
+ */
+export async function authFetch(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+  opts?: { noRedirect?: boolean }
+): Promise<Response> {
   const headers = new Headers(init.headers || {});
   const auth = getAuthHeader();
   for (const [k, v] of Object.entries(auth)) headers.set(k, v);
+
   const res = await fetch(input, { ...init, headers });
+
   if (res.status === 401) {
+    // Don't hard-redirect if caller asked not to (used by Login page).
+    if (opts?.noRedirect) return res;
     try { clearToken(); } finally { if (typeof window !== "undefined") window.location.href = "/login"; }
     throw new Error("Unauthorized");
   }
   return res;
 }
 
-// Back-compat alias used in some calls
-export const adminFetch = authFetch;
-
-// --- login / verify / logout ---
-export async function loginWithPassword(username: string, password: string): Promise<void> {
+/** Username/password login -> {ok, token} */
+export async function loginWithPassword(username: string, password: string): Promise<{ ok: boolean; token?: string; error?: string }> {
   const res = await fetch("/api/auth/login", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -44,18 +49,20 @@ export async function loginWithPassword(username: string, password: string): Pro
   });
   const data = await safeJson(res);
   if (!res.ok || !data?.ok || !data?.token) {
-    throw new Error(data?.error || "Login failed");
+    return { ok: false, error: data?.error || "Login failed" };
   }
   setToken(data.token);
+  return { ok: true, token: data.token };
 }
 
+/** Verify the stored JWT without redirecting on 401. */
 export async function verifyToken(): Promise<boolean> {
-  try {
-    const res = await authFetch("/api/auth/verify");
-    return res.ok;
-  } catch {
-    return false;
-  }
+  const token = getToken();
+  if (!token) return false;
+  const res = await authFetch("/api/auth/verify", {}, { noRedirect: true });
+  if (res.ok) return true;
+  clearToken();
+  return false;
 }
 
 export function logout(): void {

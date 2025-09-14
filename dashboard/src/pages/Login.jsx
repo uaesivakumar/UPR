@@ -5,40 +5,45 @@ import { loginWithPassword, verifyToken } from "../utils/auth";
 
 export default function Login() {
   const nav = useNavigate();
+  const [checking, setChecking] = useState(true);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [err, setErr] = useState(null);
-  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
 
+  // On mount, if token already valid, go straight in
   useEffect(() => {
-    // If already logged in, bounce to /
     (async () => {
       const ok = await verifyToken();
       if (ok) nav("/");
+      else setChecking(false);
     })();
   }, [nav]);
 
   async function onSubmit(e) {
     e.preventDefault();
-    setErr(null);
-    setBusy(true);
-    try {
-      await loginWithPassword(username.trim(), password);
-      nav("/");
-    } catch (e) {
-      setErr(e?.message || "Login failed");
-    } finally {
-      setBusy(false);
-    }
+    setErr("");
+    const { ok, error } = await loginWithPassword(username.trim(), password);
+    if (ok) nav("/");
+    else setErr(error || "Login failed");
+  }
+
+  if (checking) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-sm text-gray-500">
+        Checking session…
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-[80vh] flex items-center justify-center">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <div className="w-full max-w-md bg-white rounded-2xl shadow p-6">
-        <h1 className="text-3xl font-semibold text-center text-gray-900">UPR Admin Login</h1>
-        <p className="mt-2 text-center text-gray-500">Sign in with your username and password.</p>
+        <h1 className="text-2xl font-semibold text-gray-900 text-center">UPR Admin Login</h1>
+        <p className="text-sm text-gray-500 text-center mt-1">
+          Sign in with your username and password.
+        </p>
 
-        <form className="mt-6 space-y-4" onSubmit={onSubmit}>
+        <form onSubmit={onSubmit} className="mt-6 space-y-3">
           <div>
             <label className="block text-sm font-medium text-gray-700">Username</label>
             <input
@@ -46,7 +51,7 @@ export default function Login() {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               autoComplete="username"
-              placeholder="admin"
+              required
             />
           </div>
           <div>
@@ -57,7 +62,7 @@ export default function Login() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="current-password"
-              placeholder="••••••••"
+              required
             />
           </div>
 
@@ -69,16 +74,15 @@ export default function Login() {
 
           <button
             type="submit"
-            disabled={busy}
-            className="w-full rounded-xl bg-gray-900 text-white py-2 font-medium hover:bg-gray-800 disabled:opacity-60"
+            className="w-full rounded-xl bg-gray-900 text-white px-4 py-2 font-medium hover:bg-gray-800"
           >
-            {busy ? "Signing in…" : "Login"}
+            Login
           </button>
-
-          <p className="text-center text-xs text-gray-400">
-            Your session is stored locally in this browser.
-          </p>
         </form>
+
+        <p className="mt-3 text-center text-[11px] text-gray-400">
+          Your session is stored only in this browser.
+        </p>
       </div>
     </div>
   );
