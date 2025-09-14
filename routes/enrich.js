@@ -17,32 +17,14 @@ const SMTP_VERIFY_ENABLED =
 const SMTP_VERIFY_MAX = Math.max(0, Number(process.env.SMTP_VERIFY_MAX || 3));
 
 /* ------------------------------ helpers ----------------------------- */
+const GENERIC_MAILBOX = /^(info|contact|admin|office|hello|support|careers|jobs|hr|payroll|finance|accounts|team|help|sales|pr|media|press|recruitment|talent|onboarding|noreply|no-reply)@/i;
 
-function cleanStr(s) {
-  if (!s) return null;
-  const t = String(s).trim();
-  return t.length ? t : null;
-}
-function titleCase(s) {
-  if (!s) return s;
-  return String(s).toLowerCase().replace(/\b([a-z])/g, (m, c) => c.toUpperCase());
-}
-function normalizeUrl(u) {
-  if (!u) return null;
-  const s = String(u).trim();
-  if (!s) return null;
-  if (/^https?:\/\//i.test(s)) return s;
-  return `https://${s}`;
-}
+function cleanStr(s) { if (!s) return null; const t = String(s).trim(); return t.length ? t : null; }
+function titleCase(s) { if (!s) return s; return String(s).toLowerCase().replace(/\b([a-z])/g, (m, c) => c.toUpperCase()); }
+function normalizeUrl(u) { if (!u) return null; const s = String(u).trim(); if (!s) return null; if (/^https?:\/\//i.test(s)) return s; return `https://${s}`; }
 function extractDomainFromUrl(u) {
-  try {
-    const url = new URL(u);
-    return url.hostname;
-  } catch {
-    const s = String(u || "").trim().toLowerCase();
-    if (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(s)) return s;
-    return null;
-  }
+  try { const url = new URL(u); return url.hostname; }
+  catch { const s = String(u || "").trim().toLowerCase(); if (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(s)) return s; return null; }
 }
 
 function companyFromAI(raw) {
@@ -81,17 +63,14 @@ function contactFromAI(c) {
     score: typeof c.score === "number" ? c.score : null,
   };
 }
-
 function seedPairs(contacts) {
   if (!Array.isArray(contacts)) return [];
   return contacts
     .map((c) => ({ name: cleanStr(c?.name) || null, email: cleanStr(c?.email) || null }))
-    .filter((p) => p.name && p.email && p.email.includes("@"));
+    .filter((p) => p.name && p.email && p.email.includes("@") && !GENERIC_MAILBOX.test(p.email));
 }
 
-/**
- * Guess/verify emails for contacts that lack a real email.
- */
+/** Guess/verify emails for contacts that lack a real email (skip generic mailboxes). */
 async function enrichEmailsForContacts(company, contacts) {
   if (!Array.isArray(contacts) || contacts.length === 0) return contacts;
 
@@ -100,6 +79,7 @@ async function enrichEmailsForContacts(company, contacts) {
     extractDomainFromUrl(company?.linkedin) ||
     null;
 
+  // If no domain → mark unknown if missing
   if (!domain) {
     for (const c of contacts) {
       if (!c?.email && !c?.email_guess) c.email_status = c.email_status || "unknown";
@@ -123,14 +103,19 @@ async function enrichEmailsForContacts(company, contacts) {
   for (const c of contacts) {
     if (!c) continue;
 
+    // keep provided emails if they are not generic mailboxes
     if (c.email) {
-      c.email_status = c.email_status || "validated";
-      continue;
+      if (GENERIC_MAILBOX.test(String(c.email).toLowerCase())) {
+        c.email_status = "generic";
+        c.email = null;
+      } else {
+        c.email_status = c.email_status || "validated";
+        continue;
+      }
     }
-    if (!c.name) {
-      c.email_status = c.email_status || "unknown";
-      continue;
-    }
+
+    // Need a person name to generate anything
+    if (!c.name) { c.email_status = c.email_status || "unknown"; continue; }
 
     let guess = null;
     if (pattern_id) {
@@ -146,7 +131,7 @@ async function enrichEmailsForContacts(company, contacts) {
       }
     }
 
-    if (guess) {
+    if (guess && !GENERIC_MAILBOX.test(String(guess).toLowerCase())) {
       c.email_guess = c.email_guess || guess;
       c.email_status = c.email_status || "patterned";
     } else {
@@ -154,6 +139,7 @@ async function enrichEmailsForContacts(company, contacts) {
       continue;
     }
 
+    // Optional SMTP verification (rate-limited per request)
     if (
       SMTP_VERIFY_ENABLED &&
       verifyCount < SMTP_VERIFY_MAX &&
@@ -179,35 +165,34 @@ async function enrichEmailsForContacts(company, contacts) {
     }
   }
 
-  return contacts;
+  // Final pass: drop rows that are still generic/named-missing
+  return contacts.filter((c) => {
+    const hasName = !!cleanStr(c?.name);
+    const useEmail = c?.email || c?.email_guess;
+    const isGeneric = GENERIC_MAILBOX.test(String(useEmail || "").toLowerCase());
+    return hasName && !isGeneric;
+  });
 }
 
-/** Optional simple quality scoring if provider doesn't return one. */
+/** Simple quality fallback if provider doesn't return one. */
 function computeQuality(company, contacts, tags = []) {
   let score = 50;
   const factors = [];
-
   if (company?.hq && /united arab emirates|dubai|abu dhabi/i.test(company.hq)) {
-    score += 10;
-    factors.push({ label: "UAE HQ/Presence", impact: 10, detail: company.hq });
+    score += 10; factors.push({ label: "UAE HQ/Presence", impact: 10, detail: company.hq });
   }
   if (company?.size && /10,?000\+|5000\+|enterprise|group/i.test(company.size)) {
-    score += 8;
-    factors.push({ label: "Enterprise size", impact: 8, detail: company.size });
+    score += 8; factors.push({ label: "Enterprise size", impact: 8, detail: company.size });
   }
   if (Array.isArray(tags) && tags.some((t) => /hiring|expansion|new office|contract/i.test(t))) {
-    score += 7;
-    factors.push({ label: "Recent hiring/expansion signal", impact: 7 });
+    score += 7; factors.push({ label: "Recent hiring/expansion signal", impact: 7 });
   }
   if (Array.isArray(contacts) && contacts.length >= 3) {
-    score += 6;
-    factors.push({ label: "Decision makers found", impact: 6, detail: `${contacts.length} contacts` });
+    score += 6; factors.push({ label: "Decision makers found", impact: 6, detail: `${contacts.length} contacts` });
   }
   if (company?.industry) {
-    score += 4;
-    factors.push({ label: "Industry fit", impact: 4, detail: company.industry });
+    score += 4; factors.push({ label: "Industry fit", impact: 4, detail: company.industry });
   }
-
   score = Math.max(0, Math.min(100, score));
   return { score, factors };
 }
@@ -222,35 +207,25 @@ router.post("/", async (req, res) => {
   const started = Date.now();
   const input = cleanStr(req.body?.input);
   const departments = Array.isArray(req.body?.departments) ? req.body.departments : null;
-
-  if (!input) {
-    return res.status(400).json({ ok: false, error: "input required" });
-  }
+  if (!input) return res.status(400).json({ ok: false, error: "input required" });
 
   try {
-    // 1) Provider / LLM (pass departments hint if util supports it)
     const aiResp = await aiEnrichFromInput(input, { departments });
 
-    // 2) Normalize fields
     const company = companyFromAI(aiResp);
     const contactsRaw = Array.isArray(aiResp?.contacts) ? aiResp.contacts : [];
-    const contacts = contactsRaw.map(contactFromAI);
+    let contacts = contactsRaw.map(contactFromAI);
 
-    // 3) Email enrichment
-    await enrichEmailsForContacts(company, contacts);
+    // enrich emails & remove generic mailboxes / nameless rows
+    contacts = await enrichEmailsForContacts(company, contacts);
 
-    // 4) Quality (use provider’s `quality` if present, else compute)
     let quality = null;
     if (aiResp?.quality && typeof aiResp.quality.score === "number") {
-      quality = {
-        score: aiResp.quality.score,
-        factors: Array.isArray(aiResp.quality.factors) ? aiResp.quality.factors : [],
-      };
+      quality = { score: aiResp.quality.score, factors: Array.isArray(aiResp.quality.factors) ? aiResp.quality.factors : [] };
     } else {
       quality = computeQuality(company, contacts, Array.isArray(aiResp?.tags) ? aiResp.tags : []);
     }
 
-    // 5) Meta
     const duration_ms = Date.now() - started;
     const model = aiResp?.model || aiResp?.meta?.llm || OPENAI_MODEL;
 
@@ -266,9 +241,7 @@ router.post("/", async (req, res) => {
     return res.json({ ok: true, data: payload });
   } catch (e) {
     const duration_ms = Date.now() - started;
-    return res
-      .status(500)
-      .json({ ok: false, error: e?.message || "enrichment failed", _meta: { model: OPENAI_MODEL, duration_ms } });
+    return res.status(500).json({ ok: false, error: e?.message || "enrichment failed", _meta: { model: OPENAI_MODEL, duration_ms } });
   }
 });
 
