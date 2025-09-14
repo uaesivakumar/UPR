@@ -6,8 +6,6 @@ import { getDomainPattern, setDomainPattern } from "../utils/patternCache.js";
 
 const router = express.Router();
 
-/* ------------------------------- config ------------------------------ */
-
 const OPENAI_MODEL =
   process.env.OPENAI_MODEL ||
   process.env.VITE_OPENAI_MODEL ||
@@ -25,14 +23,10 @@ function cleanStr(s) {
   const t = String(s).trim();
   return t.length ? t : null;
 }
-
 function titleCase(s) {
   if (!s) return s;
-  return String(s)
-    .toLowerCase()
-    .replace(/\b([a-z])/g, (m, c) => c.toUpperCase());
+  return String(s).toLowerCase().replace(/\b([a-z])/g, (m, c) => c.toUpperCase());
 }
-
 function normalizeUrl(u) {
   if (!u) return null;
   const s = String(u).trim();
@@ -40,7 +34,6 @@ function normalizeUrl(u) {
   if (/^https?:\/\//i.test(s)) return s;
   return `https://${s}`;
 }
-
 function extractDomainFromUrl(u) {
   try {
     const url = new URL(u);
@@ -54,7 +47,7 @@ function extractDomainFromUrl(u) {
 
 function companyFromAI(raw) {
   const c = raw?.company || raw?.data?.company || raw || {};
-  const out = {
+  return {
     name: cleanStr(c.name) ? titleCase(c.name) : null,
     website: normalizeUrl(c.website ?? c.website_url),
     linkedin: normalizeUrl(c.linkedin ?? c.linkedin_url),
@@ -63,15 +56,9 @@ function companyFromAI(raw) {
     size: cleanStr(c.size) || null,
     type: cleanStr(c.type) || null,
     notes: cleanStr(c.notes) || null,
-    locations: Array.isArray(c.locations)
-      ? c.locations.filter(Boolean)
-      : c.hq
-      ? [c.hq]
-      : [],
+    locations: Array.isArray(c.locations) ? c.locations.filter(Boolean) : c.hq ? [c.hq] : [],
   };
-  return out;
 }
-
 function contactFromAI(c) {
   if (!c) return null;
   const name = cleanStr(c.name);
@@ -95,24 +82,15 @@ function contactFromAI(c) {
   };
 }
 
-/**
- * Build {name,email} pairs for pattern detection.
- */
 function seedPairs(contacts) {
   if (!Array.isArray(contacts)) return [];
   return contacts
-    .map((c) => ({
-      name: cleanStr(c?.name) || null,
-      email: cleanStr(c?.email) || null,
-    }))
+    .map((c) => ({ name: cleanStr(c?.name) || null, email: cleanStr(c?.email) || null }))
     .filter((p) => p.name && p.email && p.email.includes("@"));
 }
 
 /**
- * Guess/verify emails for contacts that lack a real email using:
- *  1) cached pattern from patternCache
- *  2) detectPattern(pairs) if we have seed emails
- *  3) generateCandidates fallback (choose first)
+ * Guess/verify emails for contacts that lack a real email.
  */
 async function enrichEmailsForContacts(company, contacts) {
   if (!Array.isArray(contacts) || contacts.length === 0) return contacts;
@@ -123,71 +101,47 @@ async function enrichEmailsForContacts(company, contacts) {
     null;
 
   if (!domain) {
-    // No domain → just mark unknown if missing
     for (const c of contacts) {
-      if (!c?.email && !c?.email_guess) {
-        c.email_status = c.email_status || "unknown";
-      }
+      if (!c?.email && !c?.email_guess) c.email_status = c.email_status || "unknown";
     }
     return contacts;
   }
 
-  // 1) cache
   const cached = await getDomainPattern(domain);
   let pattern_id = cached?.pattern_id || null;
 
-  // 2) detect from seeds if no cache
   if (!pattern_id) {
     const pairs = seedPairs(contacts);
     const detected = detectPattern(pairs);
     if (detected) {
       pattern_id = detected;
-      await setDomainPattern({
-        domain,
-        pattern_id,
-        source: "detectPattern(seeds)",
-        example: pairs[0]?.email || null,
-      });
+      await setDomainPattern({ domain, pattern_id, source: "detectPattern(seeds)", example: pairs[0]?.email || null });
     }
   }
 
-  // 3) assign guesses
   let verifyCount = 0;
-
   for (const c of contacts) {
     if (!c) continue;
 
-    // keep provided emails
     if (c.email) {
       c.email_status = c.email_status || "validated";
       continue;
     }
-
-    // Need a name to generate anything
     if (!c.name) {
       c.email_status = c.email_status || "unknown";
       continue;
     }
 
     let guess = null;
-
     if (pattern_id) {
-      // generateEmail(name, domain, pattern_id)
       guess = generateEmail(c.name, domain, pattern_id);
     } else {
-      // fallback: generateCandidates(name, domain) then pick the first
       const cand = generateCandidates(c.name, domain, 1);
       if (Array.isArray(cand) && cand.length) {
         pattern_id = cand[0]?.pattern_id || pattern_id;
         guess = cand[0]?.email || null;
-
         if (cand[0]?.pattern_id) {
-          await setDomainPattern({
-            domain,
-            pattern_id: cand[0].pattern_id,
-            source: "generateCandidates(fallback)",
-            example: guess,
-          });
+          await setDomainPattern({ domain, pattern_id: cand[0].pattern_id, source: "generateCandidates(fallback)", example: guess });
         }
       }
     }
@@ -200,7 +154,6 @@ async function enrichEmailsForContacts(company, contacts) {
       continue;
     }
 
-    // Optional SMTP verification (rate-limited per request)
     if (
       SMTP_VERIFY_ENABLED &&
       verifyCount < SMTP_VERIFY_MAX &&
@@ -212,21 +165,13 @@ async function enrichEmailsForContacts(company, contacts) {
         if (vr?.status === "valid") {
           c.email = c.email_guess;
           c.email_status = "validated";
-          await setDomainPattern({
-            domain,
-            pattern_id,
-            source: "smtp-verify",
-            example: c.email,
-            incrementVerified: true,
-          });
+          await setDomainPattern({ domain, pattern_id, source: "smtp-verify", example: c.email, incrementVerified: true });
         } else if (vr?.status === "invalid") {
           c.email_status = "bounced";
         } else {
-          // unknown / catch-all → keep as patterned
           c.email_status = c.email_status || "patterned";
         }
       } catch {
-        // swallow verifier exceptions
         c.email_status = c.email_status || "patterned";
       } finally {
         verifyCount += 1;
@@ -237,24 +182,54 @@ async function enrichEmailsForContacts(company, contacts) {
   return contacts;
 }
 
-/* -------------------------------- route ----------------------------- */
+/** Optional simple quality scoring if provider doesn't return one. */
+function computeQuality(company, contacts, tags = []) {
+  let score = 50;
+  const factors = [];
 
+  if (company?.hq && /united arab emirates|dubai|abu dhabi/i.test(company.hq)) {
+    score += 10;
+    factors.push({ label: "UAE HQ/Presence", impact: 10, detail: company.hq });
+  }
+  if (company?.size && /10,?000\+|5000\+|enterprise|group/i.test(company.size)) {
+    score += 8;
+    factors.push({ label: "Enterprise size", impact: 8, detail: company.size });
+  }
+  if (Array.isArray(tags) && tags.some((t) => /hiring|expansion|new office|contract/i.test(t))) {
+    score += 7;
+    factors.push({ label: "Recent hiring/expansion signal", impact: 7 });
+  }
+  if (Array.isArray(contacts) && contacts.length >= 3) {
+    score += 6;
+    factors.push({ label: "Decision makers found", impact: 6, detail: `${contacts.length} contacts` });
+  }
+  if (company?.industry) {
+    score += 4;
+    factors.push({ label: "Industry fit", impact: 4, detail: company.industry });
+  }
+
+  score = Math.max(0, Math.min(100, score));
+  return { score, factors };
+}
+
+/* -------------------------------- route ----------------------------- */
 /**
  * POST /api/enrich
- * body: { input: string }
- * returns: { ok, data: { company, contacts[], outreachDraft?, _meta: { model, duration_ms } } }
+ * body: { input: string, departments?: string[] }
+ * returns: { ok, data: { company, contacts[], outreachDraft?, quality:{score,factors[]}, _meta:{ model, duration_ms } } }
  */
 router.post("/", async (req, res) => {
   const started = Date.now();
   const input = cleanStr(req.body?.input);
+  const departments = Array.isArray(req.body?.departments) ? req.body.departments : null;
 
   if (!input) {
     return res.status(400).json({ ok: false, error: "input required" });
   }
 
   try {
-    // 1) Provider / LLM
-    const aiResp = await aiEnrichFromInput(input);
+    // 1) Provider / LLM (pass departments hint if util supports it)
+    const aiResp = await aiEnrichFromInput(input, { departments });
 
     // 2) Normalize fields
     const company = companyFromAI(aiResp);
@@ -264,31 +239,36 @@ router.post("/", async (req, res) => {
     // 3) Email enrichment
     await enrichEmailsForContacts(company, contacts);
 
-    // 4) Meta
+    // 4) Quality (use provider’s `quality` if present, else compute)
+    let quality = null;
+    if (aiResp?.quality && typeof aiResp.quality.score === "number") {
+      quality = {
+        score: aiResp.quality.score,
+        factors: Array.isArray(aiResp.quality.factors) ? aiResp.quality.factors : [],
+      };
+    } else {
+      quality = computeQuality(company, contacts, Array.isArray(aiResp?.tags) ? aiResp.tags : []);
+    }
+
+    // 5) Meta
     const duration_ms = Date.now() - started;
-    const model =
-      aiResp?.model ||
-      aiResp?.meta?.llm ||
-      OPENAI_MODEL;
+    const model = aiResp?.model || aiResp?.meta?.llm || OPENAI_MODEL;
 
     const payload = {
       company,
       contacts,
       outreachDraft: cleanStr(aiResp?.outreachDraft) || null,
-      _meta: {
-        model,
-        duration_ms,
-      },
+      quality,
+      tags: Array.isArray(aiResp?.tags) ? aiResp.tags : [],
+      _meta: { model, duration_ms },
     };
 
     return res.json({ ok: true, data: payload });
   } catch (e) {
     const duration_ms = Date.now() - started;
-    return res.status(500).json({
-      ok: false,
-      error: e?.message || "enrichment failed",
-      _meta: { model: OPENAI_MODEL, duration_ms },
-    });
+    return res
+      .status(500)
+      .json({ ok: false, error: e?.message || "enrichment failed", _meta: { model: OPENAI_MODEL, duration_ms } });
   }
 });
 
