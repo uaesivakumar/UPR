@@ -1,10 +1,6 @@
-// utils/apollo.js
-import fetch from "node-fetch";
+// utils/providers/apollo.js
+// Apollo People Search provider using Node 18+ global fetch (no node-fetch dep)
 
-/**
- * Apollo wrapper (People Search).
- * Requires: process.env.APOLLO_API_KEY
- */
 const APOLLO_BASE = "https://api.apollo.io/api/v1";
 
 function assertKey() {
@@ -13,57 +9,69 @@ function assertKey() {
   }
 }
 
-async function apolloPost(path, body) {
+async function apolloPost(path, body = {}) {
   assertKey();
-  const res = await fetch(`${APOLLO_BASE}${path}`, {
+  const resp = await fetch(`${APOLLO_BASE}${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "Cache-Control": "no-cache",
-      "accept": "application/json",
+      accept: "application/json",
       "x-api-key": process.env.APOLLO_API_KEY,
     },
-    body: JSON.stringify(body || {}),
+    body: JSON.stringify(body),
   });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Apollo ${path} ${res.status}: ${text || res.statusText}`);
+
+  const text = await resp.text();
+  let json = null;
+  try {
+    json = text ? JSON.parse(text) : {};
+  } catch {
+    // fall through
   }
-  return res.json();
+
+  if (!resp.ok) {
+    const errMsg = json?.error || json?.message || text || resp.statusText;
+    throw new Error(`Apollo ${path} ${resp.status}: ${errMsg}`);
+  }
+  return json ?? {};
 }
 
 /**
- * Try a domain-restricted search first; if it returns 0,
- * fall back to organization_name (less precise).
+ * Try a domain-restricted search first; if empty, fall back to org name.
  */
 export async function apolloMixedPeopleSearch({
-  domain, orgName, locations = [], titles = [],
-  page = 1, perPage = 25,
+  domain,
+  orgName,
+  locations = [],
+  titles = [],
+  page = 1,
+  perPage = 25,
 }) {
   const basePayload = {
-    page, per_page: perPage,
+    page,
+    per_page: perPage,
     person_locations: locations,
     person_titles: titles,
   };
 
-  // 1) Try domain
   if (domain) {
-    const p1 = await apolloPost("/mixed_people/search", {
+    const r1 = await apolloPost("/mixed_people/search", {
       ...basePayload,
       q_organization_domains: [domain],
     });
-    if ((p1.people?.length || 0) > 0) return p1.people;
+    if ((r1.people?.length || 0) > 0) return r1.people;
   }
 
-  // 2) Fallback to organization name
   if (orgName) {
-    const p2 = await apolloPost("/mixed_people/search", {
+    const r2 = await apolloPost("/mixed_people/search", {
       ...basePayload,
       organization_name: orgName,
     });
-    if ((p2.people?.length || 0) > 0) return p2.people;
+    if ((r2.people?.length || 0) > 0) return r2.people;
   }
 
-  // 3) Nothing
   return [];
 }
+
+export default { apolloMixedPeopleSearch };
