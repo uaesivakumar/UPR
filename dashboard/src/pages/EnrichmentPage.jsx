@@ -1,18 +1,7 @@
 // dashboard/src/pages/EnrichmentPage.jsx
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { authFetch, adminFetch } from "../utils/auth";
-
-/* ---------- helpers: robust normalization ---------- */
-function normStr(v) {
-  if (!v) return null;
-  const s = String(v).trim();
-  return s || null;
-}
-function asArray(v) {
-  if (!v) return [];
-  return Array.isArray(v) ? v : [v];
-}
+import { authFetch } from "../utils/auth";
 
 export default function EnrichmentPage() {
   const [sp] = useSearchParams();
@@ -49,57 +38,18 @@ export default function EnrichmentPage() {
 
     setLoading(true);
     try {
-      // Call the backend enrich endpoint (no auth required)
-      const res = await fetch("/api/enrich", {
+      // Call the backend LLM enrichment (now at POST /api/enrich with {input})
+      const res = await authFetch("/api/enrich", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ input: query.trim() }),
       });
-      if (!res.ok) {
-        const data = await safeJson(res);
+      const data = await safeJson(res);
+      if (!res.ok || !data?.ok || !data?.data) {
         throw new Error(data?.error || "Enrichment failed");
       }
-      const data = await res.json();
-      if (!data?.ok || !data?.data) throw new Error("Invalid response");
-
-      // Normalize a bit to keep UI stable no matter the backing model
-      const d = data.data || {};
-      const company = {
-        name: normStr(d.company?.name),
-        website: normStr(d.company?.website || d.company?.website_url),
-        linkedin: normStr(d.company?.linkedin || d.company?.linkedin_url),
-        hq: normStr(d.company?.hq),
-        industry: normStr(d.company?.industry),
-        size: normStr(d.company?.size),
-        notes: normStr(d.company?.notes),
-        locations: asArray(d.company?.locations),
-        type: normStr(d.company?.type),
-      };
-
-      const contacts = asArray(d.contacts).map((c) => ({
-        id: c.id || cryptoRandomId(),
-        name: normStr(c.name),
-        title: normStr(c.title || c.designation),
-        dept: normStr(c.dept),
-        email: normStr(c.email),
-        email_guess: normStr(c.email_guess),
-        email_status: normStr(c.email_status) || "unknown",
-        linkedin: normStr(c.linkedin || c.linkedin_url),
-        confidence: typeof c.confidence === "number" ? c.confidence : (typeof c.score === "number" ? c.score / 100 : 0),
-      }));
-
-      const view = {
-        company,
-        contacts,
-        tags: asArray(d.tags),
-        score: typeof d.score === "number" ? d.score : 0,
-        outreachDraft:
-          normStr(d.outreachDraft) ||
-          `Subject: Partnership with ${company.name || "your team"}\n\nHi ${contacts[0]?.name || "there"},\n\n…`,
-      };
-
-      setResult(view);
-      setPrimaryContactId(contacts[0]?.id ?? null);
+      setResult(normalizeResult(data.data));
+      setPrimaryContactId(data.data.contacts?.[0]?.id ?? null);
     } catch (e) {
       setErr(e?.message || "Something went wrong");
     } finally {
@@ -113,14 +63,13 @@ export default function EnrichmentPage() {
       return;
     }
 
-    // Build payload for /api/hr-leads/from-enrichment (auth required; uses JWT)
+    // Build payload for /api/hr-leads/from-enrichment (JWT via authFetch)
     const company = {
       name: result.company.name,
       type: result.company.type ?? null,
       locations:
-        result.company.locations?.length
-          ? result.company.locations
-          : (result.company.hq ? [result.company.hq] : []),
+        result.company.locations ??
+        (result.company.hq ? [result.company.hq] : []),
       website_url: result.company.website ?? null,
       linkedin_url: result.company.linkedin ?? null,
     };
@@ -133,7 +82,11 @@ export default function EnrichmentPage() {
           linkedin_url: c.linkedin ?? null,
           location: c.dept ?? result.company.hq ?? null,
           email: c.email ?? c.email_guess ?? null,
-          email_status: c.email ? "validated" : (c.email_guess ? "patterned" : "unknown"),
+          email_status: c.email
+            ? "validated"
+            : c.email_guess
+            ? (c.email_status || "patterned")
+            : "unknown",
         }
       : {
           name: "Decision Maker",
@@ -148,14 +101,16 @@ export default function EnrichmentPage() {
       company,
       contact,
       status: "New",
-      notes: (result.outreachDraft ? "Draft present. " : "") + "Saved from Enrichment UI",
+      notes:
+        (result.outreachDraft ? "Draft present. " : "") +
+        "Saved from Enrichment UI",
     };
 
     try {
-      const res = await adminFetch("/api/hr-leads/from-enrichment", {
+      const res = await authFetch("/api/hr-leads/from-enrichment", {
         method: "POST",
-        body: JSON.stringify(payload),
         headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
       });
       const data = await safeJson(res);
       if (!res.ok || !data?.ok) {
@@ -163,7 +118,7 @@ export default function EnrichmentPage() {
       }
       alert("Lead saved ✅");
     } catch (e) {
-      alert(e?.message || "Failed to save lead (are you logged in?)");
+      alert(e?.message || "Failed to save lead");
     }
   }
 
@@ -172,7 +127,8 @@ export default function EnrichmentPage() {
       <div>
         <h1 className="text-2xl font-semibold text-gray-900">Enrichment</h1>
         <p className="text-sm text-gray-500">
-          Paste a company website / LinkedIn URL, or describe the target (e.g., “G42 UAE Finance Director”).
+          Paste a company website / LinkedIn URL, or describe the target (e.g.,
+          “G42 UAE Finance Director”).
         </p>
       </div>
 
@@ -208,9 +164,12 @@ export default function EnrichmentPage() {
           <section className="lg:col-span-1 bg-white rounded-xl shadow p-5 space-y-2">
             <h2 className="text-lg font-semibold text-gray-900">Company</h2>
             <div className="text-sm text-gray-700">
-              <Row label="Name" value={result.company.name || "—"} />
+              <Row label="Name" value={result.company.name} />
               <Row label="Website" value={linkOrText(result.company.website)} />
-              <Row label="LinkedIn" value={linkOrText(result.company.linkedin)} />
+              <Row
+                label="LinkedIn"
+                value={linkOrText(result.company.linkedin)}
+              />
               <Row label="HQ" value={result.company.hq || "—"} />
               <Row label="Industry" value={result.company.industry || "—"} />
               <Row label="Size" value={result.company.size || "—"} />
@@ -227,7 +186,7 @@ export default function EnrichmentPage() {
                 <span className="font-medium">{result.score}/100</span>
               </div>
               <div className="flex flex-wrap gap-2">
-                {result.tags.map((t) => (
+                {(result.tags || []).map((t) => (
                   <span
                     key={t}
                     className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded-full"
@@ -260,7 +219,9 @@ export default function EnrichmentPage() {
             </div>
 
             {result.contacts.length === 0 ? (
-              <div className="mt-4 text-sm text-gray-500">No contacts found.</div>
+              <div className="mt-4 text-sm text-gray-500">
+                No contacts found.
+              </div>
             ) : (
               <div className="mt-4 overflow-x-auto">
                 <table className="min-w-full text-sm">
@@ -277,12 +238,15 @@ export default function EnrichmentPage() {
                   <tbody>
                     {result.contacts.map((c) => (
                       <tr key={c.id} className="border-t border-gray-200">
-                        <td className="px-4 py-2">{c.name || "—"}</td>
-                        <td className="px-4 py-2">{c.title || "—"}</td>
+                        <td className="px-4 py-2">{c.name}</td>
+                        <td className="px-4 py-2">{c.title}</td>
                         <td className="px-4 py-2">{c.dept || "—"}</td>
                         <td className="px-4 py-2">
                           {c.email || c.email_guess ? (
-                            <a className="underline" href={`mailto:${c.email || c.email_guess}`}>
+                            <a
+                              className="underline"
+                              href={`mailto:${c.email || c.email_guess}`}
+                            >
                               {c.email || c.email_guess}
                             </a>
                           ) : (
@@ -321,7 +285,7 @@ export default function EnrichmentPage() {
               </h2>
               <div className="flex gap-2">
                 <button
-                  onClick={() => copyToClipboard(result.outreachDraft)}
+                  onClick={() => copyToClipboard(result.outreachDraft || "")}
                   className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
                 >
                   Copy
@@ -336,7 +300,7 @@ export default function EnrichmentPage() {
             </div>
             <textarea
               className="w-full min-h-[180px] border rounded-xl px-3 py-2"
-              value={result.outreachDraft}
+              value={result.outreachDraft || ""}
               onChange={(e) =>
                 setResult((prev) =>
                   prev ? { ...prev, outreachDraft: e.target.value } : prev
@@ -357,6 +321,18 @@ export default function EnrichmentPage() {
   );
 }
 
+/* ---------- helpers ---------- */
+
+function normalizeResult(raw) {
+  return {
+    company: raw.company || {},
+    contacts: raw.contacts || [],
+    tags: raw.tags || [],
+    score: raw.score ?? 0,
+    outreachDraft: raw.outreachDraft || "",
+  };
+}
+
 async function safeJson(resp) {
   try {
     return await resp.json();
@@ -370,7 +346,7 @@ async function copyToClipboard(text) {
     await navigator.clipboard.writeText(text);
   } catch {
     const el = document.createElement("textarea");
-    el.value = text || "";
+    el.value = text;
     document.body.appendChild(el);
     el.select();
     document.execCommand("copy");
@@ -384,7 +360,7 @@ function Row({ label, value }) {
       <div className="text-xs uppercase text-gray-400 w-24 shrink-0">
         {label}
       </div>
-      <div className="text-sm">{value || "—"}</div>
+      <div className="text-sm">{value}</div>
     </div>
   );
 }
@@ -397,10 +373,4 @@ function linkOrText(url) {
       {url}
     </a>
   );
-}
-
-function cryptoRandomId() {
-  // tiny random id for client-only rows
-  if (crypto?.randomUUID) return crypto.randomUUID();
-  return "id_" + Math.random().toString(36).slice(2);
 }
