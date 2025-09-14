@@ -1,17 +1,20 @@
 // utils/providers/sourcing_apollo.js
 //
 // Apollo provider adapter: fetch real people by company + departments.
-// NOTES
-// - Requires: APOLLO_API_KEY in env.
-// - We DO NOT reveal emails here to save credits; we just return real names,
-//   titles, LinkedIn (when present) and company match. Our existing email
-//   patterning + optional SMTP verification will handle addresses.
 //
-// API shape on Apollo changes occasionally; we try two well-known endpoints.
-// If the first fails, we retry a second path. We also keep payload minimal
-// and tolerant to field name differences.
+// PLAN NOTE:
+// - People Search API requires a paid plan (Basic+). On Free, Apollo returns
+//   an error such as 403/feature-not-available; we swallow it and return [].
+//
+// AUTH NOTE (per banner & docs):
+// - Include API key in headers (X-Api-Key), not in URL/body.
+//
+// ENV:
+//   APOLLO_API_KEY=sk_xxx
+//   APOLLO_DEFAULT_COUNTRY (optional, default "United Arab Emirates")
 
 const API_KEY = process.env.APOLLO_API_KEY || null;
+const DEFAULT_COUNTRY = process.env.APOLLO_DEFAULT_COUNTRY || "United Arab Emirates";
 
 // Map our department ids to title keywords.
 const TITLE_MAP = {
@@ -25,34 +28,32 @@ const TITLE_MAP = {
   onboarding: ["onboarding", "people operations", "people ops"],
 };
 
-function cleanStr(s) {
-  if (!s) return null;
-  const t = String(s).trim();
-  return t.length ? t : null;
-}
-function uniq(arr) {
-  return [...new Set(arr.filter(Boolean))];
+function cleanStr(s) { if (!s) return null; const t = String(s).trim(); return t.length ? t : null; }
+function uniq(arr) { return [...new Set(arr.filter(Boolean))]; }
+function normDomain(u) {
+  try { return new URL(u).hostname; }
+  catch {
+    const s = String(u || "").trim().toLowerCase();
+    return /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(s) ? s : null;
+  }
 }
 function buildTitleQuery(departments = []) {
-  if (!Array.isArray(departments) || departments.length === 0) return null;
-  const keys = uniq(
-    departments.flatMap((d) => TITLE_MAP[d] || [])
-  );
-  if (!keys.length) return null;
-  // Apollo supports OR-style simple search for titles; we join with pipes.
-  // Example: "hr|talent|payroll"
-  return keys.join("|");
+  if (!Array.isArray(depts) && !Array.isArray(departments)) return null;
+  const src = Array.isArray(departments) ? departments : [];
+  const keys = uniq(src.flatMap((d) => TITLE_MAP[d] || []));
+  return keys.length ? keys.join("|") : null; // e.g. "hr|talent|payroll"
 }
-
-function normDomain(u) {
-  try {
-    const url = new URL(u);
-    return url.hostname;
-  } catch {
-    const s = String(u || "").trim().toLowerCase();
-    if (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(s)) return s;
-    return null;
+function guessDeptFromTitle(title) {
+  const t = String(title || "").toLowerCase();
+  for (const [id, keys] of Object.entries(TITLE_MAP)) {
+    if (keys.some((k) => t.includes(k))) {
+      return ({
+        hr: "HR", hrbp: "HRBP", ta: "Talent Acquisition", payroll: "Payroll",
+        finance: "Finance", admin: "Admin", office_admin: "Office Admin", onboarding: "Onboarding",
+      })[id] || null;
+    }
   }
+  return null;
 }
 
 /**
@@ -61,57 +62,61 @@ function normDomain(u) {
  * @param {Object} opts.company  - expects { website?, linkedin?, name? }
  * @param {string[]} opts.departments - e.g., ['hr','ta',...]
  * @param {number} opts.limit    - max contacts to return (default 10)
- * @param {string} opts.country  - filter country (default 'United Arab Emirates')
+ * @param {string} opts.country  - filter country (default UAE)
  */
-export async function fetchApolloContacts({ company, departments = [], limit = 10, country = "United Arab Emirates" }) {
+export async function fetchApolloContacts({ company, departments = [], limit = 10, country = DEFAULT_COUNTRY }) {
   if (!API_KEY) return []; // not configured
 
-  const titleQuery = buildTitleQuery(departments) || null;
   const domain =
     normDomain(company?.website) ||
     normDomain(company?.linkedin) ||
     null;
 
-  // Build base payload (tolerant to API variations)
-  const basePayload = {
-    api_key: API_KEY, // historically accepted in body
+  const person_titles = buildTitleQuery(departments);
+
+  // Apollo People Search (current docs): POST /api/v1/mixed_people/search
+  // Ref: https://docs.apollo.io/reference/people-search
+  const endpoint = "https://api.apollo.io/api/v1/mixed_people/search";
+
+  const body = {
     page: 1,
     per_page: Math.min(Math.max(5, limit), 50),
     person_location: country,
-    // Favor current employment and company match by domain when available
+    // Prefer exact company match by domain; fall back to name when no domain
     q_organization_domains: domain ? [domain] : undefined,
     organization_name: !domain ? cleanStr(company?.name) : undefined,
-    person_titles: titleQuery || undefined,
-    // Do not force email reveal; we’ll pattern/verify ourselves
-    // open_email: "No", // (leave out to avoid credit spend)
+    person_titles: person_titles || undefined,
+    // DO NOT reveal emails here to save credits; UPR handles pattern/verify
   };
 
-  // Try primary endpoint; if it fails, try fallback path.
-  const endpoints = [
-    "https://api.apollo.io/v1/people/search",
-    "https://api.apollo.io/api/v1/people/search",
-  ];
-
   let results = null;
-  for (const url of endpoints) {
-    try {
-      const resp = await fetch(url, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(basePayload),
-      });
-      if (resp.ok) {
-        results = await resp.json();
-        break;
-      }
-    } catch {
-      // continue to next endpoint
+  try {
+    const resp = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "cache-control": "no-cache",
+        "X-Api-Key": API_KEY, // <-- header per deprecation notice
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!resp.ok) {
+      // Free plans or insufficient scope commonly return 402/403 with a message
+      // We purposely don’t throw—return [] so UPR falls back gracefully.
+      return [];
     }
+    results = await resp.json();
+  } catch {
+    return [];
   }
 
-  const people = Array.isArray(results?.people) ? results.people : Array.isArray(results?.contacts) ? results.contacts : [];
+  const people = Array.isArray(results?.people)
+    ? results.people
+    : Array.isArray(results?.contacts)
+    ? results.contacts
+    : [];
 
-  // Map to UPR’s contact shape
   const contacts = people.map((p, i) => {
     const name =
       cleanStr(p?.name) ||
@@ -128,15 +133,13 @@ export async function fetchApolloContacts({ company, departments = [], limit = 1
       cleanStr(p?.linkedin_profile_url) ||
       null;
 
-    const dept = guessDeptFromTitle(title);
-
     return {
       id: p?.id || undefined,
       name: name || null,
       title: title || null,
-      dept: dept || null,
+      dept: guessDeptFromTitle(title),
       linkedin: linkedin || null,
-      email: null,              // we don’t reveal in provider to save credits
+      email: null,          // don’t spend credits here
       email_guess: null,
       email_status: "unknown",
       confidence: null,
@@ -147,25 +150,4 @@ export async function fetchApolloContacts({ company, departments = [], limit = 1
 
   // Keep only rows with real person names (First Last)
   return contacts.filter((c) => c.name && /\s/.test(c.name));
-}
-
-function guessDeptFromTitle(title) {
-  const t = String(title || "").toLowerCase();
-  for (const [id, keys] of Object.entries(TITLE_MAP)) {
-    if (keys.some((k) => t.includes(k))) {
-      return (
-        {
-          hr: "HR",
-          hrbp: "HRBP",
-          ta: "Talent Acquisition",
-          payroll: "Payroll",
-          finance: "Finance",
-          admin: "Admin",
-          office_admin: "Office Admin",
-          onboarding: "Onboarding",
-        }[id] || null
-      );
-    }
-  }
-  return null;
 }
