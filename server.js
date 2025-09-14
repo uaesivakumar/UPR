@@ -2,7 +2,7 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 
 import { pool } from "./utils/db.js";
 import { adminOnly } from "./utils/adminOnly.js";
@@ -33,9 +33,10 @@ app.get("/__diag", async (_req, res) => {
   }
 });
 
-// ---------- Admin token verification ----------
+// ---------- Admin token verification (used by dashboard login) ----------
 app.get("/api/admin/verify", adminOnly, (_req, res) => res.json({ ok: true }));
-app.get("/api/auth/verify", adminOnly, (_req, res) => res.json({ ok: true })); // alias
+// Back-compat alias
+app.get("/api/auth/verify", adminOnly, (_req, res) => res.json({ ok: true }));
 
 // ---------- API ----------
 app.use("/api/companies", companiesRouter);
@@ -47,22 +48,43 @@ app.use("/api/enrich", enrichRouter);
 const dashboardDist = path.join(__dirname, "dashboard", "dist");
 if (fs.existsSync(dashboardDist)) {
   app.use(express.static(dashboardDist));
+  // SPA fallback
   app.get("*", (_req, res) => {
     res.sendFile(path.join(dashboardDist, "index.html"));
   });
 }
 
-// ---------- Optional worker (dynamic import) ----------
-if (process.env.ENABLE_SOURCING_WORKER === "1") {
-  try {
-    const { startSourcingWorker } = await import("./workers/sourcingWorker.js");
-    startSourcingWorker({ pool });
-    console.log("[worker] sourcing worker enabled");
-  } catch (err) {
-    console.error("[worker] failed to start sourcing worker:", err);
+// ---------- Optional background worker boot ----------
+function bootSourcingWorker() {
+  const enabled =
+    String(process.env.SOURCING_WORKER_ENABLED ?? "false").toLowerCase() === "true";
+  if (!enabled) {
+    console.log("[worker] disabled (SOURCING_WORKER_ENABLED!=true). Skipping.");
+    return;
   }
+  const workerPath = path.join(__dirname, "workers", "sourcingWorker.js");
+  if (!fs.existsSync(workerPath)) {
+    console.warn("[worker] sourcingWorker.js not found. Skipping.");
+    return;
+  }
+  (async () => {
+    try {
+      const url = pathToFileURL(workerPath).href;
+      const mod = await import(url);
+      if (typeof mod.startSourcingWorker === "function") {
+        mod.startSourcingWorker();
+        console.log("[worker] sourcing worker started.");
+      } else {
+        console.warn("[worker] Module has no startSourcingWorker(). Skipping.");
+      }
+    } catch (e) {
+      console.error("[worker] failed to start sourcing worker:", e);
+    }
+  })();
 }
 
 app.listen(PORT, () => {
   console.log(`UPR backend listening on ${PORT}`);
+  // fire-and-forget
+  bootSourcingWorker();
 });
