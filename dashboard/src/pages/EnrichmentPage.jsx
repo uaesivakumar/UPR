@@ -3,20 +3,14 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { authFetch } from "../utils/auth";
 
-/**
- * Enrichment (LLM-powered)
- * - Sends POST /api/enrich  { input }
- * - Shows small "LLM • live" badge next to title when request succeeds
- * - Can save a primary suggested contact as an HR Lead
- */
 export default function EnrichmentPage() {
   const [sp] = useSearchParams();
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
+
   const [result, setResult] = useState(null);
   const [primaryContactId, setPrimaryContactId] = useState(null);
-  const [llmUsed, setLlmUsed] = useState(false);
 
   useEffect(() => {
     const v = sp.get("q");
@@ -24,39 +18,32 @@ export default function EnrichmentPage() {
   }, [sp]);
 
   const primaryContact = useMemo(() => {
-    if (!result?.contacts?.length) return null;
-    return result.contacts.find((c) => c.id === primaryContactId) ?? result.contacts[0] ?? null;
+    if (!result || !result.contacts?.length) return null;
+    return result.contacts.find(c => c.id === primaryContactId) ?? result.contacts[0] ?? null;
   }, [result, primaryContactId]);
 
   async function runEnrichment(e) {
-    e?.preventDefault?.();
+    e.preventDefault();
     setErr(null);
     setResult(null);
     setPrimaryContactId(null);
-    setLlmUsed(false);
 
-    if (!query.trim()) {
-      setErr("Please enter a company URL, LinkedIn, or a descriptive query.");
-      return;
-    }
+    const v = query.trim();
+    if (!v) { setErr("input required"); return; }
 
     setLoading(true);
     try {
-      // IMPORTANT: call /api/enrich (not /run)
+      // IMPORTANT: backend expects { input }, not { query }
       const res = await authFetch("/api/enrich", {
         method: "POST",
-        body: JSON.stringify({ input: query.trim() }),
+        body: JSON.stringify({ input: v }),
       });
-
       const data = await safeJson(res);
       if (!res.ok || !data?.ok || !data?.data) {
-        throw new Error(data?.error || "Enrichment failed");
+        throw new Error(data?.error || "enrichment failed");
       }
-
-      const normalized = normalizePayload(data.data);
-      setResult(normalized);
-      setPrimaryContactId(normalized.contacts?.[0]?.id ?? null);
-      setLlmUsed(true);
+      setResult(data.data);
+      setPrimaryContactId(data.data.contacts?.[0]?.id ?? null);
     } catch (e) {
       setErr(e?.message || "Something went wrong");
     } finally {
@@ -64,65 +51,21 @@ export default function EnrichmentPage() {
     }
   }
 
-  async function saveAsLead() {
-    if (!result?.company?.name) {
-      alert("No company to save.");
-      return;
-    }
-    const c = primaryContact;
-    const payload = {
-      company: {
-        name: result.company.name,
-        locations: result.company.hq ? [result.company.hq] : [],
-        website_url: result.company.website ?? null,
-        linkedin_url: result.company.linkedin ?? null,
-        type: result.company.type ?? null,
-      },
-      contact: c
-        ? {
-            name: c.name ?? null,
-            designation: c.title ?? "Decision Maker",
-            linkedin_url: c.linkedin ?? null,
-            location: c.dept ?? result.company.hq ?? null,
-            email: c.email ?? c.email_guess ?? null,
-            email_status: (c.email && "validated") || c.email_status || "unknown",
-          }
-        : {
-            name: "Decision Maker",
-            designation: "Decision Maker",
-            linkedin_url: null,
-            location: result.company.hq ?? null,
-            email: null,
-            email_status: "unknown",
-          },
-      status: "New",
-      notes: "Saved from Enrichment UI",
-    };
-
-    try {
-      const res = await authFetch("/api/hr-leads/from-enrichment", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
-      const data = await safeJson(res);
-      if (!res.ok || !data?.ok) {
-        throw new Error(data?.error || "Failed to create HR lead");
-      }
-      alert("Lead saved ✅");
-    } catch (e) {
-      alert(e?.message || "Failed to save lead");
-    }
-  }
-
   return (
     <div className="space-y-8">
-      <div className="flex items-center gap-2">
-        <h1 className="text-2xl font-semibold text-gray-900">Enrichment</h1>
-        {llmUsed && <LlmBadge />}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">Enrichment</h1>
+          <p className="text-sm text-gray-500">
+            Paste a company website / LinkedIn URL, or describe the target (e.g., “G42 UAE Finance Director”).
+          </p>
+        </div>
+
+        {/* LLM usage badge */}
+        <span className="inline-flex items-center gap-2 text-xs font-medium rounded-full px-3 py-1 border border-indigo-200 text-indigo-700 bg-indigo-50">
+          <Sparkle /> AI-assisted
+        </span>
       </div>
-      <p className="text-sm text-gray-500">
-        Paste a company website / LinkedIn URL, or describe the target (e.g., “G42 UAE Finance Director”).
-      </p>
 
       <form onSubmit={runEnrichment} className="bg-white rounded-xl shadow p-4 md:p-5 space-y-3">
         <label className="block text-sm font-medium text-gray-700">Input</label>
@@ -141,7 +84,11 @@ export default function EnrichmentPage() {
             {loading ? "Enriching…" : "Enrich"}
           </button>
         </div>
-        {err && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{err}</div>}
+        {err && (
+          <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">
+            {err}
+          </div>
+        )}
       </form>
 
       {result && (
@@ -149,13 +96,13 @@ export default function EnrichmentPage() {
           <section className="lg:col-span-1 bg-white rounded-xl shadow p-5 space-y-2">
             <h2 className="text-lg font-semibold text-gray-900">Company</h2>
             <div className="text-sm text-gray-700">
-              <Row label="Name" value={result.company.name || "—"} />
-              <Row label="Website" value={linkOrText(result.company.website)} />
-              <Row label="LinkedIn" value={linkOrText(result.company.linkedin)} />
-              <Row label="HQ" value={result.company.hq || "—"} />
-              <Row label="Industry" value={result.company.industry || "—"} />
-              <Row label="Size" value={result.company.size || "—"} />
-              {result.company.notes && (
+              <Row label="Name" value={result.company?.name || "—"} />
+              <Row label="Website" value={linkOrText(result.company?.website)} />
+              <Row label="LinkedIn" value={linkOrText(result.company?.linkedin)} />
+              <Row label="HQ" value={result.company?.hq || "—"} />
+              <Row label="Industry" value={result.company?.industry || "—"} />
+              <Row label="Size" value={result.company?.size || "—"} />
+              {result.company?.notes && (
                 <div className="mt-2">
                   <div className="text-xs uppercase text-gray-400">Notes</div>
                   <p className="mt-1">{result.company.notes}</p>
@@ -165,10 +112,10 @@ export default function EnrichmentPage() {
             <div className="mt-4 flex items-center justify-between">
               <div className="text-sm">
                 <span className="text-gray-500">Quality Score:</span>{" "}
-                <span className="font-medium">{result.score}/100</span>
+                <span className="font-medium">{result.score ?? 0}/100</span>
               </div>
               <div className="flex flex-wrap gap-2">
-                {result.tags.map((t) => (
+                {(result.tags || []).map((t) => (
                   <span key={t} className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded-full">
                     {t}
                   </span>
@@ -180,7 +127,7 @@ export default function EnrichmentPage() {
           <section className="lg:col-span-2 bg-white rounded-xl shadow p-5">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold text-gray-900">Suggested Contacts</h2>
-              {result.contacts.length > 0 && (
+              {(result.contacts?.length ?? 0) > 0 && (
                 <select
                   className="border rounded-lg px-2 py-1 text-sm"
                   value={primaryContactId ?? ""}
@@ -195,7 +142,7 @@ export default function EnrichmentPage() {
               )}
             </div>
 
-            {result.contacts.length === 0 ? (
+            {(result.contacts?.length ?? 0) === 0 ? (
               <div className="mt-4 text-sm text-gray-500">No contacts found.</div>
             ) : (
               <div className="mt-4 overflow-x-auto">
@@ -217,22 +164,14 @@ export default function EnrichmentPage() {
                         <td className="px-4 py-2">{c.title}</td>
                         <td className="px-4 py-2">{c.dept || "—"}</td>
                         <td className="px-4 py-2">
-                          {c.email || c.email_guess ? (
-                            <a className="underline" href={`mailto:${c.email || c.email_guess}`}>
-                              {c.email || c.email_guess}
-                            </a>
-                          ) : (
-                            "—"
-                          )}
+                          {c.email
+                            ? <a className="underline" href={`mailto:${c.email}`}>{c.email}</a>
+                            : (c.email_guess || "—")}
                         </td>
                         <td className="px-4 py-2">
                           {c.linkedin ? (
-                            <a className="underline" href={c.linkedin} target="_blank" rel="noreferrer">
-                              Profile
-                            </a>
-                          ) : (
-                            "—"
-                          )}
+                            <a className="underline" href={c.linkedin} target="_blank" rel="noreferrer">Profile</a>
+                          ) : "—"}
                         </td>
                         <td className="px-4 py-2">{Math.round((c.confidence ?? 0) * 100)}%</td>
                       </tr>
@@ -247,20 +186,14 @@ export default function EnrichmentPage() {
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold text-gray-900">Outreach Draft</h2>
               <div className="flex gap-2">
-                <button
-                  onClick={() => copyToClipboard(result.outreachDraft)}
-                  className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
-                >
+                <button onClick={() => copyToClipboard(result.outreachDraft)} className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50">
                   Copy
-                </button>
-                <button onClick={saveAsLead} className="rounded-lg bg-gray-900 text-white px-3 py-1.5 text-sm hover:bg-gray-800">
-                  Save as Lead
                 </button>
               </div>
             </div>
             <textarea
               className="w-full min-h-[180px] border rounded-xl px-3 py-2"
-              value={result.outreachDraft}
+              value={result.outreachDraft || ""}
               onChange={(e) =>
                 setResult((prev) => (prev ? { ...prev, outreachDraft: e.target.value } : prev))
               }
@@ -277,78 +210,21 @@ export default function EnrichmentPage() {
   );
 }
 
-/* ----------------- helpers ----------------- */
-
-function LlmBadge() {
+function Sparkle() {
   return (
-    <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
-      <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-pulse" />
-      LLM • live
-    </span>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 2l2.2 5.7L20 10l-5.8 2.3L12 18l-2.2-5.7L4 10l5.8-2.3L12 2z" stroke="currentColor" />
+    </svg>
   );
 }
 
-function normalizePayload(raw) {
-  // Make the UI resilient to either our stub or a richer LLM result.
-  const company = {
-    name: raw?.company?.name || raw?.company_name || "",
-    website: raw?.company?.website ?? raw?.website ?? null,
-    linkedin: raw?.company?.linkedin ?? raw?.linkedin_url ?? null,
-    hq: raw?.company?.hq ?? raw?.hq ?? null,
-    industry: raw?.company?.industry ?? null,
-    size: raw?.company?.size ?? null,
-    type: raw?.company?.type ?? null,
-    notes: raw?.company?.notes ?? raw?.notes ?? null,
-  };
-
-  const contacts = Array.isArray(raw?.contacts)
-    ? raw.contacts.map((c, i) => ({
-        id: c.id || `${i}`,
-        name: c.name || "",
-        title: c.title || "",
-        dept: c.dept || null,
-        email: c.email || null,
-        email_guess: c.email_guess || null,
-        email_status: c.email_status || "unknown",
-        linkedin: c.linkedin || c.linkedin_url || null,
-        confidence: typeof c.confidence === "number" ? c.confidence : (typeof c.score === "number" ? c.score / 100 : 0),
-      }))
-    : [];
-
-  const tags = Array.isArray(raw?.tags) ? raw.tags : [];
-  const score =
-    typeof raw?.score === "number"
-      ? raw.score
-      : Math.min(100, Math.round(((company.name ? 0.4 : 0) + (contacts.length ? 0.6 : 0)) * 100));
-
-  const outreachDraft =
-    raw?.outreachDraft ||
-    `Subject: Partnership with ${company.name || "your team"}
-
-Hi ${contacts[0]?.name || "there"},
-
-We help HR teams in the UAE reduce sourcing time and improve lead quality using an enrichment + outreach workflow.
-
-Happy to share a shortlist tailored to ${company.hq || "your location"} within 24 hours.
-
-Best,
-UPR Team`;
-
-  return { company, contacts, tags, score, outreachDraft };
-}
-
 async function safeJson(resp) {
-  try {
-    return await resp.json();
-  } catch {
-    return null;
-  }
+  try { return await resp.json(); } catch { return null; }
 }
 
 async function copyToClipboard(text) {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
+  try { await navigator.clipboard.writeText(text || ""); }
+  catch {
     const el = document.createElement("textarea");
     el.value = text || "";
     document.body.appendChild(el);
@@ -362,17 +238,13 @@ function Row({ label, value }) {
   return (
     <div className="flex items-start justify-between gap-4 py-1">
       <div className="text-xs uppercase text-gray-400 w-24 shrink-0">{label}</div>
-      <div className="text-sm">{value ?? "—"}</div>
+      <div className="text-sm">{value}</div>
     </div>
   );
 }
 
 function linkOrText(url) {
   if (!url) return "—";
-  const safe = String(url).startsWith("http") ? String(url) : `https://${url}`;
-  return (
-    <a className="underline" href={safe} target="_blank" rel="noreferrer">
-      {url}
-    </a>
-  );
+  const safe = url.startsWith("http") ? url : `https://${url}`;
+  return <a className="underline" href={safe} target="_blank" rel="noreferrer">{url}</a>;
 }
