@@ -7,12 +7,16 @@ import bcrypt from "bcryptjs";
 
 import { pool } from "./utils/db.js";
 import { adminOnly } from "./utils/adminOnly.js";
-import { signJwt } from "./utils/jwt.js";
 
+// API routers
 import companiesRouter from "./routes/companies.js";
 import hrLeadsRouter from "./routes/hrLeads.js";
 import newsRouter from "./routes/news.js";
 import enrichRouter from "./routes/enrich.js";
+import statsRouter from "./routes/stats.js"; // <-- NEW
+
+// JWT helpers (support whichever export name your utils/jwt.js provides)
+import * as jwtUtil from "./utils/jwt.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,122 +24,97 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-/* ---------- helpers ---------- */
-function pickEnv(names) {
-  for (const n of names) {
-    const v = process.env[n];
-    if (v != null && String(v).length > 0) return v;
-  }
-  return null;
-}
-
-// Accept MANY aliases so you don’t fight env names.
-const ADMIN_USER =
-  pickEnv(["ADMIN_USER", "ADMIN_USERNAME", "DASHBOARD_USER", "AUTH_USER"]) ||
-  "admin";
-
-const ADMIN_PASS_PLAINTEXT = pickEnv([
-  "ADMIN_PASSWORD",
-  "ADMIN_PASS",
-  "DASHBOARD_PASSWORD",
-  "AUTH_PASSWORD",
-]);
-
-const ADMIN_PASS_BCRYPT = pickEnv([
-  "ADMIN_PASSWORD_BCRYPT",
-  "ADMIN_PASSWORD_HASH",
-  "DASHBOARD_PASSWORD_BCRYPT",
-]);
-
-/* ---------- middleware ---------- */
+// ---------- Middleware ----------
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 
-/* ---------- health/diag ---------- */
+// ---------- Health ----------
 app.get("/health", (_req, res) => res.json({ ok: true }));
-
 app.get("/__diag", async (_req, res) => {
   try {
     await pool.query("SELECT 1");
-    res.json({
-      ok: true,
-      db_ok: true,
-      // Don’t leak values, just presence flags:
-      auth: {
-        ADMIN_USER_present: !!ADMIN_USER,
-        ADMIN_PASSWORD_present: !!ADMIN_PASS_PLAINTEXT,
-        ADMIN_PASSWORD_BCRYPT_present: !!ADMIN_PASS_BCRYPT,
-      },
-    });
+    res.json({ ok: true, db_ok: true });
   } catch {
     res.status(500).json({ ok: false, db_ok: false });
   }
 });
 
-/* ---------- auth: username/password ---------- */
-// POST /api/auth/login { username, password }
+// ---------- Auth (username/password + JWT) ----------
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "";
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
+const ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH || "";
+
+// Pick whichever exists in utils/jwt.js
+const signToken =
+  jwtUtil.signAdminJwt || jwtUtil.signJwt || jwtUtil.sign || (() => { throw new Error("No signer in utils/jwt.js"); });
+
 app.post("/api/auth/login", async (req, res) => {
   try {
     const { username, password } = req.body || {};
     if (!username || !password) {
-      return res.status(400).json({ ok: false, error: "username/password required" });
+      return res.status(400).json({ ok: false, error: "username and password required" });
+    }
+    if (!ADMIN_USERNAME || (!ADMIN_PASSWORD && !ADMIN_PASSWORD_HASH)) {
+      return res.status(500).json({ ok: false, error: "server auth not configured" });
     }
 
-    if (username !== ADMIN_USER) {
+    const userOk = username === ADMIN_USERNAME;
+    let passOk = false;
+
+    if (ADMIN_PASSWORD_HASH) {
+      try {
+        passOk = await bcrypt.compare(password, ADMIN_PASSWORD_HASH);
+      } catch {
+        passOk = false;
+      }
+    } else {
+      passOk = password === ADMIN_PASSWORD;
+    }
+
+    if (!userOk || !passOk) {
       return res.status(401).json({ ok: false, error: "invalid credentials" });
     }
 
-    // bcrypt mode wins if provided; otherwise plaintext compare
-    if (ADMIN_PASS_BCRYPT) {
-      const ok = await bcrypt.compare(password, ADMIN_PASS_BCRYPT);
-      if (!ok) return res.status(401).json({ ok: false, error: "invalid credentials" });
-    } else if (ADMIN_PASS_PLAINTEXT) {
-      if (password !== ADMIN_PASS_PLAINTEXT) {
-        return res.status(401).json({ ok: false, error: "invalid credentials" });
-      }
-    } else {
-      // No password set in env at all -> deny
-      return res.status(401).json({ ok: false, error: "admin password not set" });
-    }
-
-    const token = signJwt({ sub: ADMIN_USER, role: "admin" }, 60 * 60 * 24 * 7);
+    const token = signToken({ sub: ADMIN_USERNAME, role: "admin" }, { expiresIn: "30d" });
     return res.json({ ok: true, token });
   } catch (e) {
-    console.error("login error", e);
+    console.error("login error:", e);
     return res.status(500).json({ ok: false, error: "login failed" });
   }
 });
 
-// GET /api/auth/verify (JWT must be sent as Authorization: Bearer <token>)
-app.get("/api/auth/verify", adminOnly, (_req, res) => {
-  res.json({ ok: true });
-});
+// Verification used by the dashboard client
+app.get("/api/auth/verify", adminOnly, (_req, res) => res.json({ ok: true }));
+// Back-compat (old UI)
+app.get("/api/admin/verify", adminOnly, (_req, res) => res.json({ ok: true }));
 
-// Back-compat for earlier UI alias
-app.get("/api/admin/verify", adminOnly, (_req, res) => {
-  res.json({ ok: true });
-});
-
-/* ---------- API routers (JWT-protected where needed) ---------- */
+// ---------- API ----------
 app.use("/api/companies", companiesRouter);
 app.use("/api/hr-leads", hrLeadsRouter);
 app.use("/api/news", newsRouter);
 app.use("/api/enrich", enrichRouter);
+app.use("/api/stats", statsRouter); // <-- NEW
 
-/* ---------- static dashboard (SPA) ---------- */
+// ---------- Static (dashboard SPA) ----------
 const dashboardDist = path.join(__dirname, "dashboard", "dist");
 if (fs.existsSync(dashboardDist)) {
-  app.use(express.static(dashboardDist));
+  // Cache built assets, but always fetch a fresh index.html so new deploys reflect immediately
+  app.use(express.static(dashboardDist, { maxAge: "1h", immutable: true }));
+
+  // SPA fallback – mark HTML as no-store so browsers don't keep old shells
   app.get("*", (_req, res) => {
+    res.setHeader("Cache-Control", "no-store");
     res.sendFile(path.join(dashboardDist, "index.html"));
   });
 }
 
+// ---------- Optional worker banner ----------
+if ((process.env.SOURCING_WORKER_ENABLED || "").toLowerCase() === "true") {
+  console.log("[worker] enabled (external worker process should be running).");
+} else {
+  console.log("[worker] disabled (SOURCING_WORKER_ENABLED!=true). Skipping.");
+}
+
 app.listen(PORT, () => {
   console.log(`UPR backend listening on ${PORT}`);
-  console.log(
-    `[auth] user=${ADMIN_USER} mode=${
-      ADMIN_PASS_BCRYPT ? "bcrypt" : ADMIN_PASS_PLAINTEXT ? "plaintext" : "unset"
-    }`
-  );
 });

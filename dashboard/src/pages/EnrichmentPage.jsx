@@ -3,6 +3,42 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { authFetch } from "../utils/auth";
 
+/* ---------- helpers: robust normalization ---------- */
+function safeVal(v, dash = "—") {
+  if (v === null || v === undefined) return dash;
+  const s = String(v).trim();
+  return s.length ? s : dash;
+}
+function linkOrText(url) {
+  if (!url) return "—";
+  const safe = url.startsWith("http") ? url : `https://${url}`;
+  return (
+    <a className="underline" href={safe} target="_blank" rel="noreferrer">
+      {url}
+    </a>
+  );
+}
+async function safeJson(resp) {
+  try {
+    return await resp.json();
+  } catch {
+    return null;
+  }
+}
+async function copyToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text || "");
+  } catch {
+    const el = document.createElement("textarea");
+    el.value = text || "";
+    document.body.appendChild(el);
+    el.select();
+    document.execCommand("copy");
+    document.body.removeChild(el);
+  }
+}
+
+/* ---------- component ---------- */
 export default function EnrichmentPage() {
   const [sp] = useSearchParams();
   const [query, setQuery] = useState("");
@@ -17,13 +53,13 @@ export default function EnrichmentPage() {
     if (v) setQuery(v);
   }, [sp]);
 
+  const contacts = result?.contacts ?? [];
   const primaryContact = useMemo(() => {
-    if (!result || !result.contacts?.length) return null;
+    if (!contacts.length) return null;
     const pick =
-      result.contacts.find((c) => c.id === primaryContactId) ??
-      result.contacts[0];
+      contacts.find((c) => c.id === primaryContactId) ?? contacts[0];
     return pick ?? null;
-  }, [result, primaryContactId]);
+  }, [contacts, primaryContactId]);
 
   async function runEnrichment(e) {
     e.preventDefault();
@@ -38,18 +74,19 @@ export default function EnrichmentPage() {
 
     setLoading(true);
     try {
-      // Call the backend LLM enrichment (now at POST /api/enrich with {input})
-      const res = await authFetch("/api/enrich", {
+      // backend supports /api/enrich and /api/enrich/run (both accept {input|query})
+      const res = await authFetch("/api/enrich/run", {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ input: query.trim() }),
+        body: JSON.stringify({ query: query.trim() }),
       });
-      const data = await safeJson(res);
-      if (!res.ok || !data?.ok || !data?.data) {
-        throw new Error(data?.error || "Enrichment failed");
+      if (!res.ok) {
+        const j = await safeJson(res);
+        throw new Error(j?.error || "Enrichment failed");
       }
-      setResult(normalizeResult(data.data));
-      setPrimaryContactId(data.data.contacts?.[0]?.id ?? null);
+      const j = await res.json();
+      if (!j?.ok || !j?.data) throw new Error("Invalid response");
+      setResult(j.data);
+      setPrimaryContactId(j.data.contacts?.[0]?.id ?? null);
     } catch (e) {
       setErr(e?.message || "Something went wrong");
     } finally {
@@ -63,7 +100,6 @@ export default function EnrichmentPage() {
       return;
     }
 
-    // Build payload for /api/hr-leads/from-enrichment (JWT via authFetch)
     const company = {
       name: result.company.name,
       type: result.company.type ?? null,
@@ -102,14 +138,12 @@ export default function EnrichmentPage() {
       contact,
       status: "New",
       notes:
-        (result.outreachDraft ? "Draft present. " : "") +
-        "Saved from Enrichment UI",
+        (result.outreachDraft ? "Draft present. " : "") + "Saved from Enrichment UI",
     };
 
     try {
       const res = await authFetch("/api/hr-leads/from-enrichment", {
         method: "POST",
-        headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
       });
       const data = await safeJson(res);
@@ -127,8 +161,7 @@ export default function EnrichmentPage() {
       <div>
         <h1 className="text-2xl font-semibold text-gray-900">Enrichment</h1>
         <p className="text-sm text-gray-500">
-          Paste a company website / LinkedIn URL, or describe the target (e.g.,
-          “G42 UAE Finance Director”).
+          Paste a company website / LinkedIn URL, or describe the target (e.g., “G42 UAE Finance Director”).
         </p>
       </div>
 
@@ -137,7 +170,7 @@ export default function EnrichmentPage() {
         className="bg-white rounded-xl shadow p-4 md:p-5 space-y-3"
       >
         <label className="block text-sm font-medium text-gray-700">Input</label>
-        <div className="flex flex-col md:flex-row gap-3">
+        <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center">
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -152,6 +185,17 @@ export default function EnrichmentPage() {
             {loading ? "Enriching…" : "Enrich"}
           </button>
         </div>
+
+        {/* LLM badge */}
+        {result?.meta?.llm && (
+          <div className="text-xs text-gray-500">
+            LLM: <span className="font-medium">{result.meta.llm}</span>
+            {typeof result.meta.took_ms === "number" && (
+              <> · {result.meta.took_ms} ms</>
+            )}
+          </div>
+        )}
+
         {err && (
           <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">
             {err}
@@ -161,18 +205,16 @@ export default function EnrichmentPage() {
 
       {result && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Company */}
           <section className="lg:col-span-1 bg-white rounded-xl shadow p-5 space-y-2">
             <h2 className="text-lg font-semibold text-gray-900">Company</h2>
             <div className="text-sm text-gray-700">
-              <Row label="Name" value={result.company.name} />
+              <Row label="Name" value={safeVal(result.company.name)} />
               <Row label="Website" value={linkOrText(result.company.website)} />
-              <Row
-                label="LinkedIn"
-                value={linkOrText(result.company.linkedin)}
-              />
-              <Row label="HQ" value={result.company.hq || "—"} />
-              <Row label="Industry" value={result.company.industry || "—"} />
-              <Row label="Size" value={result.company.size || "—"} />
+              <Row label="LinkedIn" value={linkOrText(result.company.linkedin)} />
+              <Row label="HQ" value={safeVal(result.company.hq)} />
+              <Row label="Industry" value={safeVal(result.company.industry)} />
+              <Row label="Size" value={safeVal(result.company.size)} />
               {result.company.notes && (
                 <div className="mt-2">
                   <div className="text-xs uppercase text-gray-400">Notes</div>
@@ -198,18 +240,19 @@ export default function EnrichmentPage() {
             </div>
           </section>
 
+          {/* Contacts */}
           <section className="lg:col-span-2 bg-white rounded-xl shadow p-5">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
               <h2 className="text-lg font-semibold text-gray-900">
                 Suggested Contacts
               </h2>
-              {result.contacts.length > 0 && (
+              {contacts.length > 0 && (
                 <select
                   className="border rounded-lg px-2 py-1 text-sm"
                   value={primaryContactId ?? ""}
                   onChange={(e) => setPrimaryContactId(e.target.value)}
                 >
-                  {result.contacts.map((c) => (
+                  {contacts.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name} — {c.title}
                     </option>
@@ -218,10 +261,8 @@ export default function EnrichmentPage() {
               )}
             </div>
 
-            {result.contacts.length === 0 ? (
-              <div className="mt-4 text-sm text-gray-500">
-                No contacts found.
-              </div>
+            {contacts.length === 0 ? (
+              <div className="mt-4 text-sm text-gray-500">No contacts found.</div>
             ) : (
               <div className="mt-4 overflow-x-auto">
                 <table className="min-w-full text-sm">
@@ -236,19 +277,20 @@ export default function EnrichmentPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {result.contacts.map((c) => (
+                    {contacts.map((c) => (
                       <tr key={c.id} className="border-t border-gray-200">
-                        <td className="px-4 py-2">{c.name}</td>
-                        <td className="px-4 py-2">{c.title}</td>
-                        <td className="px-4 py-2">{c.dept || "—"}</td>
+                        <td className="px-4 py-2">{safeVal(c.name)}</td>
+                        <td className="px-4 py-2">{safeVal(c.title)}</td>
+                        <td className="px-4 py-2">{safeVal(c.dept)}</td>
                         <td className="px-4 py-2">
-                          {c.email || c.email_guess ? (
-                            <a
-                              className="underline"
-                              href={`mailto:${c.email || c.email_guess}`}
-                            >
-                              {c.email || c.email_guess}
+                          {c.email ? (
+                            <a className="underline" href={`mailto:${c.email}`}>
+                              {c.email}
                             </a>
+                          ) : c.email_guess ? (
+                            <span title={c.email_status || "patterned"}>
+                              {c.email_guess}
+                            </span>
                           ) : (
                             "—"
                           )}
@@ -278,14 +320,15 @@ export default function EnrichmentPage() {
             )}
           </section>
 
+          {/* Outreach */}
           <section className="lg:col-span-3 bg-white rounded-xl shadow p-5 space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
               <h2 className="text-lg font-semibold text-gray-900">
                 Outreach Draft
               </h2>
               <div className="flex gap-2">
                 <button
-                  onClick={() => copyToClipboard(result.outreachDraft || "")}
+                  onClick={() => copyToClipboard(result.outreachDraft)}
                   className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
                 >
                   Copy
@@ -300,7 +343,7 @@ export default function EnrichmentPage() {
             </div>
             <textarea
               className="w-full min-h-[180px] border rounded-xl px-3 py-2"
-              value={result.outreachDraft || ""}
+              value={result.outreachDraft}
               onChange={(e) =>
                 setResult((prev) =>
                   prev ? { ...prev, outreachDraft: e.target.value } : prev
@@ -321,39 +364,7 @@ export default function EnrichmentPage() {
   );
 }
 
-/* ---------- helpers ---------- */
-
-function normalizeResult(raw) {
-  return {
-    company: raw.company || {},
-    contacts: raw.contacts || [],
-    tags: raw.tags || [],
-    score: raw.score ?? 0,
-    outreachDraft: raw.outreachDraft || "",
-  };
-}
-
-async function safeJson(resp) {
-  try {
-    return await resp.json();
-  } catch {
-    return null;
-  }
-}
-
-async function copyToClipboard(text) {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    const el = document.createElement("textarea");
-    el.value = text;
-    document.body.appendChild(el);
-    el.select();
-    document.execCommand("copy");
-    document.body.removeChild(el);
-  }
-}
-
+/* ---------- tiny presentational helpers ---------- */
 function Row({ label, value }) {
   return (
     <div className="flex items-start justify-between gap-4 py-1">
@@ -362,15 +373,5 @@ function Row({ label, value }) {
       </div>
       <div className="text-sm">{value}</div>
     </div>
-  );
-}
-
-function linkOrText(url) {
-  if (!url) return "—";
-  const safe = url.startsWith("http") ? url : `https://${url}`;
-  return (
-    <a className="underline" href={safe} target="_blank" rel="noreferrer">
-      {url}
-    </a>
   );
 }
