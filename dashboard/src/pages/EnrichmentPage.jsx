@@ -1,7 +1,6 @@
 // dashboard/src/pages/EnrichmentPage.jsx
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { authFetch } from "../utils/auth";
 
 export default function EnrichmentPage() {
   const [sp] = useSearchParams();
@@ -19,7 +18,7 @@ export default function EnrichmentPage() {
 
   const primaryContact = useMemo(() => {
     if (!result || !result.contacts?.length) return null;
-    return result.contacts.find(c => c.id === primaryContactId) ?? result.contacts[0] ?? null;
+    return result.contacts.find((c) => c.id === primaryContactId) ?? result.contacts[0] ?? null;
   }, [result, primaryContactId]);
 
   async function runEnrichment(e) {
@@ -29,19 +28,39 @@ export default function EnrichmentPage() {
     setPrimaryContactId(null);
 
     const v = query.trim();
-    if (!v) { setErr("input required"); return; }
+    if (!v) {
+      setErr("input required");
+      return;
+    }
 
     setLoading(true);
     try {
-      // IMPORTANT: backend expects { input }, not { query }
-      const res = await authFetch("/api/enrich", {
+      // 1) Preferred route: /api/enrich with { input }
+      let res = await fetch("/api/enrich", {
         method: "POST",
+        headers: {
+          "content-type": "application/json", // <-- force JSON so Express parses body
+        },
         body: JSON.stringify({ input: v }),
       });
+
+      // 2) Back-compat fallback to /api/enrich/run with { query } if needed
+      if (!res.ok) {
+        const data = await safeJson(res);
+        if (data?.error?.toLowerCase?.() === "input required") {
+          res = await fetch("/api/enrich/run", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ query: v }),
+          });
+        }
+      }
+
       const data = await safeJson(res);
       if (!res.ok || !data?.ok || !data?.data) {
         throw new Error(data?.error || "enrichment failed");
       }
+
       setResult(data.data);
       setPrimaryContactId(data.data.contacts?.[0]?.id ?? null);
     } catch (e) {
@@ -60,7 +79,6 @@ export default function EnrichmentPage() {
             Paste a company website / LinkedIn URL, or describe the target (e.g., “G42 UAE Finance Director”).
           </p>
         </div>
-
         {/* LLM usage badge */}
         <span className="inline-flex items-center gap-2 text-xs font-medium rounded-full px-3 py-1 border border-indigo-200 text-indigo-700 bg-indigo-50">
           <Sparkle /> AI-assisted
@@ -164,9 +182,11 @@ export default function EnrichmentPage() {
                         <td className="px-4 py-2">{c.title}</td>
                         <td className="px-4 py-2">{c.dept || "—"}</td>
                         <td className="px-4 py-2">
-                          {c.email
-                            ? <a className="underline" href={`mailto:${c.email}`}>{c.email}</a>
-                            : (c.email_guess || "—")}
+                          {c.email ? (
+                            <a className="underline" href={`mailto:${c.email}`}>{c.email}</a>
+                          ) : (
+                            c.email_guess || "—"
+                          )}
                         </td>
                         <td className="px-4 py-2">
                           {c.linkedin ? (
