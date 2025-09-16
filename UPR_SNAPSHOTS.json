@@ -1,13 +1,31 @@
 {
-  "generated": "2025-09-16T16:55:57Z",
-  "generated_human": "Tue, 16 Sep 2025 16:55:57 GMT",
+  "generated": "2025-09-16T17:06:02Z",
+  "generated_human": "Tue, 16 Sep 2025 17:06:02 GMT",
   "branch": "main",
-  "commit": "a296458",
+  "commit": "c7839fd",
   "package": "upr-dashboard",
+  "package_dependencies": {
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.16.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.8.2",
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.4.8"
+  },
+  "package_scripts": {
+    "dev": "vite",
+    "build": "vite build --logLevel debug",
+    "preview": "vite preview --port 5173"
+  },
   "files": [
     {
       "path": "dashboard/src/features/enrichment/CompanySidebarCard.jsx",
       "size": 1540,
+      "mtime": "2025-09-14T09:40:59.993Z",
       "sha256": "de3680a35505cbba27ff64f6a7606a35519c26d131a44ce173d07742c82eddd1",
       "imports": [
         "import React from \"react\";"
@@ -21,6 +39,7 @@
     {
       "path": "dashboard/src/features/enrichment/EnrichmentView.jsx",
       "size": 14873,
+      "mtime": "2025-09-14T09:41:07.565Z",
       "sha256": "a9e58b2705d114b333d667a6fddd73dc271ec2ae65890e009749f358c09c72d5",
       "imports": [
         "import React, { useMemo, useState, useCallback } from \"react\";",
@@ -36,6 +55,7 @@
     {
       "path": "dashboard/src/features/enrichment/LLMStatus.jsx",
       "size": 1498,
+      "mtime": "2025-09-14T09:40:51.466Z",
       "sha256": "6e8c983aa0b97f34fec375fec3c50af4587ba397204a20b08fa379ee48d2bce4",
       "imports": [
         "import React from \"react\";"
@@ -49,6 +69,7 @@
     {
       "path": "dashboard/src/pages/Admin.jsx",
       "size": 6749,
+      "mtime": "2025-09-14T04:35:37.712Z",
       "sha256": "117cd39d4a05b474c4d2e63c4d5893a5a5a5be5fdadf2fd2c7f3c5bcfb712245",
       "imports": [
         "import { useEffect, useState } from \"react\";",
@@ -63,6 +84,7 @@
     {
       "path": "dashboard/src/pages/AdminDashboard.jsx",
       "size": 1583,
+      "mtime": "2025-09-08T15:40:26.380Z",
       "sha256": "1554999347843e970b24ecc4b591fe14e118a4eccfbcdfe5e008440e5dfcc61b",
       "imports": [
         "import React from \"react\";",
@@ -78,6 +100,7 @@
     {
       "path": "dashboard/src/pages/CompaniesPage.jsx",
       "size": 7115,
+      "mtime": "2025-09-13T16:10:49.887Z",
       "sha256": "fc43a133651ccac6122205fd0a725b6c7e2c13b2da018b1dd9cd5212082380c4",
       "imports": [
         "import { useEffect, useMemo, useState } from \"react\";",
@@ -92,6 +115,7 @@
     {
       "path": "dashboard/src/pages/DashboardHome.jsx",
       "size": 7042,
+      "mtime": "2025-09-14T05:16:56.671Z",
       "sha256": "c7aabcad134edf5c87cf014212770d93ebbfc1bdaaaaa6035784391cca898540",
       "imports": [
         "import { useEffect, useState } from \"react\";",
@@ -107,6 +131,7 @@
     {
       "path": "dashboard/src/pages/EnrichmentPage.jsx",
       "size": 676,
+      "mtime": "2025-09-15T18:00:06.485Z",
       "sha256": "0bdad841b6594fab01d8cc5fb8a43a76e775dec223c2623c7cbcb6b3029a1ba3",
       "imports": [
         "import React, { useEffect } from \"react\";",
@@ -122,6 +147,7 @@
     {
       "path": "dashboard/src/pages/HRLeads.jsx",
       "size": 4089,
+      "mtime": "2025-09-13T12:55:59.827Z",
       "sha256": "1acfb4e8704613b70f6638ceb53340ed9b4c53c6db2ed627cae38901199aec4c",
       "imports": [
         "import { useEffect, useMemo, useState } from \"react\";"
@@ -135,6 +161,7 @@
     {
       "path": "dashboard/src/pages/Leads.jsx",
       "size": 4709,
+      "mtime": "2025-09-13T12:28:28.342Z",
       "sha256": "9bb248d60305ad8cbfd1542ebe0aafe96cacaed661f6f3931b97db27f9ab29f9",
       "imports": [
         "import { useEffect, useMemo, useState } from \"react\";"
@@ -148,6 +175,7 @@
     {
       "path": "dashboard/src/pages/LeadsPage.jsx",
       "size": 4507,
+      "mtime": "2025-09-13T06:18:46.713Z",
       "sha256": "440c00f80642379c41337aee3fc300bbbe3d285abd991e4af566140d6b9bf7cb",
       "imports": [
         "import { useEffect, useState } from \"react\";",
@@ -162,6 +190,7 @@
     {
       "path": "dashboard/src/pages/Login.jsx",
       "size": 2967,
+      "mtime": "2025-09-14T04:31:31.784Z",
       "sha256": "f9848a0b3f0c7edd6e690ffad5c8783db57cc71113a5f18327ba30720e8d589c",
       "imports": [
         "import { useEffect, useState } from \"react\";",
@@ -177,6 +206,7 @@
     {
       "path": "dashboard/src/pages/MessagesPage.jsx",
       "size": 456,
+      "mtime": "2025-09-13T12:56:14.140Z",
       "sha256": "01288e8205b1dd6c82b87f4399e49af66a475a5799a42fcd0c1455dec6cab3f0",
       "imports": [],
       "envs": [],
@@ -188,6 +218,7 @@
     {
       "path": "routes/companies.js",
       "size": 7419,
+      "mtime": "2025-09-13T14:37:11.353Z",
       "sha256": "a180350cbffd18f86e600c6210b87b18f42d4707cbdbdf363f9e9f079319e837",
       "imports": [
         "import express from \"express\";",
@@ -205,6 +236,7 @@
     {
       "path": "routes/email.js",
       "size": 5237,
+      "mtime": "2025-09-14T03:28:29.613Z",
       "sha256": "6bf67e72fb329b09105d19e712612498829a69c1575526202f033f5ad7174809",
       "imports": [
         "import express from \"express\";",
@@ -225,6 +257,7 @@
     {
       "path": "routes/enrich.js",
       "size": 8617,
+      "mtime": "2025-09-15T17:57:12.549Z",
       "sha256": "6f5a8a1a51fedb1673846a0508b1207dd5dc5a0c9930e65a7527a8dd1ffe55a2",
       "imports": [
         "import express from \"express\";",
@@ -241,6 +274,7 @@
     {
       "path": "routes/hrLeads.js",
       "size": 15982,
+      "mtime": "2025-09-13T15:07:44.092Z",
       "sha256": "384515fa7f2d3cf4d7d915fd44d2cdea9677dbbc91f64962dc0b75315c9391a0",
       "imports": [
         "import express from \"express\";",
@@ -257,6 +291,7 @@
     {
       "path": "routes/news.js",
       "size": 2091,
+      "mtime": "2025-09-13T12:08:02.783Z",
       "sha256": "9b4aca7dc5aa98fb9713009e51b015b129697ce0e4e07eb76b5d29ac22709022",
       "imports": [
         "import express from \"express\";",
@@ -272,6 +307,7 @@
     {
       "path": "routes/sourcing.js",
       "size": 2833,
+      "mtime": "2025-09-14T03:37:06.478Z",
       "sha256": "5997f557ec9968984b140900e9f5bb006f51420c53b2e318ed639d13e65fbc71",
       "imports": [
         "import express from \"express\";",
@@ -288,6 +324,7 @@
     {
       "path": "routes/stats.js",
       "size": 1385,
+      "mtime": "2025-09-14T05:07:00.945Z",
       "sha256": "1eacda634183ed36e5ee49e154f1f29710d154f4441ba272a4d9509ccac0c8c0",
       "imports": [
         "import express from \"express\";",
@@ -303,6 +340,7 @@
     {
       "path": "server.js",
       "size": 4159,
+      "mtime": "2025-09-14T05:22:54.398Z",
       "sha256": "d9745a910a7e456aab990d934f36a4a0e0b39b523b01fc1b3adf12bf8f2b3c32",
       "imports": [
         "import express from \"express\";",
@@ -340,6 +378,7 @@
     {
       "path": "utils/adminOnly.js",
       "size": 625,
+      "mtime": "2025-09-14T04:40:30.915Z",
       "sha256": "e5b62b7271a27feacae03b377f6a941ebcb59906ea881987c571aeca22f169dd",
       "imports": [
         "import { verifyJwt } from \"./jwt.js\";"
@@ -353,6 +392,7 @@
     {
       "path": "utils/ai.js",
       "size": 7228,
+      "mtime": "2025-09-14T05:08:22.878Z",
       "sha256": "dadd50847aa710ae36e44567cd001ce26450f888e57f0ee864aae256d174144d",
       "imports": [
         "import crypto from \"crypto\";"
@@ -369,6 +409,7 @@
     {
       "path": "utils/apollo.js",
       "size": 88,
+      "mtime": "2025-09-14T16:26:45.152Z",
       "sha256": "ebb345093561efd00e9088efdb6fd89e852f71f414f615540fa5fd31b3ecce85",
       "imports": [],
       "envs": [],
@@ -380,6 +421,7 @@
     {
       "path": "utils/db.js",
       "size": 993,
+      "mtime": "2025-09-13T15:11:29.073Z",
       "sha256": "cb3b97a0ed9f6485c20db51a432d4270ddc98ce8971e9a97b02d08eed04b15eb",
       "imports": [
         "import pg from \"pg\";"
@@ -398,6 +440,7 @@
     {
       "path": "utils/emailPatterns.js",
       "size": 2991,
+      "mtime": "2025-09-15T17:57:38.669Z",
       "sha256": "9b6e21504b2574550d3a018c707c1dfb51978b568ed303ff2faad59f2ac0cc3c",
       "imports": [
         "import { pool } from \"./db.js\";"
@@ -411,6 +454,7 @@
     {
       "path": "utils/emailVerify.js",
       "size": 2109,
+      "mtime": "2025-09-15T17:45:51.988Z",
       "sha256": "342a6f21fb9b49a3aed964e8fa063bd92299323a8b1e17d23ccf9e2123ffb714",
       "imports": [],
       "envs": [
@@ -425,6 +469,7 @@
     {
       "path": "utils/jwt.js",
       "size": 375,
+      "mtime": "2025-09-14T04:40:23.321Z",
       "sha256": "8c531dc92f53c8c5467ed1a281a077c813835f60aa8d16413b4544a98c9015f1",
       "imports": [
         "import jwt from \"jsonwebtoken\";"
@@ -441,6 +486,7 @@
     {
       "path": "utils/normalize.js",
       "size": 646,
+      "mtime": "2025-09-14T16:21:07.207Z",
       "sha256": "8f73e614c22b47755e634f50d26895a9437a763fa1b28d792266452f98835070",
       "imports": [],
       "envs": [],
@@ -452,6 +498,7 @@
     {
       "path": "utils/patternCache.js",
       "size": 983,
+      "mtime": "2025-09-14T03:55:08.008Z",
       "sha256": "abb445ea1196aa9f5f33e6ef346dfed254d61e0b748fef50316a059f2c91f64e",
       "imports": [],
       "envs": [],
@@ -463,6 +510,7 @@
     {
       "path": "utils/patternHelpers.js",
       "size": 1710,
+      "mtime": "2025-09-15T17:57:51.212Z",
       "sha256": "3b155e40ca6105b1ebd61b0d9526f786e2f3179eedc4779ee6f7df796b886cb9",
       "imports": [],
       "envs": [],
@@ -474,6 +522,7 @@
     {
       "path": "utils/providers/apollo.js",
       "size": 1762,
+      "mtime": "2025-09-14T16:31:38.208Z",
       "sha256": "ef00a21698bd87c5acaabfd92ac6cd8a986282809b246345eb0f5a7288ed1237",
       "imports": [],
       "envs": [
@@ -487,6 +536,7 @@
     {
       "path": "utils/providers/sourcing.js",
       "size": 873,
+      "mtime": "2025-09-14T10:09:26.419Z",
       "sha256": "1cd8f2e89186c344edf359991032b8301f72c76b33c466f7d6b1826cc025e06c",
       "imports": [
         "\nimport { fetchApolloContacts } from \"./sourcing_apollo.js\";"
@@ -500,6 +550,7 @@
     {
       "path": "utils/providers/sourcing_apollo.js",
       "size": 4313,
+      "mtime": "2025-09-14T10:50:03.092Z",
       "sha256": "0d85801ceae3eb66bde60593ae1d40fb2948d365bcfc347a76850a27255edb98",
       "imports": [],
       "envs": [
@@ -514,6 +565,7 @@
     {
       "path": "utils/qscore.js",
       "size": 415,
+      "mtime": "2025-09-13T12:07:10.256Z",
       "sha256": "7e067803d22b901044ed9077929017457fd31f891bd69a3f8932fa4274eecc43",
       "imports": [],
       "envs": [],
@@ -525,6 +577,7 @@
     {
       "path": "utils/respond.js",
       "size": 198,
+      "mtime": "2025-09-13T12:06:56.253Z",
       "sha256": "e7416b8a0b80da8bf89666a5eec8b0586eb58c622c22a4e48187b664d9d1c940",
       "imports": [],
       "envs": [],
@@ -536,6 +589,7 @@
     {
       "path": "utils/smtpVerify.js",
       "size": 2346,
+      "mtime": "2025-09-15T17:58:05.194Z",
       "sha256": "602a9ec6c40b68924acd95bee07120bd6ec549188a1284831275ef783a12fcab",
       "imports": [],
       "envs": [
@@ -550,6 +604,7 @@
     {
       "path": "utils/validators.js",
       "size": 4738,
+      "mtime": "2025-09-13T14:48:06.014Z",
       "sha256": "96d7f2e825ed0a1a3bc29e5b2e7dc0e017808d1c430cc6cf04418702445d2284",
       "imports": [],
       "envs": [],
