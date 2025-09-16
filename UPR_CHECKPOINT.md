@@ -1,8 +1,8 @@
 # UPR — Project Checkpoint (auto)
 
-**Generated:** 2025-09-16T17:06:02Z  
+**Generated:** 2025-09-16T17:09:10Z  
 **Branch:** main  
-**Commit:** c7839fd
+**Commit:** 852abfe
 **Package:** upr-dashboard
 
 ---
@@ -17,7 +17,7 @@
 <details><summary>Click to expand</summary>
 
 ```
-# Generated: 2025-09-16T17:06:01Z
+# Generated: 2025-09-16T17:09:10Z
 .
 ./.githooks
 ./.githooks/project-structure.txt
@@ -8526,6 +8526,7 @@
 ./scripts/generate_checkpoint.mjs
 ./scripts/20250915_enrichment.sql
 ./scripts/2025-09-13_email_domain_patterns.sql
+./scripts/generate_checkpoint.mjs.bak
 ./scripts/migrate.sql
 ./scripts/ensure-seed.js
 ./db
@@ -8984,6 +8985,7 @@
 ./.git/objects/a5
 ./.git/objects/a5/87c972e88a2f4b155013c1709b98e38be5c195
 ./.git/objects/a5/49eebe5af382a6df67efb15db96bcae286b9fb
+./.git/objects/a5/868ed44d81ac4a7c600b2d5b31f7f5cded4dd5
 ./.git/objects/a5/47bf36d8d11a4f89c59c144f24795749086dd1
 ./.git/objects/bd
 ./.git/objects/bd/1e7c2a2af3b1e074b6bc5fba4e98b1294c923e
@@ -9310,6 +9312,7 @@
 ./.git/objects/4b/c7e3cdadd70bea5abc2741711274b5928f3d3a
 ./.git/objects/pack
 ./.git/objects/11
+./.git/objects/11/697665fb0b328463062adbf7892ae8812199a7
 ./.git/objects/11/24e50ccf8de6a0d9a5ee897cf5b550005ff617
 ./.git/objects/7d
 ./.git/objects/7d/634fa3333e8d28da508379f92afcc2c63d81e4
@@ -9602,6 +9605,7 @@
 ./.git/objects/6b/2ae764c54541ae224d93bb49e8f176260601b6
 ./.git/objects/6b/75b6a2dffbd6e15fdef619be11592f55d58401
 ./.git/objects/6b/250b08d39d2445a7037b5d1097c0f7034c2ebb
+./.git/objects/6b/1638f87a40383f1854c7cae8c548a5e7fee015
 ./.git/objects/07
 ./.git/objects/07/8ce7108ed8f971e6f644f84cdcf8d2bb87cd35
 ./.git/objects/07/51cb10e94972be9a07b44cc261447bac726a7f
@@ -10288,6 +10292,7 @@
 ./.git/objects/cb/7cc8927a64ac5d213480e3fba1b0d3dcbba3f6
 ./.git/objects/cb/e62e8e7f20b6aa70e4d138b1503837ae4e5f95
 ./.git/objects/cb/0ff5c3b541f646105198ee23ac0fc3d805023e
+./.git/objects/cb/829e6d9cb6477234fd521a9f71cf67173e4f80
 ./.git/objects/cb/ce04ae08bd941f774cfbda31abcdcdc87e53a2
 ./.git/objects/cb/f744e811e5b90d840aff81d5698a09e3be534d
 ./.git/objects/cb/d2478beffb7e4e612f99e8bff383255c21f253
@@ -10404,6 +10409,7 @@
 ./.git/objects/70/93638ece25b784eaf677e31c8e3b62186a4b05
 ./.git/objects/70/3ff2e49d870aeab39a2be91ae5f506445182f3
 ./.git/objects/70/59a962adb0138b65dd10e0aee66ccfe984b8c6
+./.git/objects/70/7a5fda9a39fc0e698bc3839287445d506ddb4e
 ./.git/objects/70/f01c319875b608a724c51c1573b49d64783ae0
 ./.git/objects/70/d195e6f15ce2f4908dcb911b630b8b63b4af48
 ./.git/objects/70/dbfa32f69153f0155f8909a72158da548d2f2b
@@ -10469,6 +10475,7 @@
 ./.git/objects/15/e93df350fb6b8552c6ba89289966a8b998064e
 ./.git/objects/15/986cd0edbb8218fdd4fe8f414b4e27b5767b1e
 ./.git/objects/15/ec5df999d004c9b849809978321e73457548a2
+./.git/objects/15/66e29d3a373d2d31943f831e1f15fd04ff6630
 ./.git/objects/15/ae6b79d68c28d401fa40fc01f08dd36dc0ce17
 ./.git/objects/15/c3d97a12b484c2a1c9735e24c952c3079876d0
 ./.git/objects/12
@@ -10481,6 +10488,7 @@
 ./.git/objects/12/3eca28ee23642d490965db4fbfc28f7cb98d35
 ./.git/objects/12/87fb4e402bea27a3957433c5078bcf3aa11d87
 ./.git/objects/8c
+./.git/objects/8c/91abb4ee6610afdce5f40e18ec3330b05bf515
 ./.git/objects/8c/18eeb4cc33109910bb91ceac2b6d691b9d2861
 ./.git/objects/8c/5bf9661aee173a0791e4e35773d29fa681c217
 ./.git/objects/8c/dafd34f7b8f3f53e7f2e6948aa39c3ebed4b20
@@ -10491,6 +10499,7 @@
 ./.git/objects/85
 ./.git/objects/85/533c211b2e88aab440385fe107c493045f24c2
 ./.git/objects/85/66e7bb67388f15d1d60d72ece10cd0e721958c
+./.git/objects/85/2abfe6f56a4dd8e3011cf96dbd28989de9e446
 ./.git/objects/85/e0f8d747dc2a960e1ae6640c8bf081631ac0ec
 ./.git/objects/85/486459446433b78a466dda53497a692f74b66e
 ./.git/objects/85/02e13dd5c835ead21cfc21ead0dbdce432f741
