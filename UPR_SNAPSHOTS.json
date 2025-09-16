@@ -1,0 +1,561 @@
+{
+  "generated": "2025-09-16T16:49:41Z",
+  "branch": "main",
+  "commit": "bb1dca5",
+  "package": "upr-dashboard",
+  "files": [
+    {
+      "path": "dashboard/src/features/enrichment/CompanySidebarCard.jsx",
+      "size": 1540,
+      "sha256": "de3680a35505cbba27ff64f6a7606a35519c26d131a44ce173d07742c82eddd1",
+      "imports": [
+        "import React from \"react\";"
+      ],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "import React from \"react\";\n\nfunction Row({ label, value }) {\n  return (\n    <div className=\"flex items-start justify-between gap-3 py-1\">\n      <div className=\"text-[11px] uppercase tracking-wide text-gray-400 w-20 shrink-0\">{label}</div>\n      <div className=\"text-sm break-words\">{value ?? \"—\"}</div>\n    </div>\n  );\n}\n\nfunction linkOrText(url) {\n  if (!url) return \"—\";\n  const safe = String(url).startsWith(\"http\") ? url : `https://${url}`;\n  return (\n    <a className=\"underline\" href={safe} target=\"_blank\" rel=\"noreferrer\">\n      {url}\n    </a>\n  );\n}\n\n/** Compact company card shown inside the left Sidebar (under the menu). */\nexport default function CompanySidebarCard({ company }) {\n  if (!company) return null;\n  return (\n    <div className=\"mt-4 bg-white rounded-xl border border-gray-200 p-3 shadow-sm\">\n      <div className=\"text-sm font-semibold text-gray-900 mb-1\">Company</div>\n      <div className=\"text-sm text-gray-700\">\n        <Row label=\"Name\" value={company.name || \"—\"} />\n        <Row label=\"Website\" value={linkOrText(company.website)} />\n        <Row label=\"LinkedIn\" value={linkOrText(company.linkedin)} />\n        <Row label=\"HQ\" value={company.hq || \"—\"} />\n        {company.industry && <Row label=\"Industry\" value={company.industry} />}\n        {company.size && <Row label=\"Size\" value={company.size} />}\n        {Array.isArray(company.locations) && company.locations.length > 0 && (\n          <Row label=\"Locations\" value={company.locations.join(\", \")} />\n        )}\n      </div>\n    </div>\n  );",
+      "tail": "    </a>\n  );\n}\n\n/** Compact company card shown inside the left Sidebar (under the menu). */\nexport default function CompanySidebarCard({ company }) {\n  if (!company) return null;\n  return (\n    <div className=\"mt-4 bg-white rounded-xl border border-gray-200 p-3 shadow-sm\">\n      <div className=\"text-sm font-semibold text-gray-900 mb-1\">Company</div>\n      <div className=\"text-sm text-gray-700\">\n        <Row label=\"Name\" value={company.name || \"—\"} />\n        <Row label=\"Website\" value={linkOrText(company.website)} />\n        <Row label=\"LinkedIn\" value={linkOrText(company.linkedin)} />\n        <Row label=\"HQ\" value={company.hq || \"—\"} />\n        {company.industry && <Row label=\"Industry\" value={company.industry} />}\n        {company.size && <Row label=\"Size\" value={company.size} />}\n        {Array.isArray(company.locations) && company.locations.length > 0 && (\n          <Row label=\"Locations\" value={company.locations.join(\", \")} />\n        )}\n      </div>\n    </div>\n  );\n}\n"
+    },
+    {
+      "path": "dashboard/src/features/enrichment/EnrichmentView.jsx",
+      "size": 14873,
+      "sha256": "a9e58b2705d114b333d667a6fddd73dc271ec2ae65890e009749f358c09c72d5",
+      "imports": [
+        "import React, { useMemo, useState, useCallback } from \"react\";",
+        "import { authFetch } from \"../../utils/auth\";",
+        "import LLMStatus from \"./LLMStatus\";"
+      ],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "import React, { useMemo, useState, useCallback } from \"react\";\nimport { authFetch } from \"../../utils/auth\";\nimport LLMStatus from \"./LLMStatus\";\n\n/** Helpers */\nasync function safeJson(resp) {\n  try { return await resp.json(); } catch { return null; }\n}\nfunction prettyStatus(s) { return String(s || \"unknown\").toLowerCase(); }\nfunction statusPillClass(s) {\n  const v = String(s || \"unknown\").toLowerCase();\n  if (v === \"validated\")\n    return \"text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200\";\n  if (v === \"bounced\" || v === \"invalid\")\n    return \"text-[10px] px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200\";\n  if (v === \"patterned\" || v === \"guessed\")\n    return \"text-[10px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200\";\n  return \"text-[10px] px-2 py-0.5 rounded-full bg-gray-50 text-gray-700 border border-gray-200\";\n}\nasync function copyToClipboard(text) {\n  try { await navigator.clipboard.writeText(text); }\n  catch {\n    const el = document.createElement(\"textarea\");\n    el.value = text; document.body.appendChild(el); el.select();\n    document.execCommand(\"copy\"); document.body.removeChild(el);\n  }\n}\n\nfunction ScoreBadge({ score }) {\n  if (typeof score !== \"number\") return null;\n  const color =\n    score >= 80\n      ? \"bg-emerald-50 text-emerald-700 border-emerald-200\"\n      : score >= 60\n      ? \"bg-amber-50 text-amber-700 border-amber-200\"\n      : \"bg-gray-100 text-gray-700 border-gray-200\";\n  return (\n    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-sm border ${color}`}>\n      Score: <span className=\"font-semibold\">{score}</span>/100\n    </span>",
+      "tail": "                            }\n                            className=\"rounded-lg border px-3 py-1.5 text-xs hover:bg-gray-50\"\n                          >\n                            Copy Draft\n                          </button>\n                          <button\n                            onClick={saveAsLead}\n                            className=\"ml-2 rounded-lg bg-gray-900 text-white px-3 py-1.5 text-xs hover:bg-black\"\n                          >\n                            Save Lead\n                          </button>\n                        </td>\n                      </tr>\n                    );\n                  })}\n                </tbody>\n              </table>\n            </div>\n          )}\n        </section>\n      )}\n    </div>\n  );\n}\n"
+    },
+    {
+      "path": "dashboard/src/features/enrichment/LLMStatus.jsx",
+      "size": 1498,
+      "sha256": "6e8c983aa0b97f34fec375fec3c50af4587ba397204a20b08fa379ee48d2bce4",
+      "imports": [
+        "import React from \"react\";"
+      ],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "import React from \"react\";\n\n/** Always-visible LLM status pill (idle → running → ok/error). */\nexport default function LLMStatus({ status = \"idle\", model = null, durationMs = null, errorText = null }) {\n  const tone =\n    {\n      idle: \"bg-gray-100 text-gray-700 border border-gray-200\",\n      running: \"bg-blue-50 text-blue-700 border border-blue-200\",\n      ok: \"bg-green-50 text-green-700 border border-green-200\",\n      error: \"bg-red-50 text-red-700 border border-red-200\",\n    }[status] || \"bg-gray-100 text-gray-700 border border-gray-200\";\n\n  return (\n    <div className=\"mb-4 flex items-center justify-between\">\n      <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm ${tone}`}>\n        <span\n          className={`inline-block w-2 h-2 rounded-full ${\n            status === \"running\" ? \"animate-pulse bg-current opacity-90\" : \"bg-current opacity-60\"\n          }`}\n        />\n        <span className=\"font-medium\">LLM</span>\n        <span className=\"opacity-80\">\n          {status === \"idle\" && \"idle\"}\n          {status === \"running\" && \"working…\"}\n          {status === \"ok\" && (model || \"ready\")}\n          {status === \"error\" && \"error\"}\n        </span>\n        {status === \"ok\" && typeof durationMs === \"number\" && (\n          <span className=\"opacity-70\">• {Math.max(0, Math.round(durationMs))} ms</span>\n        )}\n      </div>\n      {status === \"error\" && errorText && <div className=\"text-sm text-red-700\">{errorText}</div>}\n    </div>\n  );\n}\n",
+      "tail": "\n  return (\n    <div className=\"mb-4 flex items-center justify-between\">\n      <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm ${tone}`}>\n        <span\n          className={`inline-block w-2 h-2 rounded-full ${\n            status === \"running\" ? \"animate-pulse bg-current opacity-90\" : \"bg-current opacity-60\"\n          }`}\n        />\n        <span className=\"font-medium\">LLM</span>\n        <span className=\"opacity-80\">\n          {status === \"idle\" && \"idle\"}\n          {status === \"running\" && \"working…\"}\n          {status === \"ok\" && (model || \"ready\")}\n          {status === \"error\" && \"error\"}\n        </span>\n        {status === \"ok\" && typeof durationMs === \"number\" && (\n          <span className=\"opacity-70\">• {Math.max(0, Math.round(durationMs))} ms</span>\n        )}\n      </div>\n      {status === \"error\" && errorText && <div className=\"text-sm text-red-700\">{errorText}</div>}\n    </div>\n  );\n}\n"
+    },
+    {
+      "path": "dashboard/src/pages/Admin.jsx",
+      "size": 6749,
+      "sha256": "117cd39d4a05b474c4d2e63c4d5893a5a5a5be5fdadf2fd2c7f3c5bcfb712245",
+      "imports": [
+        "import { useEffect, useState } from \"react\";",
+        "import { authFetch, logout } from \"../utils/auth\";"
+      ],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// dashboard/src/pages/Admin.jsx\nimport { useEffect, useState } from \"react\";\nimport { authFetch, logout } from \"../utils/auth\";\n\nexport default function Admin() {\n  const [verifyMsg, setVerifyMsg] = useState(\"\");\n  const [busy, setBusy] = useState(false);\n\n  // demo payloads\n  const [enrichmentJson, setEnrichmentJson] = useState(() =>\n    JSON.stringify(\n      {\n        company: {\n          name: \"Acme Corp\",\n          type: \"Private\",\n          locations: [\"Dubai\"],\n          website_url: \"https://acme.example\",\n          linkedin_url: \"https://www.linkedin.com/company/acme\",\n        },\n        contact: {\n          name: \"Jane Doe\",\n          designation: \"HR Director\",\n          linkedin_url: \"https://www.linkedin.com/in/janedoe\",\n          location: \"Dubai\",\n          email: \"jane.doe@acme.example\",\n          email_status: \"validated\",\n        },\n        status: \"New\",\n        notes: \"Saved from Admin page\",\n      },\n      null,\n      2\n    )\n  );\n\n  const [bulkJson, setBulkJson] = useState(() =>\n    JSON.stringify(\n      [\n        {\n          company: {",
+      "tail": "          value={bulkJson}\n          onChange={(e) => setBulkJson(e.target.value)}\n        />\n        <div className=\"flex justify-end\">\n          <button\n            onClick={bulkImport}\n            disabled={busy}\n            className=\"rounded-lg bg-gray-900 text-white px-3 py-1.5 text-sm hover:bg-gray-800 disabled:opacity-60\"\n          >\n            Import\n          </button>\n        </div>\n      </section>\n    </div>\n  );\n}\n\nasync function safeJson(res) {\n  try {\n    return await res.json();\n  } catch {\n    return null;\n  }\n}\n"
+    },
+    {
+      "path": "dashboard/src/pages/AdminDashboard.jsx",
+      "size": 1583,
+      "sha256": "1554999347843e970b24ecc4b591fe14e118a4eccfbcdfe5e008440e5dfcc61b",
+      "imports": [
+        "import React from \"react\";",
+        "import { useAuth } from \"../lib/AuthContext\";",
+        "import { Button } from \"@/components/ui/button\";"
+      ],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "import React from \"react\";\nimport { useAuth } from \"../lib/AuthContext\";\nimport { Button } from \"@/components/ui/button\";\n\nconst AdminDashboard = () => {\n  const { logout } = useAuth();\n\n  return (\n    <div className=\"min-h-screen flex flex-col items-center justify-center bg-gray-50 p-4\">\n      <div className=\"bg-white rounded-2xl shadow-md w-full max-w-4xl p-6\">\n        <div className=\"flex justify-between items-center mb-6\">\n          <h1 className=\"text-2xl font-bold text-gray-800\">Admin Dashboard</h1>\n          <Button variant=\"outline\" onClick={logout}>\n            Logout\n          </Button>\n        </div>\n        <div className=\"grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4\">\n          <div className=\"p-4 rounded-xl shadow bg-white border\">\n            <h2 className=\"text-lg font-semibold\">Companies Tracked</h2>\n            <p className=\"text-3xl font-bold text-blue-600\">132</p>\n          </div>\n          <div className=\"p-4 rounded-xl shadow bg-white border\">\n            <h2 className=\"text-lg font-semibold\">Leads Identified</h2>\n            <p className=\"text-3xl font-bold text-green-600\">29</p>\n          </div>\n          <div className=\"p-4 rounded-xl shadow bg-white border\">\n            <h2 className=\"text-lg font-semibold\">Emails Sent</h2>\n            <p className=\"text-3xl font-bold text-purple-600\">47</p>\n          </div>\n        </div>\n        <div className=\"mt-8 text-gray-500 text-sm text-center\">\n          Data auto-updated by AI agent | UAE Premium Radar\n        </div>\n      </div>\n    </div>\n  );\n};\n\nexport default AdminDashboard;\n",
+      "tail": "        </div>\n        <div className=\"grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4\">\n          <div className=\"p-4 rounded-xl shadow bg-white border\">\n            <h2 className=\"text-lg font-semibold\">Companies Tracked</h2>\n            <p className=\"text-3xl font-bold text-blue-600\">132</p>\n          </div>\n          <div className=\"p-4 rounded-xl shadow bg-white border\">\n            <h2 className=\"text-lg font-semibold\">Leads Identified</h2>\n            <p className=\"text-3xl font-bold text-green-600\">29</p>\n          </div>\n          <div className=\"p-4 rounded-xl shadow bg-white border\">\n            <h2 className=\"text-lg font-semibold\">Emails Sent</h2>\n            <p className=\"text-3xl font-bold text-purple-600\">47</p>\n          </div>\n        </div>\n        <div className=\"mt-8 text-gray-500 text-sm text-center\">\n          Data auto-updated by AI agent | UAE Premium Radar\n        </div>\n      </div>\n    </div>\n  );\n};\n\nexport default AdminDashboard;\n"
+    },
+    {
+      "path": "dashboard/src/pages/CompaniesPage.jsx",
+      "size": 7115,
+      "sha256": "fc43a133651ccac6122205fd0a725b6c7e2c13b2da018b1dd9cd5212082380c4",
+      "imports": [
+        "import { useEffect, useMemo, useState } from \"react\";",
+        "import { authFetch } from \"../utils/auth\";"
+      ],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// dashboard/src/pages/CompaniesPage.jsx\nimport { useEffect, useMemo, useState } from \"react\";\nimport { authFetch } from \"../utils/auth\";\n\n// Keep these in sync with backend validators (utils/validators.js)\nconst TYPE_OPTIONS = [\"ALE\", \"NON_ALE\", \"Good Coded\"];\nconst STATUS_OPTIONS = [\"New\", \"Contacted\", \"Response Received\", \"Converted\", \"Declined\"];\nconst LOCATION_OPTIONS = [\"Abu Dhabi\", \"Dubai\", \"Sharjah\"];\n\nexport default function CompaniesPage() {\n  const [query, setQuery] = useState(\"\");\n  const [type, setType] = useState(\"\");\n  const [status, setStatus] = useState(\"\");\n  const [location, setLocation] = useState(\"\");\n  const [rows, setRows] = useState([]);\n  const [loading, setLoading] = useState(false);\n  const [err, setErr] = useState(\"\");\n\n  const qs = useMemo(() => {\n    const p = new URLSearchParams();\n    if (query.trim()) p.set(\"search\", query.trim());\n    if (type) p.set(\"type\", type);\n    if (status) p.set(\"status\", status);\n    if (location) p.set(\"location\", location);\n    p.set(\"sort\", \"created_at.desc\");\n    return p.toString();\n  }, [query, type, status, location]);\n\n  useEffect(() => {\n    let abort = false;\n    (async () => {\n      setLoading(true);\n      setErr(\"\");\n      try {\n        const res = await authFetch(`/api/companies?${qs}`);\n        const json = await res.json();\n        if (!res.ok || !json.ok) throw new Error(json.error || \"Request failed\");\n        if (!abort) setRows(Array.isArray(json.data) ? json.data : []);\n      } catch (e) {\n        if (!abort) {",
+      "tail": "  );\n}\n\nfunction Select({ value, onChange, placeholder, options }) {\n  return (\n    <div className=\"relative\">\n      <select\n        value={value}\n        onChange={(e) => onChange(e.target.value)}\n        className=\"appearance-none px-3 py-2 pr-8 rounded-xl border border-gray-300 bg-gray-100 text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10\"\n      >\n        <option value=\"\">{placeholder}</option>\n        {options.map((opt) => (\n          <option key={opt} value={opt}>\n            {opt}\n          </option>\n        ))}\n      </select>\n      <div className=\"pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-500\">\n        ▼\n      </div>\n    </div>\n  );\n}\n"
+    },
+    {
+      "path": "dashboard/src/pages/DashboardHome.jsx",
+      "size": 7042,
+      "sha256": "c7aabcad134edf5c87cf014212770d93ebbfc1bdaaaaa6035784391cca898540",
+      "imports": [
+        "import { useEffect, useState } from \"react\";",
+        "import { useNavigate } from \"react-router-dom\";",
+        "import { authFetch } from \"../utils/auth\";"
+      ],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// dashboard/src/pages/DashboardHome.jsx\nimport { useEffect, useState } from \"react\";\nimport { useNavigate } from \"react-router-dom\";\nimport { authFetch } from \"../utils/auth\";\n\nfunction num(n) {\n  const v = Number(n || 0);\n  return isNaN(v) ? 0 : v;\n}\nfunction fmtDT(v) {\n  if (!v) return \"—\";\n  try {\n    const d = new Date(v);\n    return d.toLocaleString();\n  } catch {\n    return String(v);\n  }\n}\nfunction Badge({ children, tone = \"gray\" }) {\n  const tones = {\n    gray: \"bg-gray-100 text-gray-700\",\n    blue: \"bg-blue-100 text-blue-800\",\n    green: \"bg-green-100 text-green-800\",\n    amber: \"bg-amber-100 text-amber-800\",\n  };\n  return (\n    <span className={`text-xs px-2 py-1 rounded-full ${tones[tone] || tones.gray}`}>\n      {children}\n    </span>\n  );\n}\n\nexport default function DashboardHome() {\n  const nav = useNavigate();\n  const [loading, setLoading] = useState(true);\n  const [err, setErr] = useState(null);\n  const [stats, setStats] = useState(null);\n\n  useEffect(() => {\n    let mounted = true;",
+      "tail": "                </tr>\n              </thead>\n              <tbody>\n                {stats.top_companies.map((c, i) => (\n                  <tr key={c.id || c.name || i} className=\"border-top border-gray-200\">\n                    <td className=\"px-5 py-2\">{c.name || \"—\"}</td>\n                    <td className=\"px-5 py-2\">\n                      {Array.isArray(c.locations) && c.locations.length\n                        ? c.locations.join(\", \")\n                        : c.location || \"—\"}\n                    </td>\n                    <td className=\"px-5 py-2\">{c.type || \"—\"}</td>\n                    <td className=\"px-5 py-2\">{num(c.qscore)}</td>\n                    <td className=\"px-5 py-2\">{fmtDT(c.created_at)}</td>\n                  </tr>\n                ))}\n              </tbody>\n            </table>\n          </div>\n        </section>\n      )}\n    </div>\n  );\n}\n"
+    },
+    {
+      "path": "dashboard/src/pages/EnrichmentPage.jsx",
+      "size": 676,
+      "sha256": "0bdad841b6594fab01d8cc5fb8a43a76e775dec223c2623c7cbcb6b3029a1ba3",
+      "imports": [
+        "import React, { useEffect } from \"react\";",
+        "import { useSearchParams } from \"react-router-dom\";",
+        "import EnrichmentView from \"../features/enrichment/EnrichmentView\";"
+      ],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "import React, { useEffect } from \"react\";\nimport { useSearchParams } from \"react-router-dom\";\nimport EnrichmentView from \"../features/enrichment/EnrichmentView\";\n\n/** Thin wrapper page; company card is shown inside Sidebar via a custom event. */\nexport default function EnrichmentPage() {\n  const [sp] = useSearchParams();\n  const initialQuery = sp.get(\"q\") || \"\";\n\n  useEffect(() => {\n    // Clear sidebar company card when leaving this page\n    return () => {\n      window.dispatchEvent(new CustomEvent(\"upr:companySidebar\", { detail: null }));\n    };\n  }, []);\n\n  return <EnrichmentView initialQuery={initialQuery} onCompanyChange={() => { /* handled via event */ }} />;\n}\n",
+      "tail": "import React, { useEffect } from \"react\";\nimport { useSearchParams } from \"react-router-dom\";\nimport EnrichmentView from \"../features/enrichment/EnrichmentView\";\n\n/** Thin wrapper page; company card is shown inside Sidebar via a custom event. */\nexport default function EnrichmentPage() {\n  const [sp] = useSearchParams();\n  const initialQuery = sp.get(\"q\") || \"\";\n\n  useEffect(() => {\n    // Clear sidebar company card when leaving this page\n    return () => {\n      window.dispatchEvent(new CustomEvent(\"upr:companySidebar\", { detail: null }));\n    };\n  }, []);\n\n  return <EnrichmentView initialQuery={initialQuery} onCompanyChange={() => { /* handled via event */ }} />;\n}\n"
+    },
+    {
+      "path": "dashboard/src/pages/HRLeads.jsx",
+      "size": 4089,
+      "sha256": "1acfb4e8704613b70f6638ceb53340ed9b4c53c6db2ed627cae38901199aec4c",
+      "imports": [
+        "import { useEffect, useMemo, useState } from \"react\";"
+      ],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// dashboard/src/pages/HRLeads.jsx\nimport { useEffect, useMemo, useState } from \"react\";\n\nexport default function HRLeads() {\n  const [rows, setRows] = useState([]);\n  const [loading, setLoading] = useState(false);\n  const [filters, setFilters] = useState({ search: \"\", status: \"\" });\n\n  const query = useMemo(() => {\n    const p = new URLSearchParams();\n    if (filters.search) p.set(\"search\", filters.search);\n    if (filters.status) p.set(\"status\", filters.status);\n    p.set(\"sort\", \"created_at.desc\");\n    return p.toString();\n  }, [filters]);\n\n  useEffect(() => {\n    setLoading(true);\n    fetch(`/api/hr-leads?${query}`)\n      .then((r) => r.json())\n      .then((j) => setRows(j?.data || []))\n      .finally(() => setLoading(false));\n  }, [query]);\n\n  return (\n    <div className=\"space-y-4\">\n      <div className=\"flex items-end justify-between gap-3 flex-wrap\">\n        <h1 className=\"text-2xl font-semibold\">HR Leads</h1>\n        <div className=\"flex gap-2 flex-wrap\">\n          <input\n            placeholder=\"Search name/company/email…\"\n            className=\"border rounded-lg px-3 py-2\"\n            value={filters.search}\n            onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}\n          />\n          <select\n            className=\"border rounded-lg px-3 py-2\"\n            value={filters.status}\n            onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}\n          >",
+      "tail": "                      )}\n                    </div>\n                  </td>\n                  <td className=\"px-4 py-2\">{r.company_name || r.company?.name || \"-\"}</td>\n                  <td className=\"px-4 py-2\">{r.designation || \"-\"}</td>\n                  <td className=\"px-4 py-2\">\n                    {r.email ? <a className=\"underline\" href={`mailto:${r.email}`}>{r.email}</a> : \"—\"}\n                  </td>\n                  <td className=\"px-4 py-2\">{r.lead_status || \"New\"}</td>\n                  <td className=\"px-4 py-2\">{r.created_at ? new Date(r.created_at).toLocaleString() : \"-\"}</td>\n                </tr>\n              ))\n            )}\n          </tbody>\n        </table>\n      </div>\n    </div>\n  );\n}\n\nfunction ensureHttp(u) {\n  if (!u) return null;\n  return u.startsWith(\"http\") ? u : `https://${u}`;\n}\n"
+    },
+    {
+      "path": "dashboard/src/pages/Leads.jsx",
+      "size": 4709,
+      "sha256": "9bb248d60305ad8cbfd1542ebe0aafe96cacaed661f6f3931b97db27f9ab29f9",
+      "imports": [
+        "import { useEffect, useMemo, useState } from \"react\";"
+      ],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// dashboard/src/pages/Leads.jsx\nimport { useEffect, useMemo, useState } from \"react\";\n\nexport default function TargetedCompanies() {\n  const [rows, setRows] = useState([]);\n  const [loading, setLoading] = useState(false);\n  const [filters, setFilters] = useState({ search: \"\", type: \"\", status: \"\", location: \"\" });\n\n  const query = useMemo(() => {\n    const p = new URLSearchParams();\n    if (filters.search) p.set(\"search\", filters.search);\n    if (filters.type) p.set(\"type\", filters.type);\n    if (filters.status) p.set(\"status\", filters.status);\n    if (filters.location) p.set(\"location\", filters.location);\n    p.set(\"sort\", \"created_at.desc\");\n    return p.toString();\n  }, [filters]);\n\n  useEffect(() => {\n    setLoading(true);\n    fetch(`/api/companies?${query}`)\n      .then(r => r.json())\n      .then(j => setRows(j?.data || []))\n      .finally(() => setLoading(false));\n  }, [query]);\n\n  return (\n    <div className=\"space-y-4\">\n      <div className=\"flex items-end justify-between gap-3 flex-wrap\">\n        <div>\n          <h1 className=\"text-2xl font-semibold\">Targeted Companies</h1>\n          <p className=\"text-sm text-gray-600\">Company, locations, type, status, QScore, created</p>\n        </div>\n        <div className=\"flex gap-2 flex-wrap\">\n          <input\n            placeholder=\"Search company…\"\n            className=\"border rounded-lg px-3 py-2\"\n            value={filters.search}\n            onChange={(e) => setFilters(f => ({ ...f, search: e.target.value }))}\n          />",
+      "tail": "            ) : rows.length === 0 ? (\n              <tr><td className=\"px-4 py-4 text-gray-500\" colSpan={6}>No companies yet.</td></tr>\n            ) : rows.map((r) => (\n              <tr key={r.id} className=\"border-t\">\n                <td className=\"px-4 py-2\">\n                  <div className=\"font-medium\">{r.name}</div>\n                  <div className=\"text-xs text-gray-500 flex gap-2\">\n                    {r.website_url && <a href={r.website_url} target=\"_blank\" rel=\"noreferrer\" className=\"underline\">website</a>}\n                    {r.linkedin_url && <a href={r.linkedin_url} target=\"_blank\" rel=\"noreferrer\" className=\"underline\">linkedin</a>}\n                  </div>\n                </td>\n                <td className=\"px-4 py-2\">{Array.isArray(r.locations) ? r.locations.join(\", \") : \"\"}</td>\n                <td className=\"px-4 py-2\">{r.type || \"-\"}</td>\n                <td className=\"px-4 py-2\">{r.status}</td>\n                <td className=\"px-4 py-2\">{r.qscore ?? 0}</td>\n                <td className=\"px-4 py-2\">{new Date(r.created_at).toLocaleString()}</td>\n              </tr>\n            ))}\n          </tbody>\n        </table>\n      </div>\n    </div>\n  );\n}\n"
+    },
+    {
+      "path": "dashboard/src/pages/LeadsPage.jsx",
+      "size": 4507,
+      "sha256": "440c00f80642379c41337aee3fc300bbbe3d285abd991e4af566140d6b9bf7cb",
+      "imports": [
+        "import { useEffect, useState } from \"react\";",
+        "import { authFetch, getAuthHeader } from \"../utils/auth\";"
+      ],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// dashboard/src/pages/LeadsPage.jsx\nimport { useEffect, useState } from \"react\";\nimport { authFetch, getAuthHeader } from \"../utils/auth\";\n\nexport default function LeadsPage() {\n  const [leads, setLeads] = useState([]);\n  const [loading, setLoading] = useState(false);\n  const [err, setErr] = useState(null);\n\n  const [company, setCompany] = useState(\"\");\n  const [role, setRole] = useState(\"\");\n  const [saving, setSaving] = useState(false);\n\n  async function fetchLeads() {\n    setLoading(true);\n    setErr(null);\n    try {\n      const res = await authFetch(\"/api/leads\", {\n        headers: getAuthHeader(),\n      });\n      if (!res.ok) {\n        const data = await safeJson(res);\n        throw new Error(data?.error || \"Failed to fetch leads\");\n      }\n      const data = await res.json();\n      setLeads(data.data || []);\n    } catch (e) {\n      setErr(e?.message || \"Error fetching leads\");\n    } finally {\n      setLoading(false);\n    }\n  }\n\n  useEffect(() => {\n    fetchLeads();\n  }, []);\n\n  async function addLead(e) {\n    e.preventDefault();\n    if (!company.trim() || !role.trim()) {",
+      "tail": "                  <td className=\"px-4 py-2\">{lead.company}</td>\n                  <td className=\"px-4 py-2\">{lead.role}</td>\n                  <td className=\"px-4 py-2\">{lead.salary_band}</td>\n                  <td className=\"px-4 py-2\">{lead.status}</td>\n                  <td className=\"px-4 py-2\">\n                    {new Date(lead.created_at).toLocaleString()}\n                  </td>\n                </tr>\n              ))}\n            </tbody>\n          </table>\n        </div>\n      )}\n    </div>\n  );\n}\n\nasync function safeJson(resp) {\n  try {\n    return await resp.json();\n  } catch {\n    return null;\n  }\n}\n"
+    },
+    {
+      "path": "dashboard/src/pages/Login.jsx",
+      "size": 2967,
+      "sha256": "f9848a0b3f0c7edd6e690ffad5c8783db57cc71113a5f18327ba30720e8d589c",
+      "imports": [
+        "import { useEffect, useState } from \"react\";",
+        "import { useNavigate } from \"react-router-dom\";",
+        "import { loginWithPassword, verifyToken } from \"../utils/auth\";"
+      ],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// dashboard/src/pages/Login.jsx\nimport { useEffect, useState } from \"react\";\nimport { useNavigate } from \"react-router-dom\";\nimport { loginWithPassword, verifyToken } from \"../utils/auth\";\n\nexport default function Login() {\n  const nav = useNavigate();\n  const [checking, setChecking] = useState(true);\n  const [username, setUsername] = useState(\"\");\n  const [password, setPassword] = useState(\"\");\n  const [err, setErr] = useState(\"\");\n\n  // On mount, if token already valid, go straight in\n  useEffect(() => {\n    (async () => {\n      const ok = await verifyToken();\n      if (ok) nav(\"/\");\n      else setChecking(false);\n    })();\n  }, [nav]);\n\n  async function onSubmit(e) {\n    e.preventDefault();\n    setErr(\"\");\n    const { ok, error } = await loginWithPassword(username.trim(), password);\n    if (ok) nav(\"/\");\n    else setErr(error || \"Login failed\");\n  }\n\n  if (checking) {\n    return (\n      <div className=\"min-h-screen flex items-center justify-center text-sm text-gray-500\">\n        Checking session…\n      </div>\n    );\n  }\n\n  return (\n    <div className=\"min-h-screen flex items-center justify-center bg-gray-50 p-4\">\n      <div className=\"w-full max-w-md bg-white rounded-2xl shadow p-6\">",
+      "tail": "            />\n          </div>\n\n          {err && (\n            <div className=\"text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2\">\n              {err}\n            </div>\n          )}\n\n          <button\n            type=\"submit\"\n            className=\"w-full rounded-xl bg-gray-900 text-white px-4 py-2 font-medium hover:bg-gray-800\"\n          >\n            Login\n          </button>\n        </form>\n\n        <p className=\"mt-3 text-center text-[11px] text-gray-400\">\n          Your session is stored only in this browser.\n        </p>\n      </div>\n    </div>\n  );\n}\n"
+    },
+    {
+      "path": "dashboard/src/pages/MessagesPage.jsx",
+      "size": 456,
+      "sha256": "01288e8205b1dd6c82b87f4399e49af66a475a5799a42fcd0c1455dec6cab3f0",
+      "imports": [],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// dashboard/src/pages/MessagesPage.jsx\nexport default function MessagesPage() {\n  return (\n    <div className=\"space-y-3\">\n      <h1 className=\"text-2xl font-semibold\">Messages</h1>\n      <p className=\"text-sm text-gray-600\">\n        Outreach queue & templates will appear here (email / LinkedIn). Coming soon.\n      </p>\n      <div className=\"rounded-xl border bg-white p-4 text-sm text-gray-500\">\n        No messages yet.\n      </div>\n    </div>\n  );\n}\n",
+      "tail": "// dashboard/src/pages/MessagesPage.jsx\nexport default function MessagesPage() {\n  return (\n    <div className=\"space-y-3\">\n      <h1 className=\"text-2xl font-semibold\">Messages</h1>\n      <p className=\"text-sm text-gray-600\">\n        Outreach queue & templates will appear here (email / LinkedIn). Coming soon.\n      </p>\n      <div className=\"rounded-xl border bg-white p-4 text-sm text-gray-500\">\n        No messages yet.\n      </div>\n    </div>\n  );\n}\n"
+    },
+    {
+      "path": "routes/companies.js",
+      "size": 7419,
+      "sha256": "a180350cbffd18f86e600c6210b87b18f42d4707cbdbdf363f9e9f079319e837",
+      "imports": [
+        "import express from \"express\";",
+        "import { pool } from \"../utils/db.js\";",
+        "import { ok, bad } from \"../utils/respond.js\";",
+        "import { computeQScore } from \"../utils/qscore.js\";",
+        "import { isValidCompanyType, isValidCompanyStatus } from \"../utils/validators.js\";"
+      ],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// routes/companies.js\nimport express from \"express\";\nimport { pool } from \"../utils/db.js\";\nimport { ok, bad } from \"../utils/respond.js\";\nimport { computeQScore } from \"../utils/qscore.js\";\nimport { isValidCompanyType, isValidCompanyStatus } from \"../utils/validators.js\";\n\nconst router = express.Router();\n\nconst ALLOWED_LOCATIONS = new Set([\"Abu Dhabi\", \"Dubai\", \"Sharjah\"]);\nfunction normalizeLocations(loc) {\n  if (!loc) return [];\n  const arr = Array.isArray(loc) ? loc : String(loc).split(\",\"); // allow comma-separated\n  return Array.from(\n    new Set(\n      arr\n        .map((s) => String(s).trim())\n        .filter(Boolean)\n        .filter((s) => ALLOWED_LOCATIONS.has(s))\n    )\n  );\n}\n\nfunction coalesceBodyAliases(body = {}) {\n  // Accept both old and new keys\n  return {\n    name: body.name,\n    type: body.type ?? body.company_type, // \"ALE\" | \"NON ALE\" | \"Good Coded\"\n    locations: normalizeLocations(body.locations),\n    website_url: body.website_url ?? body.website,\n    linkedin_url: body.linkedin_url ?? body.linkedin,\n    status: body.status,\n    status_remarks: body.status_remarks,\n    about_blurb: body.about_blurb,\n  };\n}\n\n/**\n * POST /api/companies\n * Body: { name, type|company_type, locations[], website_url|website, linkedin_url|linkedin }",
+      "tail": "    const { id } = req.params;\n    const c = await pool.query(\"SELECT * FROM targeted_companies WHERE id=$1\", [id]);\n    if (!c.rowCount) return bad(res, \"not found\", 404);\n\n    const n = await pool.query(\"SELECT tags FROM news_items WHERE company_id=$1\", [id]);\n    const qscore = computeQScore(c.rows[0], n.rows);\n\n    const u = await pool.query(\n      `UPDATE targeted_companies\n         SET qscore=$1, updated_at=now()\n       WHERE id=$2\n       RETURNING id, name, type, locations, website_url, linkedin_url,\n                 status, status_remarks, about_blurb, qscore,\n                 created_at AS created, updated_at`,\n      [qscore, id]\n    );\n    return ok(res, u.rows[0]);\n  } catch (e) {\n    console.error(e);\n    return bad(res, \"server error\", 500);\n  }\n});\n\nexport default router;\n"
+    },
+    {
+      "path": "routes/email.js",
+      "size": 5237,
+      "sha256": "6bf67e72fb329b09105d19e712612498829a69c1575526202f033f5ad7174809",
+      "imports": [
+        "import express from \"express\";",
+        "import { ok, bad } from \"../utils/respond.js\";",
+        "import { adminOnly } from \"../utils/adminOnly.js\";",
+        "import { detectPattern, generateEmail, generateCandidates } from \"../utils/emailPatterns.js\";",
+        "import { verifyEmail } from \"../utils/emailVerify.js\";",
+        "import { getDomainPattern, setDomainPattern } from \"../utils/patternCache.js\";"
+      ],
+      "envs": [
+        "SMTP_VERIFY_MAX"
+      ],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// routes/email.js\nimport express from \"express\";\nimport { ok, bad } from \"../utils/respond.js\";\nimport { adminOnly } from \"../utils/adminOnly.js\";\nimport { detectPattern, generateEmail, generateCandidates } from \"../utils/emailPatterns.js\";\nimport { verifyEmail } from \"../utils/emailVerify.js\";\nimport { getDomainPattern, setDomainPattern } from \"../utils/patternCache.js\";\n\nconst router = express.Router();\n\nconst MAX_VERIFY = Number(process.env.SMTP_VERIFY_MAX || 8);\n\n/**\n * POST /api/email/verify  (admin-gated)\n * Body:\n * {\n *   emails?: string[],                   // emails to verify (optional)\n *   domain?: string,                     // domain to infer/generate against\n *   names?: string[],                    // names to generate candidates (when pattern known/guessed)\n *   known?: [{ name, email }],           // pairs for discovery\n *   savePattern?: boolean                // persist discovered pattern to cache (default true)\n * }\n */\nrouter.post(\"/verify\", adminOnly, async (req, res) => {\n  try {\n    const {\n      emails = [],\n      domain,\n      names = [],\n      known = [],\n      savePattern = true,\n    } = req.body || {};\n\n    if (!emails.length && !domain) {\n      return bad(res, \"Provide emails or a domain\");\n    }\n\n    // 1) Try cache for domain\n    let cached = domain ? await getDomainPattern(domain) : null;\n",
+      "tail": "    const { domain } = req.query;\n    if (!domain) return bad(res, \"domain required\");\n    const row = await getDomainPattern(domain);\n    return ok(res, row || null);\n  } catch (e) {\n    console.error(\"email/pattern get error:\", e);\n    return bad(res, \"server error\", 500);\n  }\n});\n\n/** POST /api/email/pattern  (admin-gated, manual set) */\nrouter.post(\"/pattern\", adminOnly, async (req, res) => {\n  try {\n    const { domain, pattern_id, example } = req.body || {};\n    if (!domain || !pattern_id) return bad(res, \"domain and pattern_id required\");\n    const r = await setDomainPattern({ domain, pattern_id, source: \"manual\", example });\n    return ok(res, r);\n  } catch (e) {\n    console.error(\"email/pattern post error:\", e);\n    return bad(res, \"server error\", 500);\n  }\n});\n\nexport default router;\n"
+    },
+    {
+      "path": "routes/enrich.js",
+      "size": 8617,
+      "sha256": "6f5a8a1a51fedb1673846a0508b1207dd5dc5a0c9930e65a7527a8dd1ffe55a2",
+      "imports": [
+        "import express from \"express\";",
+        "import { nanoid } from \"nanoid\";",
+        "\nimport { pool } from \"../utils/db.js\";",
+        "import { verifyEmail } from \"../utils/emailVerify.js\";"
+      ],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// routes/enrich.js\nimport express from \"express\";\nimport { nanoid } from \"nanoid\";\n\nimport { pool } from \"../utils/db.js\";\nimport {\n  scoreCandidate,\n  bucketRole,\n  bucketSeniority,\n  isAgencyRecruiter,\n} from \"../utils/patternHelpers.js\";\nimport {\n  inferPatternFromSamples,\n  applyPattern,\n  loadPatternFromCache,\n  savePatternToCache,\n} from \"../utils/emailPatterns.js\";\nimport { verifyEmail } from \"../utils/emailVerify.js\";\n\nconst router = express.Router();\n\n// In-memory job store (MVP)\nconst jobs = new Map();\n\n/**\n * POST /api/enrich\n * body: { company_id: string, max_contacts?: number, role?: \"hr\", geo?: \"uae\" }\n */\nrouter.post(\"/\", async (req, res) => {\n  const { company_id, max_contacts = 3, role = \"hr\", geo = \"uae\" } = req.body || {};\n  if (!company_id) return res.status(400).json({ error: \"company_id is required\" });\n\n  const job_id = `enrich_${Date.now()}_${nanoid(6)}`;\n  jobs.set(job_id, { status: \"queued\", company_id, results: [], summary: {} });\n\n  try {\n    const company = await getCompany(company_id);\n    if (!company) {\n      const payload = { job_id, status: \"error\", error: \"company_not_found\" };\n      jobs.set(job_id, payload);",
+      "tail": "      email_reason = EXCLUDED.email_reason\n    RETURNING id, company_id, email, confidence\n  `;\n  const vals = [\n    company_id,\n    c.name || \"\",\n    c.designation || \"\",\n    c.linkedin_url || \"\",\n    c.email || null,\n    c.email_status || \"unknown\",\n    c.source || \"provider_or_pattern\",\n    c.confidence ?? null,\n    c.role_bucket || null,\n    c.seniority || null,\n    c.email_reason || null,\n  ];\n  const { rows } = await pool.query(q, vals);\n  return rows[0];\n}\n\n// TODO: Wire Apollo/Clearbit/PDL here\nasync function queryPrimaryProvider() {\n  return [];\n}\n"
+    },
+    {
+      "path": "routes/hrLeads.js",
+      "size": 15982,
+      "sha256": "384515fa7f2d3cf4d7d915fd44d2cdea9677dbbc91f64962dc0b75315c9391a0",
+      "imports": [
+        "import express from \"express\";",
+        "import { pool } from \"../utils/db.js\";",
+        "import { ok, bad } from \"../utils/respond.js\";",
+        "import { adminOnly } from \"../utils/adminOnly.js\";"
+      ],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// routes/hrLeads.js\nimport express from \"express\";\nimport { pool } from \"../utils/db.js\";\nimport { ok, bad } from \"../utils/respond.js\";\nimport { adminOnly } from \"../utils/adminOnly.js\";\nimport {\n  UAE_LOCATIONS,\n  isValidLeadStatus,\n  isValidEmailStatus,\n  isValidLocation,\n} from \"../utils/validators.js\";\n\nconst router = express.Router();\n\n/* ------------------------------ helpers ------------------------------ */\n\nfunction normalizeLocations(value) {\n  if (!value) return null;\n  const arr = Array.isArray(value) ? value : String(value).split(\",\");\n  const cleaned = Array.from(\n    new Set(\n      arr\n        .map((s) => String(s).trim())\n        .filter(Boolean)\n        .filter((s) => isValidLocation(s))\n    )\n  );\n  return cleaned.length ? cleaned : null;\n}\n\n/** Accepts various form/UI aliases and returns a normalized object */\nfunction aliasBody(body = {}) {\n  const companyName = body.company_name ?? body.company ?? null;\n  return {\n    company_id: body.company_id ?? null,\n    company_name: companyName,\n    name: body.name ?? null,\n    designation: body.designation ?? body.title ?? null,\n    linkedin_url: body.linkedin_url ?? body.linkedin ?? null,\n    location: body.location ?? null,",
+      "tail": "            b.linkedin_url,\n            locArr,\n            b.mobile,\n            b.email,\n            b.email_status || \"unknown\",\n            b.lead_status || \"New\",\n            b.status_remarks || null,\n          ]\n        );\n\n        results.push({ ok: true, id: ins.rows[0].id });\n      } catch (err) {\n        results.push({ ok: false, error: err.message });\n      }\n    }\n\n    return ok(res, { count: results.length, results });\n  } catch (e) {\n    console.error(e);\n    return bad(res, \"server error\", 500);\n  }\n});\n\nexport default router;\n"
+    },
+    {
+      "path": "routes/news.js",
+      "size": 2091,
+      "sha256": "9b4aca7dc5aa98fb9713009e51b015b129697ce0e4e07eb76b5d29ac22709022",
+      "imports": [
+        "import express from \"express\";",
+        "import { pool } from \"../utils/db.js\";",
+        "import { ok, bad } from \"../utils/respond.js\";"
+      ],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// routes/news.js\nimport express from \"express\";\nimport { pool } from \"../utils/db.js\";\nimport { ok, bad } from \"../utils/respond.js\";\n\nconst router = express.Router();\n\nrouter.get(\"/\", async (req, res) => {\n  try {\n    const { tag, days, q } = req.query;\n    const where = [], params = [];\n    if (q) { params.push(`%${q}%`); where.push(`(LOWER(title) LIKE LOWER($${params.length}) OR LOWER(summary) LIKE LOWER($${params.length}))`); }\n    if (tag) { params.push(tag); where.push(`$${params.length} = ANY(tags)`); }\n    if (days) { params.push(days); where.push(`published_at >= now() - ($${params.length}::text || ' days')::interval`); }\n    const clause = where.length ? `WHERE ${where.join(\" AND \")}` : \"\";\n    const r = await pool.query(`SELECT * FROM news_items ${clause} ORDER BY published_at DESC LIMIT 200`, params);\n    return ok(res, r.rows);\n  } catch (e) {\n    console.error(e);\n    return bad(res, \"server error\", 500);\n  }\n});\n\nrouter.post(\"/ingest\", async (req, res) => {\n  try {\n    const items = Array.isArray(req.body?.items) ? req.body.items : [];\n    if (!items.length) return bad(res, \"items[] required\");\n    const vals = [];\n    for (const it of items) {\n      vals.push([\n        it.company_name || null,\n        it.company_id || null,\n        it.title || null,\n        it.summary || null,\n        it.url || null,\n        it.source || null,\n        it.published_at || null,\n        Array.isArray(it.tags) ? it.tags : [],\n        it.score ?? 0,\n      ]);",
+      "tail": "        it.url || null,\n        it.source || null,\n        it.published_at || null,\n        Array.isArray(it.tags) ? it.tags : [],\n        it.score ?? 0,\n      ]);\n    }\n    const placeholders = vals\n      .map((_, i) => `($${i * 9 + 1},$${i * 9 + 2},$${i * 9 + 3},$${i * 9 + 4},$${i * 9 + 5},$${i * 9 + 6},$${i * 9 + 7},$${i * 9 + 8},$${i * 9 + 9})`)\n      .join(\",\");\n    const flat = vals.flat();\n    const q = `\n      INSERT INTO news_items (company_name, company_id, title, summary, url, source, published_at, tags, score)\n      VALUES ${placeholders} RETURNING id\n    `;\n    const r = await pool.query(q, flat);\n    return ok(res, { inserted: r.rowCount });\n  } catch (e) {\n    console.error(e);\n    return bad(res, \"server error\", 500);\n  }\n});\n\nexport default router;\n"
+    },
+    {
+      "path": "routes/sourcing.js",
+      "size": 2833,
+      "sha256": "5997f557ec9968984b140900e9f5bb006f51420c53b2e318ed639d13e65fbc71",
+      "imports": [
+        "import express from \"express\";",
+        "import { pool } from \"../utils/db.js\";",
+        "import { ok, bad } from \"../utils/respond.js\";",
+        "import { adminOnly } from \"../utils/adminOnly.js\";"
+      ],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// routes/sourcing.js\nimport express from \"express\";\nimport { pool } from \"../utils/db.js\";\nimport { ok, bad } from \"../utils/respond.js\";\nimport { adminOnly } from \"../utils/adminOnly.js\";\n\nconst router = express.Router();\n\n/** POST /api/sourcing/run { company_id, source? } */\nrouter.post(\"/run\", adminOnly, async (req, res) => {\n  try {\n    const { company_id, source = \"manual\" } = req.body || {};\n    if (!company_id) return bad(res, \"company_id required\");\n\n    // don’t enqueue if already running/pending\n    const dup = await pool.query(\n      `SELECT id FROM sourcing_jobs WHERE company_id=$1 AND status IN ('pending','running') LIMIT 1`,\n      [company_id]\n    );\n    if (dup.rowCount) return ok(res, { queued: false, job_id: dup.rows[0].id });\n\n    const ins = await pool.query(\n      `INSERT INTO sourcing_jobs (company_id, source, status)\n       VALUES ($1,$2,'pending') RETURNING *`,\n      [company_id, source]\n    );\n    return ok(res, { queued: true, job: ins.rows[0] });\n  } catch (e) {\n    console.error(e);\n    return bad(res, \"server error\", 500);\n  }\n});\n\n/**\n * POST /api/sourcing/cron\n * Enqueue jobs for high-priority companies if stale.\n */\nrouter.post(\"/cron\", adminOnly, async (_req, res) => {\n  try {\n    const toQueue = await pool.query(`",
+      "tail": "});\n\n/** GET /api/sourcing/jobs?company_id=... */\nrouter.get(\"/jobs\", adminOnly, async (req, res) => {\n  try {\n    const { company_id } = req.query;\n    const params = [];\n    const where = [];\n    if (company_id) { params.push(company_id); where.push(`company_id=$${params.length}`); }\n    const clause = where.length ? `WHERE ${where.join(\" AND \")}` : \"\";\n    const r = await pool.query(\n      `SELECT * FROM sourcing_jobs ${clause}\n        ORDER BY created_at DESC\n        LIMIT 200`,\n      params\n    );\n    return ok(res, r.rows);\n  } catch (e) {\n    console.error(e);\n    return bad(res, \"server error\", 500);\n  }\n});\n\nexport default router;\n"
+    },
+    {
+      "path": "routes/stats.js",
+      "size": 1385,
+      "sha256": "1eacda634183ed36e5ee49e154f1f29710d154f4441ba272a4d9509ccac0c8c0",
+      "imports": [
+        "import express from \"express\";",
+        "import { pool } from \"../utils/db.js\";",
+        "import { ok, bad } from \"../utils/respond.js\";"
+      ],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// routes/stats.js\nimport express from \"express\";\nimport { pool } from \"../utils/db.js\";\nimport { ok, bad } from \"../utils/respond.js\";\n\nconst router = express.Router();\n\n/**\n * GET /api/stats\n * Returns summary counts + recent activity for the dashboard.\n */\nrouter.get(\"/\", async (_req, res) => {\n  try {\n    const [[companies], [leads], [msgs]] = await Promise.all([\n      pool.query(`SELECT COUNT(*)::int AS n FROM companies`),\n      pool.query(`SELECT COUNT(*)::int AS n FROM hr_leads`),\n      // If you don't have a messages table yet, this will return 0 via COALESCE:\n      pool.query(`SELECT COALESCE(SUM(1),0)::int AS n FROM messages`)\n        .catch(() => [{ n: 0 }]),\n    ]);\n\n    // Recent activity: last 3 leads with company + status\n    const { rows: recent } = await pool.query(\n      `SELECT id, company, designation AS role, status,\n              to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS created_at\n         FROM hr_leads\n     ORDER BY created_at DESC NULLS LAST\n        LIMIT 3`\n    );\n\n    return ok(res, {\n      companiesTracked: companies?.rows?.[0]?.n ?? 0,\n      leadsIdentified:  leads?.rows?.[0]?.n ?? 0,\n      outreachSent:     msgs?.rows?.[0]?.n ?? 0,\n      recentActivity:   recent,\n    });\n  } catch (e) {\n    console.error(\"stats error:\", e);\n    return bad(res, \"failed to load stats\", 500);\n  }",
+      "tail": "    ]);\n\n    // Recent activity: last 3 leads with company + status\n    const { rows: recent } = await pool.query(\n      `SELECT id, company, designation AS role, status,\n              to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS created_at\n         FROM hr_leads\n     ORDER BY created_at DESC NULLS LAST\n        LIMIT 3`\n    );\n\n    return ok(res, {\n      companiesTracked: companies?.rows?.[0]?.n ?? 0,\n      leadsIdentified:  leads?.rows?.[0]?.n ?? 0,\n      outreachSent:     msgs?.rows?.[0]?.n ?? 0,\n      recentActivity:   recent,\n    });\n  } catch (e) {\n    console.error(\"stats error:\", e);\n    return bad(res, \"failed to load stats\", 500);\n  }\n});\n\nexport default router;\n"
+    },
+    {
+      "path": "server.js",
+      "size": 4159,
+      "sha256": "d9745a910a7e456aab990d934f36a4a0e0b39b523b01fc1b3adf12bf8f2b3c32",
+      "imports": [
+        "import express from \"express\";",
+        "import path from \"path\";",
+        "import fs from \"fs\";",
+        "import { fileURLToPath } from \"url\";",
+        "\nimport { pool } from \"./utils/db.js\";",
+        "import { adminOnly } from \"./utils/adminOnly.js\";",
+        "\nimport companiesRouter from \"./routes/companies.js\";",
+        "import hrLeadsRouter from \"./routes/hrLeads.js\";",
+        "import newsRouter from \"./routes/news.js\";",
+        "import enrichRouter from \"./routes/enrich.js\";",
+        "import { signJwt } from \"./utils/jwt.js\";"
+      ],
+      "envs": [
+        "ADMIN_PASSWORD",
+        "ADMIN_USERNAME",
+        "PORT"
+      ],
+      "appUses": [
+        "app.use(express.json({ limit: \"2mb\" }));",
+        "app.use(express.urlencoded({ extended: true }));",
+        "app.use(\"/api/companies\", companiesRouter);",
+        "app.use(\"/api/hr-leads\", hrLeadsRouter);",
+        "app.use(\"/api/news\", newsRouter);",
+        "app.use(\"/api/enrich\", enrichRouter);"
+      ],
+      "endpoints": [
+        "app.get(\"/health\", (_req, res) => res.json({ ok: true }));",
+        "app.get(\"/api/auth/verify\", adminOnly, (_req, res) => res.json({ ok: true }));"
+      ],
+      "head": "// server.js\nimport express from \"express\";\nimport path from \"path\";\nimport fs from \"fs\";\nimport { fileURLToPath } from \"url\";\n\nimport { pool } from \"./utils/db.js\";\nimport { adminOnly } from \"./utils/adminOnly.js\";\n\nimport companiesRouter from \"./routes/companies.js\";\nimport hrLeadsRouter from \"./routes/hrLeads.js\";\nimport newsRouter from \"./routes/news.js\";\nimport enrichRouter from \"./routes/enrich.js\";\nimport { signJwt } from \"./utils/jwt.js\"; // username/password login\n\nconst __filename = fileURLToPath(import.meta.url);\nconst __dirname = path.dirname(__filename);\n\nconst app = express();\nconst PORT = process.env.PORT || 10000;\n\n// ---------- Middleware ----------\napp.use(express.json({ limit: \"2mb\" }));\napp.use(express.urlencoded({ extended: true }));\n\n// ---------- Health ----------\napp.get(\"/health\", (_req, res) => res.json({ ok: true }));\napp.get(\"/__diag\", async (_req, res) => {\n  try {\n    await pool.query(\"SELECT 1\");\n    res.json({ ok: true, db_ok: true });\n  } catch (err) {\n    res.status(500).json({ ok: false, db_ok: false, error: String(err?.message || err) });\n  }\n});\n\n// ---------- Auth (username/password only) ----------\napp.post(\"/api/auth/login\", async (req, res) => {\n  try {\n    const { username, password } = req.body || {};",
+      "tail": "if (fs.existsSync(dashboardDist)) {\n  app.use(\n    express.static(dashboardDist, {\n      setHeaders: (res, filePath) => {\n        // don’t cache HTML (especially index.html)\n        if (filePath.endsWith(\".html\")) {\n          res.setHeader(\"Cache-Control\", \"no-store, must-revalidate\");\n        }\n      },\n    })\n  );\n\n  const indexFile = path.join(dashboardDist, \"index.html\");\n\n  // SPA fallback: anything not under /api/* returns index.html with no-store\n  app.get(/^(?!\\/api\\/).*/, (_req, res) => {\n    res.setHeader(\"Cache-Control\", \"no-store, must-revalidate\");\n    res.sendFile(indexFile);\n  });\n}\n\napp.listen(PORT, () => {\n  console.log(`UPR backend listening on ${PORT}`);\n});\n"
+    },
+    {
+      "path": "utils/adminOnly.js",
+      "size": 625,
+      "sha256": "e5b62b7271a27feacae03b377f6a941ebcb59906ea881987c571aeca22f169dd",
+      "imports": [
+        "import { verifyJwt } from \"./jwt.js\";"
+      ],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// utils/adminOnly.js\nimport { verifyJwt } from \"./jwt.js\";\n\nexport function adminOnly(req, res, next) {\n  try {\n    const h = String(req.headers.authorization || \"\");\n    if (!h.startsWith(\"Bearer \")) {\n      return res.status(401).json({ ok: false, error: \"missing bearer\" });\n    }\n    const token = h.slice(\"Bearer \".length);\n    const payload = verifyJwt(token);\n    if (!payload || payload.role !== \"admin\") {\n      return res.status(401).json({ ok: false, error: \"unauthorized\" });\n    }\n    req.user = payload;\n    next();\n  } catch (e) {\n    return res.status(401).json({ ok: false, error: \"invalid token\" });\n  }\n}\n",
+      "tail": "// utils/adminOnly.js\nimport { verifyJwt } from \"./jwt.js\";\n\nexport function adminOnly(req, res, next) {\n  try {\n    const h = String(req.headers.authorization || \"\");\n    if (!h.startsWith(\"Bearer \")) {\n      return res.status(401).json({ ok: false, error: \"missing bearer\" });\n    }\n    const token = h.slice(\"Bearer \".length);\n    const payload = verifyJwt(token);\n    if (!payload || payload.role !== \"admin\") {\n      return res.status(401).json({ ok: false, error: \"unauthorized\" });\n    }\n    req.user = payload;\n    next();\n  } catch (e) {\n    return res.status(401).json({ ok: false, error: \"invalid token\" });\n  }\n}\n"
+    },
+    {
+      "path": "utils/ai.js",
+      "size": 7228,
+      "sha256": "dadd50847aa710ae36e44567cd001ce26450f888e57f0ee864aae256d174144d",
+      "imports": [
+        "import crypto from \"crypto\";"
+      ],
+      "envs": [
+        "OPENAI_API_KEY",
+        "OPENAI_MODEL"
+      ],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// utils/ai.js\nimport crypto from \"crypto\";\n\n/**\n * aiEnrichFromInput(input: string) -> {\n *   company: { name, domain, website, linkedin, hq, industry, size, notes },\n *   contacts: [{ id, name, title, dept, email, email_guess, email_status, linkedin, confidence, score }],\n *   score, tags, outreachDraft,\n *   meta: { llm: 'openai' | 'rules', took_ms: number }\n * }\n */\n\nfunction titleCase(s) {\n  if (!s) return s;\n  return s\n    .toLowerCase()\n    .split(/\\s+/)\n    .map(w => (w.length ? w[0].toUpperCase() + w.slice(1) : w))\n    .join(\" \");\n}\nfunction looksLikeDomain(s) { return /\\b[a-z0-9-]+\\.[a-z]{2,}\\b/i.test(s || \"\"); }\nfunction firstNonEmpty(...vals) { return vals.find(v => !!(v && String(v).trim())) || null; }\n\nfunction candidatesFromName(name) {\n  const cleaned = String(name || \"\").replace(/[^a-z0-9 ]/gi, \" \").trim();\n  if (!cleaned) return [];\n  const parts = cleaned.split(/\\s+/).slice(0, 3);\n  const base = parts.join(\"\");\n  // Try common UAE/tech TLDs\n  return [`${base}.com`, `${base}.ae`, `${base}.ai`];\n}\n\nasync function probeDomain(url) {\n  // best-effort: check if HEAD 200-ish; ignore failures\n  try {\n    const u = url.startsWith(\"http\") ? url : `https://${url}`;\n    const r = await fetch(u, { method: \"HEAD\" });\n    if (r.ok) return new URL(u).hostname;\n  } catch {}\n  return null;",
+      "tail": "  if (/hr|talent|people/i.test(trimmed)) tags.push(\"HR\");\n\n  const pc = contacts[0];\n  const outreachDraft =\n`Subject: Partnership with ${company.name}\n\nHi ${pc?.name || \"there\"},\n\nI’m reaching out about ${company.name}. We help HR teams cut sourcing time and improve lead quality with an enrichment + outreach workflow tailored to ${company.hq || \"your region\"}.\n\nIf helpful, I can share a shortlist for your current roles within 24 hours.\n\nBest,\nUPR Team`;\n\n  return {\n    company,\n    contacts,\n    score,\n    tags,\n    outreachDraft,\n    meta: { llm: useLLM ? \"openai\" : \"rules\", took_ms: Date.now() - started },\n  };\n}\n"
+    },
+    {
+      "path": "utils/apollo.js",
+      "size": 88,
+      "sha256": "ebb345093561efd00e9088efdb6fd89e852f71f414f615540fa5fd31b3ecce85",
+      "imports": [],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "export * from './providers/apollo.js';\nexport { default } from './providers/apollo.js';\n",
+      "tail": "export * from './providers/apollo.js';\nexport { default } from './providers/apollo.js';\n"
+    },
+    {
+      "path": "utils/db.js",
+      "size": 993,
+      "sha256": "cb3b97a0ed9f6485c20db51a432d4270ddc98ce8971e9a97b02d08eed04b15eb",
+      "imports": [
+        "import pg from \"pg\";"
+      ],
+      "envs": [
+        "DATABASE_URL",
+        "PGPOOL_MAX",
+        "PGSSLMODE",
+        "POSTGRES_URL"
+      ],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// utils/db.js\nimport pg from \"pg\";\nconst { Pool } = pg;\n\n// Prefer DATABASE_URL (Render/Heroku-style), fall back to POSTGRES_URL\nconst connectionString =\n  process.env.DATABASE_URL || process.env.POSTGRES_URL || null;\n\nif (!connectionString) {\n  console.warn(\n    \"[db] No DATABASE_URL/POSTGRES_URL set; queries will fail until configured.\"\n  );\n}\n\nexport const pool = new Pool({\n  connectionString,\n  // Enable SSL in hosted environments that require it\n  ssl:\n    process.env.PGSSLMODE === \"require\" ||\n    (connectionString && !connectionString.includes(\"localhost\"))\n      ? { rejectUnauthorized: false }\n      : undefined,\n  max: parseInt(process.env.PGPOOL_MAX || \"10\", 10),\n  idleTimeoutMillis: 30_000,\n});\n\n/** Convenience wrappers (optional) */\nexport async function query(text, params) {\n  return pool.query(text, params);\n}\nexport async function withClient(fn) {\n  const client = await pool.connect();\n  try {\n    return await fn(client);\n  } finally {\n    client.release();\n  }\n}\n",
+      "tail": "export const pool = new Pool({\n  connectionString,\n  // Enable SSL in hosted environments that require it\n  ssl:\n    process.env.PGSSLMODE === \"require\" ||\n    (connectionString && !connectionString.includes(\"localhost\"))\n      ? { rejectUnauthorized: false }\n      : undefined,\n  max: parseInt(process.env.PGPOOL_MAX || \"10\", 10),\n  idleTimeoutMillis: 30_000,\n});\n\n/** Convenience wrappers (optional) */\nexport async function query(text, params) {\n  return pool.query(text, params);\n}\nexport async function withClient(fn) {\n  const client = await pool.connect();\n  try {\n    return await fn(client);\n  } finally {\n    client.release();\n  }\n}\n"
+    },
+    {
+      "path": "utils/emailPatterns.js",
+      "size": 2991,
+      "sha256": "9b6e21504b2574550d3a018c707c1dfb51978b568ed303ff2faad59f2ac0cc3c",
+      "imports": [
+        "import { pool } from \"./db.js\";"
+      ],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// utils/emailPatterns.js\nimport { pool } from \"./db.js\";\n\nconst DEFAULT_PATTERNS = [\n  \"{first}.{last}@{domain}\",\n  \"{f}{last}@{domain}\",\n  \"{first}{l}@{domain}\",\n  \"{first}@{domain}\",\n  \"{first}_{last}@{domain}\",\n  \"{last}{f}@{domain}\",\n  \"{first}-{last}@{domain}\",\n];\n\nexport function applyPattern(first, last, pattern, domain) {\n  const f = (first || \"\").toLowerCase().replace(/[^a-z]/g, \"\");\n  const l = (last || \"\").toLowerCase().replace(/[^a-z]/g, \"\");\n  return pattern\n    .replace(\"{first}\", f)\n    .replace(\"{last}\", l)\n    .replace(\"{f}\", f.slice(0, 1))\n    .replace(\"{l}\", l.slice(0, 1))\n    .replace(\"{domain}\", domain);\n}\n\n/**\n * Given sample emails (name+email) of the same domain, infer the most likely pattern.\n * @param {Array<{name:string,email:string}>} samples\n * @param {string} domain\n * @returns {{pattern:string, confidence:number}|null}\n */\nexport function inferPatternFromSamples(samples, domain) {\n  const counts = new Map();\n  for (const s of samples) {\n    const [first, last] = splitName(s.name);\n    if (!first) continue;\n    for (const p of DEFAULT_PATTERNS) {\n      const guess = applyPattern(first, last, p, domain);\n      if (eqEmail(guess, s.email)) counts.set(p, (counts.get(p) || 0) + 1);\n    }\n  }",
+      "tail": "  } catch (e) {\n    if (String(e?.code) === \"42P01\") return null; // table missing\n    throw e;\n  }\n}\n\nexport async function savePatternToCache(dbOrPool, domain, pattern, sample_email, confidence = 0.7) {\n  const db = dbOrPool?.query ? dbOrPool : pool;\n  const q = `\n    INSERT INTO email_pattern_cache (domain, pattern, sample_email, confidence, updated_at)\n    VALUES ($1,$2,$3,$4, now())\n    ON CONFLICT (domain) DO UPDATE SET\n      pattern = EXCLUDED.pattern,\n      sample_email = EXCLUDED.sample_email,\n      confidence = EXCLUDED.confidence,\n      updated_at = now()\n  `;\n  try {\n    await db.query(q, [domain, pattern, sample_email || null, confidence]);\n  } catch (e) {\n    if (String(e?.code) === \"42P01\") return; // table not present yet: skip\n    throw e;\n  }\n}\n"
+    },
+    {
+      "path": "utils/emailVerify.js",
+      "size": 2109,
+      "sha256": "342a6f21fb9b49a3aed964e8fa063bd92299323a8b1e17d23ccf9e2123ffb714",
+      "imports": [],
+      "envs": [
+        "NEVERBOUNCE_API_KEY",
+        "ZEROBOUNCE_API_KEY"
+      ],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// utils/emailVerify.js\n\nexport async function verifyEmail(email) {\n  if (process.env.NEVERBOUNCE_API_KEY) {\n    try {\n      const resp = await fetch(\"https://api.neverbounce.com/v4/single/check\", {\n        method: \"POST\",\n        headers: { \"Content-Type\": \"application/json\" },\n        body: JSON.stringify({\n          key: process.env.NEVERBOUNCE_API_KEY,\n          email,\n          address_info: 0,\n          credits_info: 0,\n        }),\n      });\n      const data = await resp.json();\n      return mapNeverBounce(data?.result || data?.verification?.result);\n    } catch {\n      return { status: \"unknown\", reason: \"neverbounce_error\" };\n    }\n  }\n\n  if (process.env.ZEROBOUNCE_API_KEY) {\n    try {\n      const url = new URL(\"https://api.zerobounce.net/v2/validate\");\n      url.searchParams.set(\"api_key\", process.env.ZEROBOUNCE_API_KEY);\n      url.searchParams.set(\"email\", email);\n      const resp = await fetch(url.toString());\n      const data = await resp.json();\n      return mapZeroBounce(data?.status);\n    } catch {\n      return { status: \"unknown\", reason: \"zerobounce_error\" };\n    }\n  }\n\n  if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) return { status: \"invalid\", reason: \"regex\" };\n  return { status: \"unknown\", reason: \"no_verifier_configured\" };\n}\n\nfunction mapNeverBounce(code) {",
+      "tail": "    case \"invalid\":\n      return { status: \"invalid\" };\n    case \"disposable\":\n      return { status: \"invalid\", reason: \"disposable\" };\n    case \"do_not_mail\":\n      return { status: \"invalid\", reason: \"do_not_mail\" };\n    default:\n      return { status: \"unknown\" };\n  }\n}\nfunction mapZeroBounce(code) {\n  switch (String(code).toLowerCase()) {\n    case \"valid\":\n      return { status: \"valid\" };\n    case \"catch-all\":\n    case \"unknown\":\n    case \"accept_all\":\n      return { status: \"accept_all\" };\n    case \"invalid\":\n      return { status: \"invalid\" };\n    default:\n      return { status: \"unknown\" };\n  }\n}\n"
+    },
+    {
+      "path": "utils/jwt.js",
+      "size": 375,
+      "sha256": "8c531dc92f53c8c5467ed1a281a077c813835f60aa8d16413b4544a98c9015f1",
+      "imports": [
+        "import jwt from \"jsonwebtoken\";"
+      ],
+      "envs": [
+        "APP_SECRET",
+        "JWT_SECRET"
+      ],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// utils/jwt.js\nimport jwt from \"jsonwebtoken\";\n\nconst JWT_SECRET =\n  process.env.JWT_SECRET ||\n  process.env.APP_SECRET ||\n  \"dev-secret-change-me-please\";\n\nexport function signJwt(payload, expiresInSec = 60 * 60 * 24 * 7) {\n  return jwt.sign(payload, JWT_SECRET, { expiresIn: expiresInSec });\n}\n\nexport function verifyJwt(token) {\n  return jwt.verify(token, JWT_SECRET);\n}\n",
+      "tail": "// utils/jwt.js\nimport jwt from \"jsonwebtoken\";\n\nconst JWT_SECRET =\n  process.env.JWT_SECRET ||\n  process.env.APP_SECRET ||\n  \"dev-secret-change-me-please\";\n\nexport function signJwt(payload, expiresInSec = 60 * 60 * 24 * 7) {\n  return jwt.sign(payload, JWT_SECRET, { expiresIn: expiresInSec });\n}\n\nexport function verifyJwt(token) {\n  return jwt.verify(token, JWT_SECRET);\n}\n"
+    },
+    {
+      "path": "utils/normalize.js",
+      "size": 646,
+      "sha256": "8f73e614c22b47755e634f50d26895a9437a763fa1b28d792266452f98835070",
+      "imports": [],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// utils/normalize.js\nexport function normalizeDomain(input) {\n  if (!input) return null;\n  let s = String(input).trim();\n  try {\n    if (!/^https?:\\/\\//i.test(s)) s = \"https://\" + s;\n    const u = new URL(s);\n    let host = u.hostname.toLowerCase();\n    if (host.startsWith(\"www.\")) host = host.slice(4);\n    return host || null;\n  } catch {\n    // not a URL, maybe already a domain\n    let host = s.toLowerCase();\n    if (host.startsWith(\"www.\")) host = host.slice(4);\n    return host || null;\n  }\n}\n\nexport function includesNormalized(a, b) {\n  if (!a || !b) return false;\n  return String(a).toLowerCase().includes(String(b).toLowerCase());\n}\n",
+      "tail": "// utils/normalize.js\nexport function normalizeDomain(input) {\n  if (!input) return null;\n  let s = String(input).trim();\n  try {\n    if (!/^https?:\\/\\//i.test(s)) s = \"https://\" + s;\n    const u = new URL(s);\n    let host = u.hostname.toLowerCase();\n    if (host.startsWith(\"www.\")) host = host.slice(4);\n    return host || null;\n  } catch {\n    // not a URL, maybe already a domain\n    let host = s.toLowerCase();\n    if (host.startsWith(\"www.\")) host = host.slice(4);\n    return host || null;\n  }\n}\n\nexport function includesNormalized(a, b) {\n  if (!a || !b) return false;\n  return String(a).toLowerCase().includes(String(b).toLowerCase());\n}\n"
+    },
+    {
+      "path": "utils/patternCache.js",
+      "size": 983,
+      "sha256": "abb445ea1196aa9f5f33e6ef346dfed254d61e0b748fef50316a059f2c91f64e",
+      "imports": [],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// utils/patternCache.js\n// Exports:\n//  - getDomainPattern(domain) -> { domain, pattern_id, verified_count } | null\n//  - setDomainPattern({ domain, pattern_id, source, example, incrementVerified }) -> void\n//\n// This is an in-memory cache by default. Replace with Postgres persistence later.\n\nconst mem = new Map();\n\nexport async function getDomainPattern(domain) {\n  const d = (domain || \"\").toLowerCase();\n  if (!d) return null;\n  return mem.get(d) || null;\n}\n\nexport async function setDomainPattern({ domain, pattern_id, source, example, incrementVerified }) {\n  const d = (domain || \"\").toLowerCase();\n  if (!d || !pattern_id) return;\n  const prev = mem.get(d) || { domain: d, pattern_id: null, verified_count: 0 };\n  mem.set(d, {\n    domain: d,\n    pattern_id,\n    verified_count: prev.verified_count + (incrementVerified ? 1 : 0),\n    source: source || prev.source || \"unknown\",\n    example: example || prev.example || null,\n    updated_at: new Date().toISOString(),\n  });\n}\n",
+      "tail": "//\n// This is an in-memory cache by default. Replace with Postgres persistence later.\n\nconst mem = new Map();\n\nexport async function getDomainPattern(domain) {\n  const d = (domain || \"\").toLowerCase();\n  if (!d) return null;\n  return mem.get(d) || null;\n}\n\nexport async function setDomainPattern({ domain, pattern_id, source, example, incrementVerified }) {\n  const d = (domain || \"\").toLowerCase();\n  if (!d || !pattern_id) return;\n  const prev = mem.get(d) || { domain: d, pattern_id: null, verified_count: 0 };\n  mem.set(d, {\n    domain: d,\n    pattern_id,\n    verified_count: prev.verified_count + (incrementVerified ? 1 : 0),\n    source: source || prev.source || \"unknown\",\n    example: example || prev.example || null,\n    updated_at: new Date().toISOString(),\n  });\n}\n"
+    },
+    {
+      "path": "utils/patternHelpers.js",
+      "size": 1710,
+      "sha256": "3b155e40ca6105b1ebd61b0d9526f786e2f3179eedc4779ee6f7df796b886cb9",
+      "imports": [],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// utils/patternHelpers.js\n\nexport function bucketRole(title = \"\") {\n  const t = title.toLowerCase();\n  const hr = /(human\\s*resources|hr\\b|people|talent|recruit(ing|er)?|hrbp|comp(ensation)?|benefits|total\\s*rewards|hr\\s*ops|people\\s*ops)/;\n  return hr.test(t) ? \"hr\" : \"other\";\n}\n\nexport function bucketSeniority(title = \"\") {\n  const t = title.toLowerCase();\n  if (/(chief|chro|vp|vice\\s*president)/.test(t)) return \"cxo\";\n  if (/director|head/.test(t)) return \"director\";\n  if (/manager|lead/.test(t)) return \"manager\";\n  return \"ic\";\n}\n\nexport function isAgencyRecruiter(cand) {\n  const t = (cand.designation || \"\").toLowerCase();\n  const company = (cand.company_name || \"\").toLowerCase();\n  const agency = /(consultant|agency|headhunter|rpo|recruitment\\s*agency|talent\\s*partner\\s*\\(external\\))/;\n  return agency.test(t) || agency.test(company);\n}\n\n/**\n * Confidence scoring (0..1 rounded to 2 decimals)\n */\nexport function scoreCandidate({ role_bucket, seniority, geo_fit, email_status, company_match }) {\n  const role_fit = role_bucket === \"hr\" ? 1.0 : 0.0;\n  const seniority_fit =\n    seniority === \"cxo\" || seniority === \"director\" ? 1.0\n      : seniority === \"manager\" ? 0.8\n      : seniority === \"ic\" ? 0.4\n      : 0.0;\n\n  const email_verif =\n    email_status === \"valid\" ? 1.0\n      : email_status === \"accept_all\" ? 0.7\n      : email_status === \"patterned\" ? 0.3\n      : 0.0;\n",
+      "tail": "  const seniority_fit =\n    seniority === \"cxo\" || seniority === \"director\" ? 1.0\n      : seniority === \"manager\" ? 0.8\n      : seniority === \"ic\" ? 0.4\n      : 0.0;\n\n  const email_verif =\n    email_status === \"valid\" ? 1.0\n      : email_status === \"accept_all\" ? 0.7\n      : email_status === \"patterned\" ? 0.3\n      : 0.0;\n\n  const gf = typeof geo_fit === \"number\" ? Math.max(0, Math.min(1, geo_fit)) : 0.6;\n  const cm = typeof company_match === \"number\" ? company_match : 1.0;\n\n  const score =\n    0.30 * role_fit +\n    0.25 * seniority_fit +\n    0.20 * gf +\n    0.15 * email_verif +\n    0.10 * cm;\n\n  return Math.round(score * 100) / 100;\n}\n"
+    },
+    {
+      "path": "utils/providers/apollo.js",
+      "size": 1762,
+      "sha256": "ef00a21698bd87c5acaabfd92ac6cd8a986282809b246345eb0f5a7288ed1237",
+      "imports": [],
+      "envs": [
+        "APOLLO_API_KEY"
+      ],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// utils/providers/apollo.js\n// Apollo People Search provider using Node 18+ global fetch (no node-fetch dep)\n\nconst APOLLO_BASE = \"https://api.apollo.io/api/v1\";\n\nfunction assertKey() {\n  if (!process.env.APOLLO_API_KEY) {\n    throw new Error(\"APOLLO_API_KEY missing\");\n  }\n}\n\nasync function apolloPost(path, body = {}) {\n  assertKey();\n  const resp = await fetch(`${APOLLO_BASE}${path}`, {\n    method: \"POST\",\n    headers: {\n      \"Content-Type\": \"application/json\",\n      \"Cache-Control\": \"no-cache\",\n      accept: \"application/json\",\n      \"x-api-key\": process.env.APOLLO_API_KEY,\n    },\n    body: JSON.stringify(body),\n  });\n\n  const text = await resp.text();\n  let json = null;\n  try {\n    json = text ? JSON.parse(text) : {};\n  } catch {\n    // fall through\n  }\n\n  if (!resp.ok) {\n    const errMsg = json?.error || json?.message || text || resp.statusText;\n    throw new Error(`Apollo ${path} ${resp.status}: ${errMsg}`);\n  }\n  return json ?? {};\n}\n\n/**",
+      "tail": "    person_locations: locations,\n    person_titles: titles,\n  };\n\n  if (domain) {\n    const r1 = await apolloPost(\"/mixed_people/search\", {\n      ...basePayload,\n      q_organization_domains: [domain],\n    });\n    if ((r1.people?.length || 0) > 0) return r1.people;\n  }\n\n  if (orgName) {\n    const r2 = await apolloPost(\"/mixed_people/search\", {\n      ...basePayload,\n      organization_name: orgName,\n    });\n    if ((r2.people?.length || 0) > 0) return r2.people;\n  }\n\n  return [];\n}\n\nexport default { apolloMixedPeopleSearch };\n"
+    },
+    {
+      "path": "utils/providers/sourcing.js",
+      "size": 873,
+      "sha256": "1cd8f2e89186c344edf359991032b8301f72c76b33c466f7d6b1826cc025e06c",
+      "imports": [
+        "\nimport { fetchApolloContacts } from \"./sourcing_apollo.js\";"
+      ],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// utils/providers/sourcing.js\n//\n// Provider hub. We prefer Apollo for real-name sourcing.\n// Returns [] if no provider configured; we never fabricate contacts.\n\nimport { fetchApolloContacts } from \"./sourcing_apollo.js\";\n\nexport async function fetchContactsFromProviders({ company, departments = [], min = 3 }) {\n  const out = [];\n\n  // Apollo (requires APOLLO_API_KEY)\n  try {\n    const ap = await fetchApolloContacts({ company, departments, limit: Math.max(min, 10) });\n    if (Array.isArray(ap) && ap.length) out.push(...ap);\n  } catch {\n    // ignore provider errors\n  }\n\n  // Future: add additional providers (PDL, Coresignal, etc.)\n\n  // Dedup by lowercased name\n  const seen = new Set();\n  return out.filter((c) => {\n    const k = (c.name || \"\").toLowerCase();\n    if (!k) return false;\n    if (seen.has(k)) return false;\n    seen.add(k);\n    return true;\n  });\n}\n",
+      "tail": "\nexport async function fetchContactsFromProviders({ company, departments = [], min = 3 }) {\n  const out = [];\n\n  // Apollo (requires APOLLO_API_KEY)\n  try {\n    const ap = await fetchApolloContacts({ company, departments, limit: Math.max(min, 10) });\n    if (Array.isArray(ap) && ap.length) out.push(...ap);\n  } catch {\n    // ignore provider errors\n  }\n\n  // Future: add additional providers (PDL, Coresignal, etc.)\n\n  // Dedup by lowercased name\n  const seen = new Set();\n  return out.filter((c) => {\n    const k = (c.name || \"\").toLowerCase();\n    if (!k) return false;\n    if (seen.has(k)) return false;\n    seen.add(k);\n    return true;\n  });\n}\n"
+    },
+    {
+      "path": "utils/providers/sourcing_apollo.js",
+      "size": 4313,
+      "sha256": "0d85801ceae3eb66bde60593ae1d40fb2948d365bcfc347a76850a27255edb98",
+      "imports": [],
+      "envs": [
+        "APOLLO_API_KEY",
+        "APOLLO_DEFAULT_COUNTRY"
+      ],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// utils/providers/sourcing_apollo.js\n//\n// Apollo provider adapter: fetch real people by company + departments.\n// Auth via header: X-Api-Key (per Apollo deprecation notice).\n//\n// Scopes needed:\n//   - api/v1/people/search   (required)\n//   - api/v1/mixed_people/search (tick if visible; we fall back to it)\n// Optional:\n//   - api/v1/organizations/search, api/v1/organizations/show\n//\n// ENV:\n//   APOLLO_API_KEY=sk_... (required)\n//   APOLLO_DEFAULT_COUNTRY=\"United Arab Emirates\" (optional)\n//\n// Notes:\n// - We do discovery only (no email reveal). UPR will pattern+SMTP-verify.\n// - We filter to real names (must contain space) and map dept from title.\n\nconst API_KEY = process.env.APOLLO_API_KEY || null;\nconst DEFAULT_COUNTRY = process.env.APOLLO_DEFAULT_COUNTRY || \"United Arab Emirates\";\n\nconst TITLE_MAP = {\n  hr: [\"hr\", \"human resources\", \"people\"],\n  hrbp: [\"hrbp\", \"business partner\"],\n  ta: [\"talent\", \"recruit\", \"acquisition\", \"sourcing\"],\n  payroll: [\"payroll\"],\n  finance: [\"finance\", \"account\", \"controller\", \"cfo\", \"fp&a\"],\n  admin: [\"admin\", \"administration\"],\n  office_admin: [\"office admin\", \"office manager\", \"facilities\"],\n  onboarding: [\"onboarding\", \"people operations\", \"people ops\"],\n};\n\nfunction cleanStr(s){ if(!s) return null; const t=String(s).trim(); return t.length?t:null; }\nfunction uniq(a){ return [...new Set((a||[]).filter(Boolean))]; }\nfunction normDomain(u){\n  try { return new URL(u).hostname; }\n  catch { const s=String(u||\"\").trim().toLowerCase(); return /^[a-z0-9.-]+\\.[a-z]{2,}$/.test(s)?s:null; }\n}\nfunction buildTitleQuery(departments=[]){",
+      "tail": "    \"Content-Type\": \"application/json\",\n    \"Cache-Control\": \"no-cache\",\n    \"X-Api-Key\": API_KEY,\n  };\n\n  // Try people/search first, then mixed_people/search\n  const endpoints = [\n    \"https://api.apollo.io/api/v1/people/search\",\n    \"https://api.apollo.io/api/v1/mixed_people/search\",\n  ];\n\n  for (const url of endpoints){\n    try {\n      const resp = await fetch(url, { method: \"POST\", headers, body: JSON.stringify(body) });\n      if (!resp.ok) continue;\n      const data = await resp.json();\n      const people = Array.isArray(data?.people) ? data.people :\n                     Array.isArray(data?.contacts) ? data.contacts : [];\n      const contacts = mapPeopleToContacts(people);\n      if (contacts.length) return contacts;\n    } catch { /* try next */ }\n  }\n  return [];\n}\n"
+    },
+    {
+      "path": "utils/qscore.js",
+      "size": 415,
+      "sha256": "7e067803d22b901044ed9077929017457fd31f891bd69a3f8932fa4274eecc43",
+      "imports": [],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// utils/qscore.js\nexport function computeQScore(company, newsRows = []) {\n  let score = 0;\n  if (company.type === \"ALE\") score += 10;\n  if (Array.isArray(company.locations) && company.locations.length > 1) score += 5;\n  const hiring = newsRows.some(n => Array.isArray(n.tags) && (n.tags.includes(\"hiring\") || n.tags.includes(\"expansion\")));\n  if (hiring) score += 15;\n  return Math.max(0, Math.min(100, score));\n}\n",
+      "tail": "// utils/qscore.js\nexport function computeQScore(company, newsRows = []) {\n  let score = 0;\n  if (company.type === \"ALE\") score += 10;\n  if (Array.isArray(company.locations) && company.locations.length > 1) score += 5;\n  const hiring = newsRows.some(n => Array.isArray(n.tags) && (n.tags.includes(\"hiring\") || n.tags.includes(\"expansion\")));\n  if (hiring) score += 15;\n  return Math.max(0, Math.min(100, score));\n}\n"
+    },
+    {
+      "path": "utils/respond.js",
+      "size": 198,
+      "sha256": "e7416b8a0b80da8bf89666a5eec8b0586eb58c622c22a4e48187b664d9d1c940",
+      "imports": [],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// utils/respond.js\nexport function ok(res, data) {\n  return res.json({ ok: true, data });\n}\nexport function bad(res, msg, code = 400) {\n  return res.status(code).json({ ok: false, error: msg });\n}\n",
+      "tail": "// utils/respond.js\nexport function ok(res, data) {\n  return res.json({ ok: true, data });\n}\nexport function bad(res, msg, code = 400) {\n  return res.status(code).json({ ok: false, error: msg });\n}\n"
+    },
+    {
+      "path": "utils/smtpVerify.js",
+      "size": 2346,
+      "sha256": "602a9ec6c40b68924acd95bee07120bd6ec549188a1284831275ef783a12fcab",
+      "imports": [],
+      "envs": [
+        "NEVERBOUNCE_API_KEY",
+        "ZEROBOUNCE_API_KEY"
+      ],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// utils/emailVerify.js\n\n/**\n * Verify an email address using NeverBounce or ZeroBounce when available.\n * Returns { status: 'valid'|'accept_all'|'unknown'|'invalid'|'bounced', reason?: string }\n */\nexport async function verifyEmail(email) {\n  // NeverBounce\n  if (process.env.NEVERBOUNCE_API_KEY) {\n    try {\n      const resp = await fetch(\"https://api.neverbounce.com/v4/single/check\", {\n        method: \"POST\",\n        headers: { \"Content-Type\": \"application/json\" },\n        body: JSON.stringify({\n          key: process.env.NEVERBOUNCE_API_KEY,\n          email,\n          address_info: 0,\n          credits_info: 0,\n        }),\n      });\n      const data = await resp.json();\n      return mapNeverBounce(data?.result || data?.verification?.result);\n    } catch {\n      return { status: \"unknown\", reason: \"neverbounce_error\" };\n    }\n  }\n\n  // ZeroBounce\n  if (process.env.ZEROBOUNCE_API_KEY) {\n    try {\n      const url = new URL(\"https://api.zerobounce.net/v2/validate\");\n      url.searchParams.set(\"api_key\", process.env.ZEROBOUNCE_API_KEY);\n      url.searchParams.set(\"email\", email);\n      const resp = await fetch(url.toString());\n      const data = await resp.json();\n      return mapZeroBounce(data?.status);\n    } catch {\n      return { status: \"unknown\", reason: \"zerobounce_error\" };\n    }\n  }",
+      "tail": "    case \"invalid\":\n      return { status: \"invalid\" };\n    case \"disposable\":\n      return { status: \"invalid\", reason: \"disposable\" };\n    case \"do_not_mail\":\n      return { status: \"invalid\", reason: \"do_not_mail\" };\n    default:\n      return { status: \"unknown\" };\n  }\n}\nfunction mapZeroBounce(code) {\n  switch (String(code).toLowerCase()) {\n    case \"valid\":\n      return { status: \"valid\" };\n    case \"catch-all\":\n    case \"unknown\":\n    case \"accept_all\":\n      return { status: \"accept_all\" };\n    case \"invalid\":\n      return { status: \"invalid\" };\n    default:\n      return { status: \"unknown\" };\n  }\n}\n"
+    },
+    {
+      "path": "utils/validators.js",
+      "size": 4738,
+      "sha256": "96d7f2e825ed0a1a3bc29e5b2e7dc0e017808d1c430cc6cf04418702445d2284",
+      "imports": [],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// utils/validators.js\n\n// ---- Canonical enums (stored/displayed exactly like this) ----\nexport const COMPANY_TYPES = [\"ALE\", \"NON_ALE\", \"Good Coded\"];\n\nexport const COMPANY_STATUSES = [\n  \"New\",\n  \"Contacted\",\n  \"Response Received\",\n  \"Converted\",\n  \"Declined\",\n];\n\nexport const LEAD_STATUSES = [\n  \"New\",\n  \"Contacted\",\n  \"Response Received\",\n  \"Follow-up 1\",\n  \"Follow-up 2\",\n  \"Follow-up 3\",\n  \"Follow-up 4\",\n  \"Converted\",\n  \"Declined\",\n];\n\nexport const EMAIL_STATUSES = [\"unknown\", \"patterned\", \"guessed\", \"validated\", \"bounced\"];\n\nexport const UAE_LOCATIONS = [\"Abu Dhabi\", \"Dubai\", \"Sharjah\"];\n\n// ---- Synonym maps (case/spacing insensitive) ----\n// We normalize input then map to a canonical value.\nconst CTYPE_ALIASES = new Map([\n  [\"ale\", \"ALE\"],\n  [\"non_ale\", \"NON_ALE\"],\n  [\"non-ale\", \"NON_ALE\"],\n  [\"non ale\", \"NON_ALE\"],\n  [\"nonale\", \"NON_ALE\"],\n  [\"good coded\", \"Good Coded\"],\n  [\"good_coded\", \"Good Coded\"],\n  [\"good-coded\", \"Good Coded\"],",
+      "tail": "}\nexport function isValidCompanyStatus(s) {\n  return normalizeCompanyStatus(s) !== null;\n}\nexport function isValidEmailStatus(s) {\n  return normalizeEmailStatus(s) !== null;\n}\nexport function isValidLeadStatus(s) {\n  return normalizeLeadStatus(s) !== null;\n}\nexport function isValidLocation(loc) {\n  return normalizeLocation(loc) !== null;\n}\n\n// ---- Convenience: normalize an array of locations ----\nexport function normalizeLocations(list = []) {\n  if (!Array.isArray(list)) return [];\n  const out = [];\n  for (const item of list) {\n    const n = normalizeLocation(item);\n    if (n && !out.includes(n)) out.push(n);\n  }\n  return out;\n}\n"
+    }
+  ]
+}

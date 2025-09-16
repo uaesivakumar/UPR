@@ -1,22 +1,15 @@
 # UPR — Project Checkpoint (auto)
 
-**Generated:** 2025-09-16T16:35:03Z  
+**Generated:** 2025-09-16T16:49:41Z  
 **Branch:** main  
-**Commit:** 848ab9f
+**Commit:** bb1dca5
 **Package:** upr-dashboard
 
 ---
 
 ## How to use in new sessions
-1) Upload **UPR_CHECKPOINT.md** and **project-structure.txt** at the start of the chat.
+1) Upload **UPR_CHECKPOINT.md**, **project-structure.txt**, and **UPR_SNAPSHOTS.json**.
 2) Say: “Load UPR_CHECKPOINT.md”.
-
----
-
-## Assistant guardrails
-- Prefer additive changes; match existing file paths.
-- Keep feature splits (e.g., `features/enrichment/*` vs `pages/*`).
-- Don't overwrite without checking this checkpoint + folder tree.
 
 ---
 
@@ -8916,6 +8909,7 @@
 ./.git/objects/ad/6f43e35f4a342bcac73ec92226b342f282097e
 ./.git/objects/ad/43b917b8a4455e520a14a6c26ee3f5662b75e2
 ./.git/objects/bb
+./.git/objects/bb/1dca58def8032485e99d67ec296e97b9147015
 ./.git/objects/bb/0441f56d292bc9e7066b6b57f4530b8866b069
 ./.git/objects/bb/c51939e148beac32d537bd6a74b7382bd7a5b4
 ./.git/objects/bb/afc19635db94de66831e4ae843a0e4200bb712
@@ -9043,6 +9037,7 @@
 ./.git/objects/ae/be5da094e5b8e5df4b90936de4f77747154fad
 ./.git/objects/ae/2cb3c58d5aa4dc784383f30b3af90c1283450d
 ./.git/objects/ae/d0138278a940d6e7b2d43903e04eee233b957e
+./.git/objects/ae/53289804c8019892c9623264728b63d940c55e
 ./.git/objects/ae/d4951a848777c8470eb2f3501266c5745d9bb9
 ./.git/objects/d8
 ./.git/objects/d8/925987d5b9868a6a485240aa897848429d4d3b
@@ -9099,6 +9094,7 @@
 ./.git/objects/f3/f10c4a4c36bb690ab2f2f8565a95f400ab153c
 ./.git/objects/eb
 ./.git/objects/eb/91d09e1d6c5671fd399b5018afe614011f5476
+./.git/objects/eb/5edb629a1749039fdf0229550e67bacac893f5
 ./.git/objects/eb/fed8e0dc39caaa6830d86ef0a0b3ae1fde4f6f
 ./.git/objects/eb/024f5c51c925b5d3848177305b6173aa7762a9
 ./.git/objects/eb/d25aff55759500c9c5bf420df895070bc2509f
@@ -9376,6 +9372,7 @@
 ./.git/objects/73/5ac22ddf0d49864716a701d1fde475e04fc5c6
 ./.git/objects/73/89bda6627345350ec49115804b95d94de4edb0
 ./.git/objects/73/dd0ecc2e2af27ec7fa3ebf4413dc4200d0340f
+./.git/objects/73/78b3d3a7b007ed9e8490ef0fc2f843537c0e6e
 ./.git/objects/73/0276bd121df856ede4c51d6e7b63d071242487
 ./.git/objects/73/0a80606378f3ed4f84217993024f6f727132ce
 ./.git/objects/73/2b847ed97bd13599fba587e6bbbec9df1ecdf8
@@ -10220,8 +10217,10 @@
 ./.git/objects/c5/62130d553097b85276764356660a1548967966
 ./.git/objects/c5/09d4557c0d11a3f7ea08d5e4ff0c77ff91f4cf
 ./.git/objects/c5/6c9731c140788997e7a389194eaf1c6f0fcc48
+./.git/objects/c5/67191981287cc8bc667064a801536d48774e7e
 ./.git/objects/c5/7216aebd518555d0ba6e6677238b6cf4aee59d
 ./.git/objects/c5/270551e93921ccd9eda9ce2b33e54490e57f05
+./.git/objects/c5/1584ac723ec4ad13c31bcb7af0555074248c08
 ./.git/objects/c5/2807d63853bbc52db00c8f022f8aa05367f517
 ./.git/objects/c2
 ./.git/objects/c2/d90a9d802e5aad8b7d6d435e5007e5d82a1e41
@@ -10587,6 +10586,7 @@
 ./.git/objects/7f
 ./.git/objects/7f/f9158dd0b8e7716ff1d6dd2e9771eecac70d10
 ./.git/objects/7f/7da2990d9dd0f6730ad8ce359d3f5e66a8cc6c
+./.git/objects/7f/1e895b904dfe01035c0a3827123bc38534587c
 ./.git/objects/7f/7f6a6815a4e634cdc0d55d088c3cedf5a72151
 ./.git/objects/7f/3d05c5ed2ac79c869d361c8cc97b0dbc977584
 ./.git/objects/7a
@@ -10677,6 +10677,7 @@
 ./.git/FETCH_HEAD
 ./UPR_CHECKPOINT.md
 ./Archive.zip
+./UPR_SNAPSHOTS.json
 ./routes
 ./routes/enrich.js
 ./routes/sourcing.js
@@ -10687,4 +10688,49 @@
 ./routes/email.js
 
 ```
+
 </details>
+
+## Files covered by snapshot
+```
+dashboard/src/features/enrichment/CompanySidebarCard.jsx
+dashboard/src/features/enrichment/EnrichmentView.jsx
+dashboard/src/features/enrichment/LLMStatus.jsx
+dashboard/src/pages/Admin.jsx
+dashboard/src/pages/AdminDashboard.jsx
+dashboard/src/pages/CompaniesPage.jsx
+dashboard/src/pages/DashboardHome.jsx
+dashboard/src/pages/EnrichmentPage.jsx
+dashboard/src/pages/HRLeads.jsx
+dashboard/src/pages/Leads.jsx
+dashboard/src/pages/LeadsPage.jsx
+dashboard/src/pages/Login.jsx
+dashboard/src/pages/MessagesPage.jsx
+routes/companies.js
+routes/email.js
+routes/enrich.js
+routes/hrLeads.js
+routes/news.js
+routes/sourcing.js
+routes/stats.js
+server.js
+utils/adminOnly.js
+utils/ai.js
+utils/apollo.js
+utils/db.js
+utils/emailPatterns.js
+utils/emailVerify.js
+utils/jwt.js
+utils/normalize.js
+utils/patternCache.js
+utils/patternHelpers.js
+utils/providers/apollo.js
+utils/providers/sourcing.js
+utils/providers/sourcing_apollo.js
+utils/qscore.js
+utils/respond.js
+utils/smtpVerify.js
+utils/validators.js
+```
+
+*(For per-file details, see `UPR_SNAPSHOTS.json`.)*
