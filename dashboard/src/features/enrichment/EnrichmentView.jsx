@@ -7,7 +7,7 @@ export default function EnrichmentView() {
   const [err, setErr] = useState(null);
   const [attempted, setAttempted] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [llmErr, setLlmErr] = useState(null);
+  const [provider, setProvider] = useState(null); // 'apollo' | 'mock' | 'apollo_fallback_to_mock' | 'none' | 'error'
   const [company, setCompany] = useState(null); // { id, name, domain, website_url }
   const [result, setResult] = useState(null);
 
@@ -27,26 +27,28 @@ export default function EnrichmentView() {
     return Boolean(company?.id) || Boolean(text && text.trim());
   }, [company, text]);
 
+  // Free-text search (uses Apollo on server, falls back to mock)
   const callSearch = useCallback(async (q) => {
     const res = await authFetch(`/api/enrich/search?q=${encodeURIComponent(q)}`);
-    if (!res.ok) {
-      const t = await res.text().catch(() => "");
-      throw new Error(`Search failed (${res.status}): ${t || res.statusText}`);
-    }
-    return res.json();
+    const raw = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(raw?.error || "Search failed");
+    // server may return { ok, data, provider }
+    setProvider(raw?.data?.summary?.provider || raw?.provider || null);
+    return raw?.data || raw;
   }, []);
 
+  // Company-selected enrichment (POST)
   const callReal = useCallback(async (company_id) => {
     const res = await authFetch(`/api/enrich`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ company_id, max_contacts: 3, role: "hr", geo: "uae" }),
     });
-    if (!res.ok) {
-      const t = await res.text().catch(() => "");
-      throw new Error(`Enrich failed (${res.status}): ${t || res.statusText}`);
-    }
-    return res.json();
+    const raw = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(raw?.error || "Enrich failed");
+    // include provider from summary if server sets it (apollo|none)
+    setProvider(raw?.summary?.provider || "none");
+    return raw;
   }, []);
 
   const clearSelected = useCallback(() => {
@@ -59,22 +61,21 @@ export default function EnrichmentView() {
     if (!canSubmit) return;
     setLoading(true);
     setErr(null);
-    setLlmErr(null);
     setResult(null);
+    setProvider(null);
     try {
       let data;
       if (company?.id) {
         data = await callReal(company.id);
         window.dispatchEvent(new CustomEvent("upr:companySidebar", { detail: company }));
       } else {
-        const resp = await callSearch(text.trim());
-        data = resp?.data || resp;
+        data = await callSearch(text.trim());
         window.dispatchEvent(new CustomEvent("upr:companySidebar", { detail: null }));
       }
       setResult(data || null);
     } catch (e) {
       setErr(e?.message || "Enrichment failed");
-      setLlmErr("error");
+      setProvider("error");
     } finally {
       setLoading(false);
     }
@@ -82,22 +83,29 @@ export default function EnrichmentView() {
 
   const contacts = result?.results || [];
   const summary = result?.summary || {};
-  const isMock =
-    !company?.id &&
-    (summary?.provider === "mock" || summary?.provider === "apollo_fallback_to_mock");
+
+  const providerChip = (() => {
+    const p = provider || summary?.provider;
+    if (!p) return null;
+    const map = {
+      apollo: { text: "Provider: Apollo", dot: "bg-green-500" },
+      mock: { text: "Provider: Mock", dot: "bg-yellow-500" },
+      apollo_fallback_to_mock: { text: "Apollo → Mock", dot: "bg-yellow-500" },
+      none: { text: "Provider: None", dot: "bg-gray-400" },
+      error: { text: "Provider Error", dot: "bg-red-500" },
+    };
+    const view = map[p] || { text: `Provider: ${p}`, dot: "bg-gray-400" };
+    return (
+      <span className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm">
+        <span className={`inline-block h-2 w-2 rounded-full ${view.dot}`} />
+        {view.text}
+      </span>
+    );
+  })();
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div />
-        {llmErr && (
-          <span className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm">
-            <span className="inline-block h-2 w-2 rounded-full bg-red-500" />
-            LLM error
-          </span>
-        )}
-        <div />
-      </div>
+      <div className="flex items-center justify-end">{providerChip}</div>
 
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -147,6 +155,7 @@ export default function EnrichmentView() {
           </button>
         </div>
 
+        {/* show validation only AFTER an attempt */}
         {attempted && !canSubmit && (
           <div className="mt-2 text-sm text-red-600 text-center">
             Please select a company or enter a name to search.
@@ -163,7 +172,7 @@ export default function EnrichmentView() {
                 {company?.name ? (
                   <>Results for <span className="font-semibold">{company.name}</span></>
                 ) : (
-                  <>Results{isMock ? " (mock)" : ""}</>
+                  <>Results{(summary?.provider || provider) === "mock" || (summary?.provider || provider) === "apollo_fallback_to_mock" ? " (mock)" : ""}</>
                 )}
               </div>
               <div className="text-sm text-gray-500">
@@ -171,8 +180,6 @@ export default function EnrichmentView() {
                   ? `Kept ${summary.kept} of ${summary.found}`
                   : summary?.total_candidates != null
                   ? `Candidates: ${summary.total_candidates}`
-                  : summary?.provider
-                  ? `Provider: ${summary.provider}`
                   : null}
               </div>
             </div>
@@ -191,14 +198,14 @@ export default function EnrichmentView() {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {contacts.length === 0 ? (
+                  {(result.results || []).length === 0 ? (
                     <tr>
                       <td colSpan={7} className="py-6 text-center text-gray-500">
                         No contacts found.
                       </td>
                     </tr>
                   ) : (
-                    contacts.map((c, idx) => (
+                    (result.results || []).map((c, idx) => (
                       <tr key={idx} className="align-top">
                         <Td className="font-medium">{c.name || "—"}</Td>
                         <Td>{c.designation || "—"}</Td>
@@ -220,9 +227,9 @@ export default function EnrichmentView() {
                             "—"
                           )}
                         </Td>
-                        <Td>{c.confidence != null ? c.confidence.toFixed(2) : "—"}</Td>
+                        <Td>{c.confidence != null ? Number(c.confidence).toFixed(2) : "—"}</Td>
                         <Td>{c.email_status || "—"}</Td>
-                        <Td className="text-gray-500">{c.source || (isMock ? "mock" : "provider_or_pattern")}</Td>
+                        <Td className="text-gray-500">{c.source || "provider_or_pattern"}</Td>
                       </tr>
                     ))
                   )}
@@ -233,7 +240,7 @@ export default function EnrichmentView() {
             <div className="mt-4 text-xs text-gray-500">
               {company?.id
                 ? "Best-effort insert to HR Leads is performed server-side if the table exists."
-                : isMock
+                : (summary?.provider || provider) === "mock" || (summary?.provider || provider) === "apollo_fallback_to_mock"
                 ? "Mock mode: no database writes."
                 : "Provider mode: no database writes for free-text search."}
             </div>
