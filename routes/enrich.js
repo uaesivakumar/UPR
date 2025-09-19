@@ -23,8 +23,8 @@ const router = express.Router();
 const APOLLO_API_KEY =
   process.env.APOLLO_API_KEY || process.env.APOLLOIO_API_KEY || process.env.APOLLO_TOKEN || "";
 const hasApollo = !!APOLLO_API_KEY;
-const LLM_KEY = process.env.OPENAI_API_KEY || "";
-const LLM_OK = !!LLM_KEY;
+const OPENAI_KEY = process.env.OPENAI_API_KEY || "";
+const LLM_OK = !!OPENAI_KEY;
 
 const HR_KEYWORDS = [
   "HR",
@@ -47,22 +47,74 @@ const ALLOWED_BUCKETS = new Set(["hr", "admin", "finance"]);
 /* ------------------------------ In-memory jobs ---------------------------- */
 const jobs = new Map();
 
-/* ------------------------------ tiny helpers ------------------------------ */
-
+/* ------------------------------ small helpers ---------------------------- */
 function safeLog(...args) {
   try {
     console.error(...args);
   } catch {}
 }
+function now() {
+  return Date.now();
+}
+function msSince(t0) {
+  return Math.max(0, Date.now() - t0);
+}
 
-async function safeCall(fn, args) {
-  try {
-    const out = await fn(args);
-    return Array.isArray(out) ? out : out ? [out] : [];
-  } catch (e) {
-    safeLog("[safeCall] error:", e);
-    return [];
+function cleanCompanyName(name = "") {
+  return String(name)
+    .replace(/\b(inc|llc|ltd|limited|international|intl|co|company|corp|corporation|group|holdings?)\b/gi, "")
+    .replace(/[^a-z0-9\s&-]/gi, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+function makeAcronym(name = "") {
+  const letters = name
+    .split(/[\s&-]+/)
+    .filter(Boolean)
+    .map((w) => w[0]?.toUpperCase())
+    .join("");
+  return letters || null;
+}
+function firstOf(name = "") {
+  const parts = String(name).trim().split(/\s+/);
+  return parts[0] || "";
+}
+function lastOf(name = "") {
+  const parts = String(name).trim().split(/\s+/);
+  return parts.length > 1 ? parts[parts.length - 1] : "";
+}
+function detectDomainFromCandidate(p) {
+  if (p?.email && p.email.includes("@")) return p.email.split("@").pop().trim().toLowerCase();
+  const org = p.organization || p.company || p.employer || {};
+  const d =
+    org.domain ||
+    org.primary_domain ||
+    org.email_domain ||
+    (org.website_url
+      ? (() => {
+          try {
+            const u = new URL(org.website_url.startsWith("http") ? org.website_url : `https://${org.website_url}`);
+            return u.hostname.replace(/^www\./, "");
+          } catch {
+            return null;
+          }
+        })()
+      : null);
+  if (d) return String(d).toLowerCase();
+  if (p.company_linkedin_url) {
+    const m = /linkedin\.com\/company\/([^/]+)/i.exec(p.company_linkedin_url);
+    if (m) return `${m[1].toLowerCase()}.com`;
   }
+  return null;
+}
+function roleBucketFromTitle(title = "") {
+  const b = bucketRole(title);
+  if (ALLOWED_BUCKETS.has(b)) return b;
+  const t = title.toLowerCase();
+  if (HR_KEYWORDS.some((k) => t.includes(k.toLowerCase()))) return "hr";
+  if (ADMIN_KEYWORDS.some((k) => t.includes(k.toLowerCase()))) return "admin";
+  if (FINANCE_KEYWORDS.some((k) => t.includes(k.toLowerCase()))) return "finance";
+  return "other";
 }
 
 function makeMockFromText(q) {
@@ -104,120 +156,67 @@ function makeMockFromText(q) {
       verification_provider: "mock",
       provider: "mock",
       company_guess: { name: q, domain },
+      timings: {},
     },
   };
 }
 
-function guessFirst(name = "") {
-  const parts = name.trim().split(/\s+/);
-  return parts[0] || "";
-}
-function guessLast(name = "") {
-  const parts = name.trim().split(/\s+/);
-  return parts.length > 1 ? parts[parts.length - 1] : "";
-}
-
-function cleanCompanyName(name = "") {
-  return String(name)
-    .replace(/\b(inc|llc|ltd|limited|international|intl|co|company|corp|corporation|group|holdings?)\b/gi, "")
-    .replace(/[^a-z0-9\s&-]/gi, " ")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-}
-
-function makeAcronym(name = "") {
-  const letters = name
-    .split(/[\s&-]+/)
-    .filter(Boolean)
-    .map((w) => w[0]?.toUpperCase())
-    .join("");
-  return letters || null;
-}
-
-function detectDomainFromCandidate(p) {
-  if (p?.email && p.email.includes("@")) return p.email.split("@").pop().trim().toLowerCase();
-  const org = p.organization || p.company || p.employer || {};
-  const d =
-    org.domain ||
-    org.primary_domain ||
-    org.email_domain ||
-    (org.website_url
-      ? (() => {
-          try {
-            const u = new URL(org.website_url.startsWith("http") ? org.website_url : `https://${org.website_url}`);
-            return u.hostname.replace(/^www\./, "");
-          } catch {
-            return null;
-          }
-        })()
-      : null);
-  if (d) return String(d).toLowerCase();
-  if (p.company_linkedin_url) {
-    const m = /linkedin\.com\/company\/([^/]+)/i.exec(p.company_linkedin_url);
-    if (m) return `${m[1].toLowerCase()}.com`;
-  }
-  return null;
-}
-
-function roleBucketFromTitle(title = "") {
-  const b = bucketRole(title);
-  if (ALLOWED_BUCKETS.has(b)) return b;
-  const t = title.toLowerCase();
-  if (HR_KEYWORDS.some((k) => t.includes(k.toLowerCase()))) return "hr";
-  if (ADMIN_KEYWORDS.some((k) => t.includes(k.toLowerCase()))) return "admin";
-  if (FINANCE_KEYWORDS.some((k) => t.includes(k.toLowerCase()))) return "finance";
-  return "other";
-}
-
 /* --------------------------------- LLM ----------------------------------- */
-async function resolveCompanyFromQuery(q) {
+async function resolveCompanyFromQuery(q, timings) {
+  const t0 = now();
   const cleaned = cleanCompanyName(q);
   const acronym = makeAcronym(cleaned);
+
+  // small curated alias or hard win
   const curated = [
     { match: /kellogg\s*brown\s*and\s*root/i, name: "KBR", domain: "kbr.com", synonyms: ["KBR", "Kellogg Brown & Root"] },
   ];
   for (const c of curated) {
-    if (c.match.test(q)) return { name: c.name, domain: c.domain, synonyms: c.synonyms };
-  }
-
-  if (LLM_OK) {
-    try {
-      const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${LLM_KEY}`,
-        },
-        body: JSON.stringify({
-          model: "gpt-4o-mini",
-          temperature: 0,
-          response_format: { type: "json_object" },
-          messages: [
-            {
-              role: "system",
-              content:
-                "You convert noisy company names to a JSON {name, domain, synonyms} where domain is the primary public website domain (e.g., 'kbr.com'). Only output valid JSON.",
-            },
-            { role: "user", content: `Company: "${q}"` },
-          ],
-        }),
-      });
-      if (resp.ok) {
-        const json = await resp.json();
-        const text = json?.choices?.[0]?.message?.content || "{}";
-        const obj = JSON.parse(text);
-        if (obj?.domain) {
-          obj.name = obj.name || cleaned;
-          obj.synonyms = Array.isArray(obj.synonyms) ? obj.synonyms : [];
-          if (acronym) obj.synonyms.push(acronym);
-          return obj;
-        }
-      }
-    } catch {
-      /* ignore */
+    if (c.match.test(q)) {
+      timings.llm_ms = (timings.llm_ms || 0) + msSince(t0);
+      return { name: c.name, domain: c.domain, synonyms: c.synonyms };
     }
   }
 
+  if (!LLM_OK) {
+    timings.llm_ms = (timings.llm_ms || 0) + msSince(t0);
+    return { name: cleaned, domain: null, synonyms: [cleaned, acronym].filter(Boolean) };
+  }
+
+  try {
+    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_KEY}` },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        temperature: 0,
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "system",
+            content:
+              "You convert noisy company names to a JSON {name, domain, synonyms}. Domain must be primary public website domain (example: 'kbr.com'). Output ONLY JSON.",
+          },
+          { role: "user", content: `Company: "${q}"` },
+        ],
+      }),
+    });
+    if (resp.ok) {
+      const json = await resp.json();
+      const text = json?.choices?.[0]?.message?.content || "{}";
+      const obj = JSON.parse(text);
+      if (obj?.domain) {
+        obj.name = obj.name || cleaned;
+        obj.synonyms = Array.isArray(obj.synonyms) ? obj.synonyms : [];
+        if (acronym) obj.synonyms.push(acronym);
+        timings.llm_ms = (timings.llm_ms || 0) + msSince(t0);
+        return obj;
+      }
+    }
+  } catch (e) {
+    safeLog("LLM resolve error:", e);
+  }
+  timings.llm_ms = (timings.llm_ms || 0) + msSince(t0);
   return { name: cleaned, domain: null, synonyms: [cleaned, acronym].filter(Boolean) };
 }
 
@@ -254,43 +253,49 @@ router.get("/search", async (req, res) => {
   const q = (req.query.q || "").toString().trim();
   if (!q) return res.status(400).json({ error: "q is required" });
 
+  const timings = {};
+  const tProvider0 = now();
+
   try {
     const allKeywords = [...HR_KEYWORDS, ...ADMIN_KEYWORDS, ...FINANCE_KEYWORDS].join(" OR ");
     let people = [];
     let companyGuess = null;
 
     if (hasApollo) {
-      // 1) try by organization name (filtered)
-      people = await safeCall(apolloPeopleSearchByText, {
+      // 1) by org name with HR/Admin/Finance keywords
+      people = await tryApolloPeopleSearchByText({
         q,
-        limit: 20,
+        limit: 25,
         geo: "United Arab Emirates",
         keywords: allKeywords,
+        timings,
       });
 
-      // 2) resolve company & try domain
+      // 2) resolve company -> by domain
       if (!people.length) {
-        companyGuess = await resolveCompanyFromQuery(q);
+        companyGuess = await resolveCompanyFromQuery(q, timings);
         if (companyGuess?.domain) {
-          people = await safeCall(apolloPeopleSearchByDomain, {
+          people = await tryApolloPeopleSearchByDomain({
             domain: companyGuess.domain,
-            limit: 20,
+            limit: 25,
             geo: "United Arab Emirates",
             keywords: allKeywords,
+            timings,
           });
         }
       }
 
-      // 3) loosen by synonyms / no keywords
+      // 3) loosen (synonyms, no keywords)
       if (!people.length) {
         const synonyms = (companyGuess?.synonyms || []).slice(0, 3);
         const namesToTry = [q, cleanCompanyName(q), ...synonyms].filter(Boolean);
         for (const name of namesToTry) {
-          const batch = await safeCall(apolloPeopleSearchByText, {
+          const batch = await tryApolloPeopleSearchByText({
             q: name,
-            limit: 20,
+            limit: 25,
             geo: "United Arab Emirates",
             keywords: undefined,
+            timings,
           });
           if (batch.length) {
             people = batch;
@@ -300,14 +305,17 @@ router.get("/search", async (req, res) => {
       }
     }
 
+    timings.provider_ms = (timings.provider_ms || 0) + msSince(tProvider0);
+
     if (!people.length) {
       const mock = makeMockFromText(q);
       if (companyGuess) mock.summary.company_guess = companyGuess;
       mock.summary.provider = hasApollo ? "mock_fallback" : "mock";
+      mock.summary.timings = timings;
       return res.json({ ok: true, data: mock });
     }
 
-    // Normalize + filter + email pattern if locked
+    // Normalize & filter to allowed buckets; compute domain
     let domain =
       people
         .map(detectDomainFromCandidate)
@@ -315,7 +323,7 @@ router.get("/search", async (req, res) => {
         .map((s) => s.replace(/^www\./, ""))
         .find(Boolean) || companyGuess?.domain || null;
 
-    const results = [];
+    const normalized = [];
     for (const p of people) {
       const title = p.title || p.position || p.designation || "";
       const rb = roleBucketFromTitle(title);
@@ -326,22 +334,37 @@ router.get("/search", async (req, res) => {
       let email_status = p.email ? "provider" : "unknown";
       let email_reason;
 
+      // Provider "locked" placeholder clean-up
       if (email && /^email_not_unlocked@/i.test(email)) {
         email = null;
         email_status = "unknown";
         email_reason = "provider_locked_email";
       }
 
-      const first = p.first_name || guessFirst(p.name || "");
-      const last = p.last_name || guessLast(p.name || "");
+      const first = p.first_name || firstOf(p.name || "");
+      const last = p.last_name || lastOf(p.name || "");
 
+      // Only pattern if we have a domain
       if (!email && domain && first && last) {
-        email = applyPattern(first, last, "first.last", domain);
-        email_status = "patterned";
-        email_reason = "pattern_guess";
+        let patterned = applyPattern(first, last, "first.last", domain);
+        if (patterned && typeof patterned === "string") {
+          if (!patterned.includes("@")) patterned = `${patterned}@${domain}`; // harden
+          email = patterned;
+          email_status = "patterned";
+          email_reason = "pattern_guess";
+        }
       }
 
-      results.push({
+      const geo_fit = 0.85; // UAE-biased search
+      const confidence = scoreCandidate({
+        role_bucket: rb,
+        seniority,
+        geo_fit,
+        email_status,
+        company_match: domain ? 1.0 : 0.6,
+      });
+
+      normalized.push({
         name: [first, last].filter(Boolean).join(" ").trim() || p.name || "",
         designation: title,
         linkedin_url: p.linkedin_url || p.linkedin || "",
@@ -351,29 +374,32 @@ router.get("/search", async (req, res) => {
         role_bucket: rb,
         seniority,
         source: "live",
-        confidence: 0.85,
+        confidence: Number(confidence.toFixed(2)),
       });
     }
+
+    normalized.sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
 
     return res.json({
       ok: true,
       data: {
         status: "completed",
         company_id: null,
-        results,
+        results: normalized,
         summary: {
-          total_candidates: results.length,
-          kept: results.length,
+          total_candidates: normalized.length,
+          kept: normalized.length,
           provider: "live",
           company_guess: companyGuess || (domain ? { name: cleanCompanyName(q), domain } : null),
+          timings,
         },
       },
     });
   } catch (e) {
     safeLog("search route error:", e);
-    // never 500 out: send a safe fallback so UI doesn’t show “Search failed”
     const mock = makeMockFromText(q);
     mock.summary.provider = "error_fallback";
+    mock.summary.timings = timings;
     return res.json({ ok: true, data: mock });
   }
 });
@@ -405,8 +431,10 @@ router.post("/", async (req, res) => {
 
     let providerUsed = "none";
     let providerCandidates = [];
+    const tProvider0 = now();
+
     if (hasApollo && company.domain) {
-      providerCandidates = await safeCall(apolloPeopleSearchByDomain, {
+      providerCandidates = await tryApolloPeopleSearchByDomain({
         domain: company.domain,
         limit: max_contacts * 6,
         geo: "United Arab Emirates",
@@ -415,6 +443,9 @@ router.post("/", async (req, res) => {
       providerUsed = providerCandidates.length ? "live" : "none";
     }
 
+    const timings = { provider_ms: msSince(tProvider0) };
+
+    // Learn pattern from samples (if any)
     let learnedPattern = null;
     const samples = providerCandidates
       .filter((c) => c.email && c.first_name && c.last_name)
@@ -445,8 +476,8 @@ router.post("/", async (req, res) => {
     let candidates = (providerCandidates || []).map((p) => ({
       source: "live",
       name: [p.first_name, p.last_name].filter(Boolean).join(" ").trim() || p.name || "",
-      first_name: p.first_name || guessFirst(p.name),
-      last_name: p.last_name || guessLast(p.name),
+      first_name: p.first_name || firstOf(p.name),
+      last_name: p.last_name || lastOf(p.name),
       designation: p.title || p.designation || "",
       linkedin_url: p.linkedin || p.linkedin_url || "",
       email: p.email || null,
@@ -467,9 +498,15 @@ router.post("/", async (req, res) => {
     if (company.domain && pattern?.pattern) {
       candidates = candidates.map((c) => {
         if (!c.email && c.first_name && c.last_name) {
-          c.email = applyPattern(c.first_name, c.last_name, pattern.pattern, company.domain);
-          c.email_status = "patterned";
-          c.email_reason = "pattern_guess";
+          let patterned = applyPattern(c.first_name, c.last_name, pattern.pattern, company.domain);
+          if (patterned && typeof patterned === "string" && !patterned.includes("@")) {
+            patterned = `${patterned}@${company.domain}`;
+          }
+          c.email = patterned || c.email;
+          if (patterned) {
+            c.email_status = "patterned";
+            c.email_reason = "pattern_guess";
+          }
         }
         return c;
       });
@@ -524,7 +561,7 @@ router.post("/", async (req, res) => {
         linkedin_url: c.linkedin_url,
         email: c.email,
         email_status: c.email_status,
-        confidence: c.confidence,
+        confidence: Number(c.confidence.toFixed(2)),
         role_bucket: c.role_bucket,
         seniority: c.seniority,
         source: c.source || "live",
@@ -534,7 +571,8 @@ router.post("/", async (req, res) => {
         found: candidates.length,
         kept: kept.length,
         primary_contact_id: primary,
-        provider: providerUsed, // 'live' | 'none'
+        provider: providerUsed,
+        timings,
       },
     };
 
@@ -611,7 +649,7 @@ async function upsertHrLead(company_id, c) {
 }
 
 /* ---------------------- Apollo helper implementations --------------------- */
-async function apolloPeopleSearchByText({ q, limit = 5, geo, keywords }) {
+async function tryApolloPeopleSearchByText({ q, limit = 10, geo, keywords, timings }) {
   const base = "https://api.apollo.io/v1/people/search";
   const payload = {
     q_keywords: keywords,
@@ -620,10 +658,9 @@ async function apolloPeopleSearchByText({ q, limit = 5, geo, keywords }) {
     per_page: Math.min(Math.max(limit, 1), 25),
     person_locations: geo ? [geo] : undefined,
   };
-  return await tryApolloCalls(base, payload);
+  return await tryApolloCalls(base, payload, timings);
 }
-
-async function apolloPeopleSearchByDomain({ domain, limit = 8, geo, keywords }) {
+async function tryApolloPeopleSearchByDomain({ domain, limit = 10, geo, keywords, timings }) {
   const base = "https://api.apollo.io/v1/people/search";
   const payload = {
     q_keywords: keywords,
@@ -632,10 +669,11 @@ async function apolloPeopleSearchByDomain({ domain, limit = 8, geo, keywords }) 
     per_page: Math.min(Math.max(limit, 1), 25),
     person_locations: geo ? [geo] : undefined,
   };
-  return await tryApolloCalls(base, payload);
+  return await tryApolloCalls(base, payload, timings);
 }
+async function tryApolloCalls(endpoint, body, timings = {}) {
+  const t0 = now();
 
-async function tryApolloCalls(endpoint, body) {
   // v1: api_key in body
   {
     const r = await safeFetch(endpoint, {
@@ -644,9 +682,12 @@ async function tryApolloCalls(endpoint, body) {
       body: JSON.stringify({ api_key: APOLLO_API_KEY, ...body }),
     });
     const arr = await extractPeopleArray(r);
-    if (arr.length) return arr.map(mapApolloPerson);
+    if (arr.length) {
+      timings.provider_ms = (timings.provider_ms || 0) + msSince(t0);
+      return arr.map(mapApolloPerson);
+    }
   }
-  // v2: Authorization Bearer
+  // v2: Bearer
   {
     const r = await safeFetch(endpoint, {
       method: "POST",
@@ -654,7 +695,10 @@ async function tryApolloCalls(endpoint, body) {
       body: JSON.stringify(body),
     });
     const arr = await extractPeopleArray(r);
-    if (arr.length) return arr.map(mapApolloPerson);
+    if (arr.length) {
+      timings.provider_ms = (timings.provider_ms || 0) + msSince(t0);
+      return arr.map(mapApolloPerson);
+    }
   }
   // v3: X-Api-Key
   {
@@ -664,11 +708,15 @@ async function tryApolloCalls(endpoint, body) {
       body: JSON.stringify(body),
     });
     const arr = await extractPeopleArray(r);
-    if (arr.length) return arr.map(mapApolloPerson);
+    if (arr.length) {
+      timings.provider_ms = (timings.provider_ms || 0) + msSince(t0);
+      return arr.map(mapApolloPerson);
+    }
   }
+
+  timings.provider_ms = (timings.provider_ms || 0) + msSince(t0);
   return [];
 }
-
 async function safeFetch(url, init) {
   try {
     const res = await fetch(url, init);
