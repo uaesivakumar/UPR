@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-19T13:28:20Z",
-  "generated_human": "Fri, 19 Sep 2025 13:28:20 GMT",
+  "generated": "2025-09-19T13:38:50Z",
+  "generated_human": "Fri, 19 Sep 2025 13:38:50 GMT",
   "branch": "main",
-  "commit": "81607d9",
+  "commit": "2f23716",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -258,9 +258,9 @@
     },
     {
       "path": "routes/enrich.js",
-      "size": 23664,
-      "mtime": "2025-09-19T13:25:17.138Z",
-      "sha256": "2abfc645ec6fcf1c35a0f31edb637c86b9c8e039a5b6a892e59220ac43edef8c",
+      "size": 22734,
+      "mtime": "2025-09-19T13:38:03.425Z",
+      "sha256": "cc5c254c32048b2072926218acafbbefcb83b14f3faf6f095439df8caa5c1401",
       "imports": [
         "import express from \"express\";",
         "import { nanoid } from \"nanoid\";",
@@ -275,8 +275,8 @@
       ],
       "appUses": [],
       "endpoints": [],
-      "head": "// routes/enrich.js\nimport express from \"express\";\nimport { nanoid } from \"nanoid\";\nimport { pool } from \"../utils/db.js\";\n\nimport {\n  bucketRole,\n  bucketSeniority,\n  isAgencyRecruiter,\n  scoreCandidate,\n} from \"../utils/patternHelpers.js\";\nimport {\n  inferPatternFromSamples,\n  applyPattern,\n  loadPatternFromCache,\n  savePatternToCache,\n} from \"../utils/emailPatterns.js\";\nimport { verifyEmail } from \"../utils/emailVerify.js\";\n\nconst router = express.Router();\n\n/* ------------------------------ ENV ------------------------------ */\nconst APOLLO_API_KEY =\n  process.env.APOLLO_API_KEY ||\n  process.env.APOLLOIO_API_KEY ||\n  process.env.APOLLO_TOKEN ||\n  \"\";\nconst OPENAI_KEY = process.env.OPENAI_API_KEY || \"\";\n\nconst HAS_APOLLO = !!APOLLO_API_KEY;\nconst LLM_OK = !!OPENAI_KEY;\n\n/* ------------------------------ Role & geo filters ------------------------------ */\nconst HR_WORDS = [\n  \"HR\", \"Human Resources\", \"People\", \"Talent\", \"Recruiting\",\n  \"People Operations\", \"Head of People\", \"HR Manager\", \"HR Director\",\n  \"Compensation\", \"Benefits\", \"Payroll\"\n];\nconst ADMIN_WORDS = [\"Admin\", \"Administration\", \"Office Manager\", \"Executive Assistant\"];\nconst FIN_WORDS = [\"Finance\", \"Financial Controller\", \"CFO\", \"Accounts\", \"Accounting\", \"Procurement\"];",
-      "tail": "  // best-effort normalize person location from Apollo variations\n  const city = p.city || p.person_city || p.current_city;\n  const region = p.state || p.region || p.person_region || p.current_region;\n  const country = p.country || p.country_name || p.person_country || p.current_country || p.location_country;\n  const raw = p.location || p.current_location || p.person_location;\n  return raw || joinNonEmpty(city, region, country);\n}\nfunction mapApollo(p) {\n  return {\n    name: [p.first_name, p.last_name].filter(Boolean).join(\" \").trim() || p.name || \"\",\n    first_name: p.first_name || null,\n    last_name: p.last_name || null,\n    title: p.title || p.position || \"\",\n    designation: p.title || p.position || \"\",\n    linkedin_url: p.linkedin_url || p.linkedin || \"\",\n    email: p.email || null,\n    organization: p.organization || p.company || p.employer || {\n      domain: p.organization_domain || p.company_domain || null,\n      website_url: p.organization_website_url || p.company_website_url || null,\n    },\n    seniority: p.seniority || null,\n    location: deriveLocation(p),\n  };\n}\n"
+      "head": "// routes/enrich.js\nimport express from \"express\";\nimport { nanoid } from \"nanoid\";\nimport { pool } from \"../utils/db.js\";\n\nimport {\n  bucketRole,\n  bucketSeniority,\n  isAgencyRecruiter,\n  scoreCandidate,\n} from \"../utils/patternHelpers.js\";\nimport {\n  inferPatternFromSamples,\n  applyPattern,\n  loadPatternFromCache,\n  savePatternToCache,\n} from \"../utils/emailPatterns.js\";\nimport { verifyEmail } from \"../utils/emailVerify.js\";\n\nconst router = express.Router();\n\n/* ------------------------------ ENV ------------------------------ */\nconst APOLLO_API_KEY =\n  process.env.APOLLO_API_KEY ||\n  process.env.APOLLOIO_API_KEY ||\n  process.env.APOLLO_TOKEN ||\n  \"\";\nconst OPENAI_KEY = process.env.OPENAI_API_KEY || \"\";\n\nconst HAS_APOLLO = !!APOLLO_API_KEY;\nconst LLM_OK = !!OPENAI_KEY;\n\n/* ------------------------------ Role & geo filters ------------------------------ */\nconst HR_WORDS = [\n  \"HR\",\"Human Resources\",\"People\",\"Talent\",\"Recruiting\",\"People Operations\",\n  \"Head of People\",\"HR Manager\",\"HR Director\",\"Compensation\",\"Benefits\",\"Payroll\",\n];\nconst ADMIN_WORDS = [\"Admin\",\"Administration\",\"Office Manager\",\"Executive Assistant\"];\nconst FIN_WORDS = [\"Finance\",\"Financial Controller\",\"CFO\",\"Accounts\",\"Accounting\",\"Procurement\"];\nconst ALLOWED_BUCKETS = new Set([\"hr\",\"admin\",\"finance\"]);",
+      "tail": "  const people = j.people || j.matches || j.results || [];\n  return people.map(mapApollo);\n}\n\nasync function apolloPeopleByName({ name, keywords, limit = 25, timings, locations = [] }) {\n  const body = {\n    q_organization_name: name,\n    q_keywords: keywords,\n    page: 1,\n    per_page: Math.min(Math.max(limit, 1), 25),\n    person_locations: locations.length ? locations : [\"United Arab Emirates\"],\n  };\n  return apolloPeopleSearch({ body, timings });\n}\nasync function apolloPeopleByDomain({ domain, keywords, limit = 25, timings, locations = [] }) {\n  const body = {\n    q_organization_domains: [domain],\n    q_keywords: keywords,\n    page: 1,\n    per_page: Math.min(Math.max(limit, 1), 25),\n    person_locations: locations.length ? locations : [\"United Arab Emirates\"],\n  };\n  return apolloPeopleSearch({ body, timings });\n}\n"
     },
     {
       "path": "routes/hrLeads.js",

@@ -32,13 +32,12 @@ const LLM_OK = !!OPENAI_KEY;
 
 /* ------------------------------ Role & geo filters ------------------------------ */
 const HR_WORDS = [
-  "HR", "Human Resources", "People", "Talent", "Recruiting",
-  "People Operations", "Head of People", "HR Manager", "HR Director",
-  "Compensation", "Benefits", "Payroll"
+  "HR","Human Resources","People","Talent","Recruiting","People Operations",
+  "Head of People","HR Manager","HR Director","Compensation","Benefits","Payroll",
 ];
-const ADMIN_WORDS = ["Admin", "Administration", "Office Manager", "Executive Assistant"];
-const FIN_WORDS = ["Finance", "Financial Controller", "CFO", "Accounts", "Accounting", "Procurement"];
-const ALLOWED_BUCKETS = new Set(["hr", "admin", "finance"]);
+const ADMIN_WORDS = ["Admin","Administration","Office Manager","Executive Assistant"];
+const FIN_WORDS = ["Finance","Financial Controller","CFO","Accounts","Accounting","Procurement"];
+const ALLOWED_BUCKETS = new Set(["hr","admin","finance"]);
 
 const UAE_EMIRATES = [
   { key: "abu dhabi", label: "Abu Dhabi" },
@@ -49,10 +48,7 @@ const UAE_EMIRATES = [
   { key: "umm al quwain", label: "Umm Al Quwain" },
   { key: "fujairah", label: "Fujairah" },
 ];
-const UAE_KEYS = [
-  "united arab emirates", "uae",
-  ...UAE_EMIRATES.map(e => e.key)
-];
+const UAE_KEYS = ["united arab emirates","uae", ...UAE_EMIRATES.map(e => e.key)];
 
 /* ------------------------------ Jobs ------------------------------ */
 const jobs = new Map();
@@ -187,11 +183,6 @@ async function resolveCompany(q, timings) {
   const cleaned = cleanName(q);
   const acr = acronymOf(cleaned);
 
-  if (/kellogg\s*brown\s*and\s*root/i.test(q)) {
-    timings.llm_ms = (timings.llm_ms || 0) + ms(t0);
-    return { name: "Cognizant Technology Solutions".replace("Cognizant", "KBR") && "KBR", domain: "kbr.com", synonyms: ["KBR", "Kellogg Brown & Root"] };
-  }
-
   if (!LLM_OK) {
     const domain = wordsToDomain(cleaned);
     timings.llm_ms = (timings.llm_ms || 0) + ms(t0);
@@ -256,21 +247,18 @@ router.get("/search", async (req, res) => {
 
     let people = [];
     if (HAS_APOLLO) {
-      const keywords = [...HR_WORDS, ...ADMIN_WORDS, ...FIN_WORDS].join(" OR ");
-      const zones = ["United Arab Emirates", "UAE", ...UAE_EMIRATES.map(e => e.label)];
-      // domain-first
+      const keywords = compactApolloKeywords();
+      const locs = ["United Arab Emirates"];
       if (guess.domain) {
-        people = await apolloPeopleByDomain({ domain: guess.domain, keywords, limit: 50, timings, locations: zones });
+        people = await apolloPeopleByDomain({ domain: guess.domain, keywords, limit: 25, timings, locations: locs });
       }
-      // fallback to org name
       if (!people.length) {
-        people = await apolloPeopleByName({ name: guess.name, keywords, limit: 50, timings, locations: zones });
+        people = await apolloPeopleByName({ name: guess.name, keywords, limit: 25, timings, locations: locs });
       }
-      // last-chance synonyms
       if (!people.length && guess.synonyms?.length) {
         for (const s of guess.synonyms) {
           // eslint-disable-next-line no-await-in-loop
-          const batch = await apolloPeopleByName({ name: s, keywords, limit: 50, timings, locations: zones });
+          const batch = await apolloPeopleByName({ name: s, keywords, limit: 25, timings, locations: locs });
           if (batch.length) { people = batch; break; }
         }
       }
@@ -300,7 +288,6 @@ router.get("/search", async (req, res) => {
       const location = deriveLocation(p);
       const emirate = emirateFromLocation(location);
 
-      // Keep only UAE
       if (!(emirate || isUAE(location))) continue;
 
       let email = p.email || null;
@@ -401,12 +388,12 @@ router.post("/", async (req, res) => {
     let provider = "none";
 
     if (HAS_APOLLO && company.domain) {
-      const zones = ["United Arab Emirates", "UAE", ...UAE_EMIRATES.map(e => e.label)];
+      const locs = ["United Arab Emirates"];
       people = await apolloPeopleByDomain({
         domain: company.domain,
-        keywords: [...HR_WORDS, ...ADMIN_WORDS, ...FIN_WORDS].join(" OR "),
-        limit: max_contacts * 8,
-        locations: zones,
+        keywords: compactApolloKeywords(),
+        limit: Math.min(Math.max(max_contacts * 8, 5), 25),
+        locations: locs,
       });
       provider = people.length ? "live" : "none";
     }
@@ -595,91 +582,13 @@ async function upsertLead(company_id, c) {
 }
 
 /* ------------------------------ Apollo helpers ------------------------------ */
-async function apolloPeopleByName({ name, keywords, limit = 25, timings, locations = [] }) {
-  return await apolloPeopleSearch({
-    body: {
-      q_organization_name: name,
-      q_keywords: keywords,
-      page: 1,
-      per_page: Math.min(Math.max(limit, 1), 50),
-      // best-effort geo hints (Apollo accepts a few variants)
-      q_person_locations: locations,
-      person_locations: locations,
-      q_locations: locations,
-      country: "United Arab Emirates",
-    },
-    timings,
-  });
+/** Very compact keyword string to avoid Apollo "Value too long" */
+function compactApolloKeywords() {
+  // Keep this ≤ ~120 chars
+  return "HR OR Human Resources OR People OR Talent OR Recruiter OR Payroll OR Finance OR Accounting OR Admin";
 }
-async function apolloPeopleByDomain({ domain, keywords, limit = 25, timings, locations = [] }) {
-  return await apolloPeopleSearch({
-    body: {
-      q_organization_domains: [domain],
-      q_keywords: keywords,
-      page: 1,
-      per_page: Math.min(Math.max(limit, 1), 50),
-      q_person_locations: locations,
-      person_locations: locations,
-      q_locations: locations,
-      country: "United Arab Emirates",
-    },
-    timings,
-  });
-}
-async function apolloPeopleSearch({ body, timings }) {
-  const endpoint = "https://api.apollo.io/v1/people/search";
-  const t0 = now();
 
-  let r = await tryFetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ api_key: APOLLO_API_KEY, ...body })
-  });
-  let people = extractPeople(r);
-  if (!people.length) {
-    r = await tryFetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${APOLLO_API_KEY}` },
-      body: JSON.stringify(body)
-    });
-    people = extractPeople(r);
-  }
-  if (!people.length) {
-    r = await tryFetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Api-Key": APOLLO_API_KEY },
-      body: JSON.stringify(body)
-    });
-    people = extractPeople(r);
-  }
-
-  timings.provider_ms = (timings?.provider_ms || 0) + ms(t0);
-  return people.map(mapApollo);
-}
-function extractPeople(resp) {
-  if (!resp?.ok) return [];
-  const j = resp.json || {};
-  return j.people || j.matches || j.results || [];
-}
-async function tryFetch(url, init) {
-  try {
-    const res = await fetch(url, init);
-    let json = null; try { json = await res.json(); } catch {}
-    if (!res.ok) log("apollo non-200", res.status, json || "");
-    return { ok: res.ok, status: res.status, json };
-  } catch (e) {
-    log("apollo fetch error", e);
-    return { ok: false, status: 0, json: null };
-  }
-}
-function deriveLocation(p = {}) {
-  // best-effort normalize person location from Apollo variations
-  const city = p.city || p.person_city || p.current_city;
-  const region = p.state || p.region || p.person_region || p.current_region;
-  const country = p.country || p.country_name || p.person_country || p.current_country || p.location_country;
-  const raw = p.location || p.current_location || p.person_location;
-  return raw || joinNonEmpty(city, region, country);
-}
+/** Map Apollo person → normalized fields we use */
 function mapApollo(p) {
   return {
     name: [p.first_name, p.last_name].filter(Boolean).join(" ").trim() || p.name || "",
@@ -696,4 +605,62 @@ function mapApollo(p) {
     seniority: p.seniority || null,
     location: deriveLocation(p),
   };
+}
+
+/** Try to normalize a location string from various Apollo fields */
+function deriveLocation(p = {}) {
+  const city = p.city || p.person_city || p.current_city;
+  const region = p.state || p.region || p.person_region || p.current_region;
+  const country = p.country || p.country_name || p.person_country || p.current_country || p.location_country;
+  const raw = p.location || p.current_location || p.person_location;
+  return raw || joinNonEmpty(city, region, country);
+}
+
+/** Simple POST with X-Api-Key header only */
+async function apolloPOST(endpoint, body) {
+  try {
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Api-Key": APOLLO_API_KEY },
+      body: JSON.stringify(body),
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok) log("apollo non-200", res.status, json || "");
+    return { ok: res.ok, status: res.status, json };
+  } catch (e) {
+    log("apollo fetch error", e);
+    return { ok: false, status: 0, json: null };
+  }
+}
+
+async function apolloPeopleSearch({ body, timings }) {
+  const endpoint = "https://api.apollo.io/v1/people/search";
+  const t0 = now();
+  const r = await apolloPOST(endpoint, body);
+  timings.provider_ms = (timings?.provider_ms || 0) + ms(t0);
+  if (!r.ok) return [];
+  const j = r.json || {};
+  const people = j.people || j.matches || j.results || [];
+  return people.map(mapApollo);
+}
+
+async function apolloPeopleByName({ name, keywords, limit = 25, timings, locations = [] }) {
+  const body = {
+    q_organization_name: name,
+    q_keywords: keywords,
+    page: 1,
+    per_page: Math.min(Math.max(limit, 1), 25),
+    person_locations: locations.length ? locations : ["United Arab Emirates"],
+  };
+  return apolloPeopleSearch({ body, timings });
+}
+async function apolloPeopleByDomain({ domain, keywords, limit = 25, timings, locations = [] }) {
+  const body = {
+    q_organization_domains: [domain],
+    q_keywords: keywords,
+    page: 1,
+    per_page: Math.min(Math.max(limit, 1), 25),
+    person_locations: locations.length ? locations : ["United Arab Emirates"],
+  };
+  return apolloPeopleSearch({ body, timings });
 }
