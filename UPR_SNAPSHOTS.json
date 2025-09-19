@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-19T17:34:34Z",
-  "generated_human": "Fri, 19 Sep 2025 17:34:34 GMT",
+  "generated": "2025-09-19T17:37:14Z",
+  "generated_human": "Fri, 19 Sep 2025 17:37:14 GMT",
   "branch": "main",
-  "commit": "76d202d",
+  "commit": "17c4c7f",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -357,15 +357,15 @@
     },
     {
       "path": "routes/enrich/lib/geo.js",
-      "size": 2222,
-      "mtime": "2025-09-19T17:34:33.886Z",
-      "sha256": "940cbb9d3adafb4151755a07d018b88089a467b20243dc2c7b4aeac53d594f93",
+      "size": 2851,
+      "mtime": "2025-09-19T17:37:14.402Z",
+      "sha256": "4cace3182b7bbef2239e5fff25c132570593189d546b3dbbdac78128fb3b67a2",
       "imports": [],
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "/**\n * GEO helpers focused on UAE heuristics\n * Exports:\n *   - isUAE(locationLike)\n *   - emirateFromLocation(locationLike)\n */\n\nconst EMIRATES = [\n  \"Abu Dhabi\",\n  \"Dubai\",\n  \"Sharjah\",\n  \"Ajman\",\n  \"Fujairah\",\n  \"Ras Al Khaimah\",\n  \"Umm Al Quwain\",\n];\n\n// common city/area mentions mapped to emirates\nconst CITY_TO_EMIRATE = new Map([\n  // Abu Dhabi\n  [\"abu dhabi\",\"Abu Dhabi\"],\n  [\"al ain\",\"Abu Dhabi\"],\n  [\"mussafah\",\"Abu Dhabi\"],\n  // Dubai\n  [\"dubai\",\"Dubai\"],\n  [\"jlt\",\"Dubai\"],\n  [\"jumeirah\",\"Dubai\"],\n  [\"business bay\",\"Dubai\"],\n  [\"internet city\",\"Dubai\"],\n  // Sharjah\n  [\"sharjah\",\"Sharjah\"],\n  // Ajman\n  [\"ajman\",\"Ajman\"],\n  // Fujairah\n  [\"fujairah\",\"Fujairah\"],\n  // Ras Al Khaimah\n  [\"rak\",\"Ras Al Khaimah\"],\n  [\"ras al khaimah\",\"Ras Al Khaimah\"],\n  // Umm Al Quwain\n  [\"umm al quwain\",\"Umm Al Khaimah\"], // minor typos handled below",
-      "tail": "/** Best-effort emirate extraction from a free-form location string/object */\nexport function emirateFromLocation(loc) {\n  const s = norm(\n    typeof loc === \"string\"\n      ? loc\n      : [loc?.city, loc?.state, loc?.country, loc?.location].filter(Boolean).join(\", \")\n  );\n  if (!s) return \"\";\n\n  // direct emirate match\n  for (const e of EMIRATES) {\n    if (s.includes(e.toLowerCase())) return e;\n  }\n  // city -> emirate mapping\n  for (const [k, v] of CITY_TO_EMIRATE.entries()) {\n    if (s.includes(k)) return v;\n  }\n\n  // country-level only\n  if (/(united arab emirates|u\\.?a\\.?e\\.?|\\buae\\b)/i.test(s)) return \"United Arab Emirates\";\n  return \"\";\n}\n\nexport default { isUAE, emirateFromLocation };\n"
+      "head": "/**\n * GEO helpers focused on UAE heuristics\n * Exports:\n *   - isUAE(locationLike)\n *   - emirateFromLocation(locationLike)\n *   - tagEmirate(record)  // mutates record by adding .emirate when detectable\n */\n\nconst EMIRATES = [\n  \"Abu Dhabi\",\n  \"Dubai\",\n  \"Sharjah\",\n  \"Ajman\",\n  \"Fujairah\",\n  \"Ras Al Khaimah\",\n  \"Umm Al Quwain\",\n];\n\n// Common city/area mentions mapped to emirates\nconst CITY_TO_EMIRATE = new Map([\n  // Abu Dhabi\n  [\"abu dhabi\",\"Abu Dhabi\"],\n  [\"al ain\",\"Abu Dhabi\"],\n  [\"mussafah\",\"Abu Dhabi\"],\n  // Dubai\n  [\"dubai\",\"Dubai\"],\n  [\"jlt\",\"Dubai\"],\n  [\"jumeirah\",\"Dubai\"],\n  [\"business bay\",\"Dubai\"],\n  [\"internet city\",\"Dubai\"],\n  // Sharjah\n  [\"sharjah\",\"Sharjah\"],\n  // Ajman\n  [\"ajman\",\"Ajman\"],\n  // Fujairah\n  [\"fujairah\",\"Fujairah\"],\n  // Ras Al Khaimah\n  [\"rak\",\"Ras Al Khaimah\"],\n  [\"ras al khaimah\",\"Ras Al Khaimah\"],\n  // Umm Al Quwain",
+      "tail": "\n  // country-level only\n  if (/(united arab emirates|u\\.?a\\.?e\\.?|\\buae\\b)/i.test(s)) return \"United Arab Emirates\";\n  return \"\";\n}\n\n/**\n * tagEmirate(record)\n * Mutates the given candidate-like record by adding `record.emirate` when detectable\n * from any of its common location fields. Returns the same record for chaining.\n */\nexport function tagEmirate(record) {\n  if (!record || typeof record !== \"object\") return record;\n  const loc =\n    record.location ||\n    [record.city, record.region, record.state, record.country]\n      .filter(Boolean)\n      .join(\", \");\n  const e = emirateFromLocation(loc);\n  if (e) record.emirate = e;\n  return record;\n}\n\nexport default { isUAE, emirateFromLocation, tagEmirate };\n"
     },
     {
       "path": "routes/enrich/lib/llm.js",

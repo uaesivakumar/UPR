@@ -3,6 +3,7 @@
  * Exports:
  *   - isUAE(locationLike)
  *   - emirateFromLocation(locationLike)
+ *   - tagEmirate(record)  // mutates record by adding .emirate when detectable
  */
 
 const EMIRATES = [
@@ -15,7 +16,7 @@ const EMIRATES = [
   "Umm Al Quwain",
 ];
 
-// common city/area mentions mapped to emirates
+// Common city/area mentions mapped to emirates
 const CITY_TO_EMIRATE = new Map([
   // Abu Dhabi
   ["abu dhabi","Abu Dhabi"],
@@ -37,7 +38,7 @@ const CITY_TO_EMIRATE = new Map([
   ["rak","Ras Al Khaimah"],
   ["ras al khaimah","Ras Al Khaimah"],
   // Umm Al Quwain
-  ["umm al quwain","Umm Al Khaimah"], // minor typos handled below
+  ["umm al quwain","Umm Al Quwain"],
   ["uaq","Umm Al Quwain"],
 ]);
 
@@ -53,7 +54,9 @@ export function isUAE(loc) {
   const s = norm(
     typeof loc === "string"
       ? loc
-      : [loc?.city, loc?.state, loc?.country, loc?.location].filter(Boolean).join(", ")
+      : [loc?.city, loc?.state, loc?.country, loc?.location]
+          .filter(Boolean)
+          .join(", ")
   );
   if (!s) return false;
   if (/(united arab emirates|u\.?a\.?e\.?|\buae\b)/i.test(s)) return true;
@@ -71,7 +74,9 @@ export function emirateFromLocation(loc) {
   const s = norm(
     typeof loc === "string"
       ? loc
-      : [loc?.city, loc?.state, loc?.country, loc?.location].filter(Boolean).join(", ")
+      : [loc?.city, loc?.state, loc?.country, loc?.location]
+          .filter(Boolean)
+          .join(", ")
   );
   if (!s) return "";
 
@@ -89,4 +94,21 @@ export function emirateFromLocation(loc) {
   return "";
 }
 
-export default { isUAE, emirateFromLocation };
+/**
+ * tagEmirate(record)
+ * Mutates the given candidate-like record by adding `record.emirate` when detectable
+ * from any of its common location fields. Returns the same record for chaining.
+ */
+export function tagEmirate(record) {
+  if (!record || typeof record !== "object") return record;
+  const loc =
+    record.location ||
+    [record.city, record.region, record.state, record.country]
+      .filter(Boolean)
+      .join(", ");
+  const e = emirateFromLocation(loc);
+  if (e) record.emirate = e;
+  return record;
+}
+
+export default { isUAE, emirateFromLocation, tagEmirate };
