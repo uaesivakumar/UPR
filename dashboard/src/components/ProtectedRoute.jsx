@@ -1,19 +1,23 @@
-// dashboard/src/components/ProtectedRoute.jsx
-import { Outlet, Navigate, useLocation } from "react-router-dom";
-import { getToken } from "../utils/auth";
+import React from "react";
+import { Navigate, Outlet, useLocation } from "react-router-dom";
 
-export default function ProtectedRoute() {
-  const loc = useLocation();
-  const token = getToken();
-  if (!token) {
-    // Bounce to login, remember where we wanted to go
-    return (
-      <Navigate
-        to="/login"
-        replace
-        state={{ next: `${loc.pathname}${loc.search}` }}
-      />
-    );
+/**
+ * ProtectedRoute
+ * - If no token, redirect to /login (preserving "from")
+ * - If children are provided, render them; else render <Outlet />
+ */
+export default function ProtectedRoute({ children }) {
+  let token = null;
+  try {
+    token = localStorage.getItem("token");
+  } catch (_) {
+    token = null;
   }
-  return <Outlet />;
+
+  const location = useLocation();
+
+  if (!token) {
+    return <Navigate to="/login" replace state={{ from: location }} />;
+  }
+  return children ?? <Outlet />;
 }
