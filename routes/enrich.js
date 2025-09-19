@@ -19,62 +19,139 @@ import { verifyEmail } from "../utils/emailVerify.js";
 
 const router = express.Router();
 
+// ---- Env & constants --------------------------------------------------------
+const APOLLO_API_KEY =
+  process.env.APOLLO_API_KEY ||
+  process.env.APOLLOIO_API_KEY ||
+  process.env.APOLLO_TOKEN ||
+  "";
+const hasApollo = !!APOLLO_API_KEY;
+
+const HR_TITLES = [
+  "HR",
+  "Human Resources",
+  "People",
+  "Talent",
+  "Recruiting",
+  "People Operations",
+  "Head of People",
+  "HR Manager",
+  "HR Director",
+];
+
 // In-memory job store (MVP)
 const jobs = new Map();
 
-/**
- * GET /api/enrich/mock?q=Company+Name
- * Lightweight mock enrichment to test the UI without needing a company_id.
- * NOTE: This MUST be registered BEFORE the "/:job_id" route to avoid being captured as a param.
- */
-router.get("/mock", async (req, res) => {
-  const q = (req.query.q || "").toString().trim();
-  if (!q) return res.status(400).json({ error: "q is required" });
+// ---- Small helpers ----------------------------------------------------------
+function makeMockFromText(q) {
   const domain = q.toLowerCase().replace(/\s+/g, "") + ".com";
-
   const results = [
     {
       name: "Jane Doe",
       designation: "HR Manager",
-      linkedin_url: `https://www.linkedin.com/in/jane-doe-hr-${Math.floor(Math.random()*9000+1000)}/`,
+      linkedin_url: `https://www.linkedin.com/in/jane-doe-hr-${Math.floor(Math.random() * 9000 + 1000)}/`,
       email: `jane.doe@${domain}`,
       email_status: "valid",
       email_reason: "mock",
       role_bucket: "hr",
       seniority: "manager",
       source: "mock",
-      confidence: 0.92
+      confidence: 0.92,
     },
     {
       name: "John Smith",
       designation: "Head of People",
-      linkedin_url: `https://www.linkedin.com/in/john-smith-people-${Math.floor(Math.random()*9000+1000)}/`,
+      linkedin_url: `https://www.linkedin.com/in/john-smith-people-${Math.floor(Math.random() * 9000 + 1000)}/`,
       email: `john.smith@${domain}`,
       email_status: "accept_all",
       email_reason: "mock",
       role_bucket: "hr",
       seniority: "head",
       source: "mock",
-      confidence: 0.88
-    }
+      confidence: 0.88,
+    },
   ];
 
-  return res.json({
+  return {
     status: "completed",
     company_id: null,
     results,
     summary: {
       total_candidates: results.length,
       kept: results.length,
-      pattern_used: "first.last@" + domain,
-      verification_provider: "mock"
+      pattern_used: `first.last@${domain}`,
+      verification_provider: "mock",
+    },
+  };
+}
+
+// -----------------------------------------------------------------------------
+// IMPORTANT: Register specific routes BEFORE the parameterized /:job_id route.
+// -----------------------------------------------------------------------------
+
+/**
+ * GET /api/enrich/mock?q=Company+Name
+ * Dev-only fallback for free text testing.
+ * (Kept for local/dev; never used if Apollo returns results.)
+ */
+router.get("/mock", async (req, res) => {
+  const q = (req.query.q || "").toString().trim();
+  if (!q) return res.status(400).json({ error: "q is required" });
+  return res.json(makeMockFromText(q));
+});
+
+/**
+ * GET /api/enrich/search?q=...
+ * Free-text enrichment using Apollo (when configured).
+ * Falls back to mock ONLY if provider unavailable or returns 0 results.
+ */
+router.get("/search", async (req, res) => {
+  const q = (req.query.q || "").toString().trim();
+  if (!q) return res.status(400).json({ error: "q is required" });
+
+  try {
+    let candidates = [];
+    if (hasApollo) {
+      candidates = await queryApolloByText({ q, limit: 5, geo: "uae" });
     }
-  });
+
+    if (!Array.isArray(candidates) || candidates.length === 0) {
+      // graceful fallback so UI remains functional in dev
+      return res.json({ ok: true, data: makeMockFromText(q), provider: hasApollo ? "apollo_fallback_to_mock" : "mock_only" });
+    }
+
+    const results = candidates.map((p) => ({
+      name: p.name,
+      designation: p.title,
+      linkedin_url: p.linkedin_url,
+      email: p.email ?? null,
+      email_status: p.email ? "provider" : "unknown",
+      email_reason: p.email ? "provider_supplied" : undefined,
+      role_bucket: "hr",
+      seniority: p.seniority || null,
+      source: "apollo",
+      confidence: 0.85, // base; verify/score below in POST flow
+    }));
+
+    return res.json({
+      ok: true,
+      data: {
+        status: "completed",
+        company_id: null,
+        results,
+        summary: { total_candidates: results.length, kept: results.length, provider: "apollo" },
+      },
+    });
+  } catch (e) {
+    console.error("search (apollo) error:", e);
+    return res.status(500).json({ error: "search_failed" });
+  }
 });
 
 /**
  * POST /api/enrich
  * body: { company_id: string, max_contacts?: number, role?: "hr", geo?: "uae" }
+ * Company-selected enrichment; performs patterning, verification, scoring, and best-effort upsert.
  */
 router.post("/", async (req, res) => {
   const { company_id, max_contacts = 3, role = "hr", geo = "uae" } = req.body || {};
@@ -91,7 +168,7 @@ router.post("/", async (req, res) => {
       return res.status(404).json(payload);
     }
 
-    // Ensure domain
+    // Ensure domain if possible
     if (!company.domain && company.website_url) {
       try {
         const u = new URL(
@@ -103,7 +180,7 @@ router.post("/", async (req, res) => {
       } catch {}
     }
 
-    // 1) Query provider (placeholder → returns [])
+    // 1) Query provider (Apollo by domain) — returns normalized people
     const providerCandidates = await queryPrimaryProvider({
       company,
       role,
@@ -111,7 +188,7 @@ router.post("/", async (req, res) => {
       limit: max_contacts,
     });
 
-    // 2) Learn pattern from provider samples (if possible)
+    // 2) Learn pattern from provider samples
     let learnedPattern = null;
     const samples = providerCandidates
       .filter((c) => c.email && c.first_name && c.last_name)
@@ -205,6 +282,7 @@ router.post("/", async (req, res) => {
         const row = await upsertHrLead(company_id, c);
         saved.push(row);
       } catch (e) {
+        // 42P01 = relation does not exist (table missing) → ignore silently
         if (String(e?.code) !== "42P01") console.error("hr_leads upsert error:", e);
       }
     }
@@ -327,7 +405,80 @@ async function upsertHrLead(company_id, c) {
   return rows[0];
 }
 
-// TODO: Wire Apollo/Clearbit/PDL here
-async function queryPrimaryProvider() {
+// ---------------- Provider integrations (Apollo) -----------------------------
+async function queryPrimaryProvider({ company, role, geo, limit }) {
+  if (hasApollo && company?.domain) {
+    try {
+      return await queryApolloByDomain({
+        domain: company.domain,
+        limit,
+        geo,
+      });
+    } catch (e) {
+      console.error("apollo domain search failed:", e);
+    }
+  }
+  // Fallback empty; upstream can still pattern/verify if emails known elsewhere.
   return [];
+}
+
+/**
+ * Apollo free-text people search
+ * NOTE: Apollo API variants differ between accounts; this targets the common v1 endpoint.
+ */
+async function queryApolloByText({ q, limit = 5, geo = "uae" }) {
+  const endpoint = "https://api.apollo.io/v1/people/search";
+  const body = {
+    api_key: APOLLO_API_KEY,
+    q_keywords: HR_TITLES.join(" OR "),
+    q_organization_name: q,
+    page: 1,
+    per_page: Math.min(Math.max(limit, 1), 25),
+    person_locations: geo ? ["United Arab Emirates"] : undefined,
+  };
+  const r = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(`apollo text search ${r.status}`);
+  const json = await r.json();
+  const people = json?.people || json?.matches || [];
+  return people.map(mapApolloPerson);
+}
+
+async function queryApolloByDomain({ domain, limit = 5, geo = "uae" }) {
+  const endpoint = "https://api.apollo.io/v1/people/search";
+  const body = {
+    api_key: APOLLO_API_KEY,
+    q_keywords: HR_TITLES.join(" OR "),
+    q_organization_domains: [domain],
+    page: 1,
+    per_page: Math.min(Math.max(limit, 1), 25),
+    person_locations: geo ? ["United Arab Emirates"] : undefined,
+  };
+  const r = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(`apollo domain search ${r.status}`);
+  const json = await r.json();
+  const people = json?.people || json?.matches || [];
+  return people.map(mapApolloPerson);
+}
+
+function mapApolloPerson(p) {
+  const name = [p.first_name, p.last_name].filter(Boolean).join(" ").trim() || p.name || "";
+  return {
+    source: "apollo",
+    name,
+    first_name: p.first_name || null,
+    last_name: p.last_name || null,
+    title: p.title || p.position || "",
+    designation: p.title || p.position || "",
+    linkedin_url: p.linkedin_url || p.linkedin || "",
+    email: p.email || (p.email_status === "verified" ? p.email : null),
+    seniority: p.seniority || null,
+  };
 }

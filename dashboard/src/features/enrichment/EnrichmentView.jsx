@@ -27,15 +27,17 @@ export default function EnrichmentView() {
     return Boolean(company?.id) || Boolean(text && text.trim());
   }, [company, text]);
 
-  const callMock = useCallback(async (q) => {
-    const res = await authFetch(`/api/enrich/mock?q=${encodeURIComponent(q)}`);
+  // Prefer provider-backed free-text search (Apollo via /api/enrich/search)
+  const callSearch = useCallback(async (q) => {
+    const res = await authFetch(`/api/enrich/search?q=${encodeURIComponent(q)}`);
     if (!res.ok) {
       const t = await res.text().catch(() => "");
-      throw new Error(`Mock enrich failed (${res.status}): ${t || res.statusText}`);
+      throw new Error(`Search failed (${res.status}): ${t || res.statusText}`);
     }
     return res.json();
   }, []);
 
+  // Real company-selected enrichment
   const callReal = useCallback(async (company_id) => {
     const res = await authFetch(`/api/enrich`, {
       method: "POST",
@@ -67,7 +69,8 @@ export default function EnrichmentView() {
         data = await callReal(company.id);
         window.dispatchEvent(new CustomEvent("upr:companySidebar", { detail: company }));
       } else {
-        data = await callMock(text.trim());
+        const resp = await callSearch(text.trim());
+        data = resp?.data || resp; // { ok, data } or raw
         window.dispatchEvent(new CustomEvent("upr:companySidebar", { detail: null }));
       }
       setResult(data || null);
@@ -77,11 +80,11 @@ export default function EnrichmentView() {
     } finally {
       setLoading(false);
     }
-  }, [canSubmit, company, text, callMock, callReal]);
+  }, [canSubmit, company, text, callSearch, callReal]);
 
   const contacts = result?.results || [];
   const summary = result?.summary || {};
-  const isMock = !company?.id;
+  const isMock = !company?.id && (summary?.provider === "mock" || summary?.provider === "apollo_fallback_to_mock");
 
   return (
     <div className="p-6 space-y-6">
@@ -100,9 +103,9 @@ export default function EnrichmentView() {
         <div>
           <h1 className="text-2xl font-semibold">Enrichment</h1>
           <p className="text-sm text-gray-500 mt-1">
-            {isMock
-              ? "No company selected — using mock (GET /api/enrich/mock?q=...)."
-              : "Company selected — using real enrichment (POST /api/enrich)."}
+            {company?.id
+              ? "Company selected — using real enrichment (POST /api/enrich)."
+              : "No company selected — search by name (GET /api/enrich/search?q=...)."}
           </p>
         </div>
 
@@ -147,7 +150,7 @@ export default function EnrichmentView() {
         {/* Show validation only AFTER an attempt */}
         {attempted && !canSubmit && (
           <div className="mt-2 text-sm text-red-600 text-center">
-            Select a company or type a name to use mock.
+            Please select a company or enter a name to search.
           </div>
         )}
         {err && <div className="mt-2 text-sm text-red-600 text-center">{err}</div>}
@@ -161,7 +164,7 @@ export default function EnrichmentView() {
                 {company?.name ? (
                   <>Results for <span className="font-semibold">{company.name}</span></>
                 ) : (
-                  <>Results (mock)</>
+                  <>Results{isMock ? " (mock)" : ""}</>
                 )}
               </div>
               <div className="text-sm text-gray-500">
@@ -169,6 +172,8 @@ export default function EnrichmentView() {
                   ? `Kept ${summary.kept} of ${summary.found}`
                   : summary?.total_candidates != null
                   ? `Candidates: ${summary.total_candidates}`
+                  : summary?.provider
+                  ? `Provider: ${summary.provider}`
                   : null}
               </div>
             </div>
@@ -229,7 +234,9 @@ export default function EnrichmentView() {
             <div className="mt-4 text-xs text-gray-500">
               {company?.id
                 ? "Best-effort insert to HR Leads is performed server-side if the table exists."
-                : "Mock mode: no database writes."}
+                : isMock
+                ? "Mock mode: no database writes."
+                : "Provider mode: no database writes for free-text search."}
             </div>
           </div>
 
