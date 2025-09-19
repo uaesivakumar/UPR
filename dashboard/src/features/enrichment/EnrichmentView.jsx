@@ -1,122 +1,127 @@
-// dashboard/src/features/enrichment/EnrichmentView.jsx
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useMemo, useState } from "react";
 import { authFetch } from "../../utils/auth";
 
 export default function EnrichmentView() {
-  const [text, setText] = useState("");
-  const [err, setErr] = useState("");
+  const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
 
-  const [status, setStatus] = useState({ db_ok: null, llm_ok: null, data_source: null });
-  const [company, setCompany] = useState(null);
-  const [guess, setGuess] = useState(null);
-  const [result, setResult] = useState(null);
+  const [company, setCompany] = useState(null); // left sidebar company (LLM guess or selected)
+  const [quality, setQuality] = useState(null);
+  const [timings, setTimings] = useState({}); // { llm_ms, provider_ms, smtp_ms }
 
-  const [companies, setCompanies] = useState([]);
-  const [saveCompanyId, setSaveCompanyId] = useState("");
-  const [checked, setChecked] = useState({});
-  const [showRaw, setShowRaw] = useState(false);
+  const [rows, setRows] = useState([]);
+  const [selected, setSelected] = useState({}); // id->bool
+  const [savingCompanyId, setSavingCompanyId] = useState(""); // when we need to save into an existing company
+  const [companiesForSelect, setCompaniesForSelect] = useState([]);
 
-  /* ---------- status chips ---------- */
-  const loadStatus = useCallback(async () => {
-    try {
-      const r = await authFetch("/api/enrich/status");
-      const j = await r.json();
-      if (j?.data) setStatus(j.data);
-    } catch {}
-  }, []);
-  useEffect(() => { loadStatus(); const t = setInterval(loadStatus, 20000); return () => clearInterval(t); }, [loadStatus]);
+  // status lights
+  const [status, setStatus] = useState({ data: "live", db_ok: true, llm_ok: true });
 
-  /* ---------- listen selection from Companies page ---------- */
+  // Listen for selection broadcasted from Companies page (if user clicks a row there)
   useEffect(() => {
-    const h = (e) => {
-      const c = e?.detail || null;
-      setCompany(c);
-      if (c?.name) setText(c.name);
-      setSaveCompanyId(c?.id || "");
+    const handler = (e) => {
+      const c = e.detail || null;
+      if (c) {
+        setCompany({
+          name: c.name,
+          domain: c.domain || (c.website_url ? tryUrlToDomain(c.website_url) : null),
+          website_url: c.website_url || null,
+          linkedin_url: c.linkedin_url || null,
+          hq: c.hq || null,
+          industry: c.industry || null,
+          size: c.size || null,
+          mode: "Selected",
+        });
+        setSavingCompanyId(c.id);
+      }
     };
-    window.addEventListener("upr:companySidebar", h);
-    return () => window.removeEventListener("upr:companySidebar", h);
+    window.addEventListener("upr:companySidebar", handler);
+    return () => window.removeEventListener("upr:companySidebar", handler);
   }, []);
 
-  /* ---------- load companies for dropdown ---------- */
   useEffect(() => {
+    let abort = false;
     (async () => {
       try {
-        const r = await authFetch("/api/companies?sort=name.asc");
+        const r = await authFetch("/api/enrich/status");
         const j = await r.json();
-        if (r.ok && j?.ok) setCompanies(j.data || []);
+        if (!abort && j?.ok) {
+          const d = j.data || {};
+          setStatus({ data: d.data_source, db_ok: !!d.db_ok, llm_ok: !!d.llm_ok });
+        }
       } catch {}
     })();
+    return () => { abort = true; };
   }, []);
 
-  const canRun = useMemo(() => Boolean(company?.id) || Boolean(text.trim()), [company, text]);
+  // Preload company list for "save into" dropdown
+  useEffect(() => {
+    let abort = false;
+    (async () => {
+      try {
+        const r = await authFetch(`/api/companies?sort=created_at.desc&limit=100`);
+        const j = await r.json();
+        if (!abort && j?.ok) setCompaniesForSelect(j.data || []);
+      } catch {}
+    })();
+    return () => { abort = true; };
+  }, []);
 
-  const run = useCallback(async () => {
-    if (!canRun || loading) return;
-    setLoading(true); setErr(""); setResult(null); setGuess(null); setChecked({});
+  const allChecked = useMemo(() => {
+    if (!rows.length) return false;
+    return rows.every((r) => selected[r._id]);
+  }, [rows, selected]);
+
+  const toggleAll = () => {
+    if (!rows.length) return;
+    const next = {};
+    if (!allChecked) rows.forEach((r) => { next[r._id] = true; });
+    setSelected(next);
+  };
+
+  const run = async () => {
+    if (!query.trim() && !savingCompanyId) return;
+    setLoading(true);
+    setErr("");
+    setRows([]);
+    setSelected({});
+    setQuality(null);
+    setTimings({});
+
     try {
-      if (company?.id) {
-        const r = await authFetch("/api/enrich", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ company_id: company.id, max_contacts: 3 }),
-        });
-        const j = await r.json();
-        if (!r.ok) throw new Error(j?.error || "Enrich failed");
-        setResult(j);
-      } else {
-        const r = await authFetch(`/api/enrich/search?q=${encodeURIComponent(text.trim())}`);
-        const j = await r.json();
-        if (!r.ok) throw new Error(j?.error || "Search failed");
-        setResult(j?.data || j);
-        setGuess(j?.data?.summary?.company_guess || null);
+      if (savingCompanyId) {
+        // If a company is already chosen (from sidebar), we *could* call POST /api/enrich to write into DB.
+        // Here, we keep non-destructive search UX; user can still “Add to HR Leads” from results.
       }
+
+      const endpoint = `/api/enrich/search?q=${encodeURIComponent(query.trim() || company?.name || "")}`;
+      const r = await authFetch(endpoint);
+      const j = await r.json();
+      if (!r.ok || !j.ok) throw new Error(j.error || "Search failed");
+
+      const data = j.data || {};
+      const guess = data.summary?.company_guess || null;
+      setCompany(guess || null);
+      setQuality(data.summary?.quality || null);
+      setTimings(data.summary?.timings || {});
+      setRows((data.results || []).map((it, idx) => ({ ...it, _id: `${idx}_${it.email || it.linkedin_url || it.name}` })));
     } catch (e) {
-      setErr(e?.message || "Failed");
+      setErr(e.message || "Search failed");
     } finally {
       setLoading(false);
     }
-  }, [canRun, loading, company, text]);
+  };
 
-  const contacts = result?.results || [];
-  const summary  = result?.summary || {};
-  const timings  = summary?.timings || {};
-
-  const selectedCount = useMemo(() => Object.values(checked).filter(Boolean).length, [checked]);
-  const toggle = (i) => setChecked((m) => ({ ...m, [i]: !m[i] }));
-
-  const onAddLeads = useCallback(async () => {
-    const targetId = company?.id || saveCompanyId;
-    if (!targetId) { setErr("Choose a company to save into."); return; }
-    const picks = contacts.filter((_, i) => checked[i]);
-    if (!picks.length) { setErr("Select at least one contact."); return; }
-
-    setErr("");
-    for (const c of picks) {
-      // eslint-disable-next-line no-await-in-loop
-      await authFetch("/api/manual/hr-leads", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          company_id: targetId,
-          name: c.name,
-          designation: c.designation || null,
-          email: c.email || null,
-          linkedin_url: c.linkedin_url || null,
-        }),
-      }).catch(()=>{});
-    }
-    alert("Added to HR Leads");
-  }, [company, saveCompanyId, contacts, checked]);
-
-  const createAndUseGuess = useCallback(async () => {
-    if (!guess?.name) return;
+  const createCompanyAndUse = async () => {
+    if (!company?.name) return;
     try {
       const payload = {
-        name: guess.name,
-        website_url: guess.domain ? `https://${guess.domain}` : null,
+        name: company.name,
+        website_url: company.website_url || (company.domain ? `https://www.${company.domain}` : null),
+        linkedin_url: company.linkedin_url || null,
+        domain: company.domain || null,
+        type: null,
         status: "New",
         locations: [],
       };
@@ -126,237 +131,292 @@ export default function EnrichmentView() {
         body: JSON.stringify(payload),
       });
       const j = await r.json();
-      if (!r.ok || !j?.id) throw new Error(j?.error || "Create failed");
-      setSaveCompanyId(j.id);
-      setCompany({ id: j.id, name: guess.name, domain: guess.domain || null });
-      window.dispatchEvent(new CustomEvent("upr:companySidebar", { detail: { id: j.id, name: guess.name, domain: guess.domain || null }}));
+      if (!r.ok || j.error) throw new Error(j.error || "Create failed");
+      setSavingCompanyId(j.id || j.data?.id);
+      // refresh dropdown
+      const rr = await authFetch(`/api/companies?sort=created_at.desc&limit=100`);
+      const jj = await rr.json();
+      if (jj?.ok) setCompaniesForSelect(jj.data || []);
     } catch (e) {
-      setErr(e?.message || "Failed to create");
+      alert(e.message || "Create failed");
     }
-  }, [guess]);
+  };
 
-  /* ---------- derive emirate on client as fallback ---------- */
-  const emirateOf = (loc = "") => {
-    const s = String(loc).toLowerCase();
-    if (s.includes("abu dhabi")) return "Abu Dhabi";
-    if (s.includes("dubai")) return "Dubai";
-    if (s.includes("sharjah")) return "Sharjah";
-    if (s.includes("ajman")) return "Ajman";
-    if (s.includes("ras al khaimah")) return "Ras Al Khaimah";
-    if (s.includes("umm al quwain")) return "Umm Al Quwain";
-    if (s.includes("fujairah")) return "Fujairah";
-    if (s.includes("united arab emirates") || s === "uae") return "UAE";
-    return "";
+  const addSelectedToLeads = async () => {
+    if (!savingCompanyId) return;
+    const chosen = rows.filter((r) => selected[r._id]);
+    if (!chosen.length) return;
+
+    let okCount = 0, failCount = 0;
+    for (const c of chosen) {
+      try {
+        const payload = {
+          company_id: savingCompanyId,
+          name: c.name,
+          designation: c.designation,
+          email: c.email || null,
+          linkedin_url: c.linkedin_url || null,
+          role_bucket: c.role_bucket || null,
+          seniority: c.seniority || null,
+          email_status: c.email_status || "unknown",
+        };
+        const r = await authFetch("/api/manual/hr-leads", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const j = await r.json();
+        if (!r.ok || j.error) throw new Error(j.error || "Save failed");
+        okCount++;
+      } catch {
+        failCount++;
+      }
+    }
+    alert(`Saved ${okCount} lead(s)${failCount ? `, ${failCount} failed` : ""}.`);
   };
 
   return (
-    <div className="p-6 space-y-6">
-      {/* mount a small card into the left rail if the container exists */}
-      <LeftRailCompanyPortal
-        selected={company}
-        guess={guess}
-        onCreateGuess={createAndUseGuess}
-        onClear={() => { setCompany(null); setSaveCompanyId(""); setGuess(null); }}
-      />
+    <div className="grid grid-cols-12 gap-6 p-6">
+      {/* Sidebar: Company card (sticky) */}
+      <aside className="col-span-12 md:col-span-3">
+        <CompanyCard
+          company={company}
+          quality={quality}
+          onCreateAndUse={createCompanyAndUse}
+          onClear={() => { setCompany(null); setSavingCompanyId(""); }}
+        />
+      </aside>
 
-      {/* top status chips */}
-      <div className="flex items-center justify-end gap-2">
-        <Chip ok={status.data_source === "live"} label={`Data Source: ${status.data_source === "live" ? "Live" : "Mock"}`} />
-        <Chip ok={!!status.db_ok} label="DB" />
-        <Chip ok={!!status.llm_ok} label="LLM" />
-      </div>
-
-      <div className="space-y-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Enrichment</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            {company?.id ? "Company selected — using real enrichment." : "No company selected — search by company name."}
-          </p>
+      {/* Main */}
+      <main className="col-span-12 md:col-span-9">
+        {/* Top status chips */}
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <Chip ok>Data Source: {status.data}</Chip>
+          <Chip ok={status.db_ok}>DB</Chip>
+          <Chip ok={status.llm_ok}>LLM</Chip>
         </div>
 
-        {/* input */}
-        <div className="flex items-stretch gap-2">
+        <h1 className="text-3xl font-semibold tracking-tight text-gray-900 mb-1">Enrichment</h1>
+        <p className="text-sm text-gray-500 mb-4">
+          {savingCompanyId
+            ? `Saving into selected company (ID: ${savingCompanyId}).`
+            : "No company selected — search by company name."}
+        </p>
+
+        {/* Input row */}
+        <div className="flex gap-2 mb-4">
           <input
-            className="w-full rounded-xl border px-3 py-2 focus:outline-none focus:ring disabled:bg-gray-50"
-            placeholder="Enter company name (e.g., Cognizant, KBR) — or pick a company on the Companies page"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e)=>{ if (e.key === "Enter") run(); }}
-            disabled={!!company?.id}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Enter company name (e.g., Revolut)"
+            className="flex-1 px-3 py-2 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-900/10"
           />
           <button
-            className="rounded-xl bg-gray-900 text-white px-4 py-2 disabled:opacity-50"
             onClick={run}
-            disabled={!((company?.id) || text.trim()) || loading}
+            disabled={loading}
+            className="px-4 py-2 rounded-xl bg-gray-900 text-white font-medium hover:bg-gray-800 disabled:opacity-50"
           >
-            {loading ? "Enriching…" : "Enrich"}
+            {loading ? "Loading…" : "Enrich"}
           </button>
         </div>
-        {err && <div className="text-red-600 text-sm">{err}</div>}
 
-        {/* actions above results */}
-        {result && (
-          <div className="flex items-center justify-between">
-            <div className="text-sm text-gray-600">
-              {company?.name ? <>Saving into: <b>{company.name}</b></> : "Choose a company to save into"}
-            </div>
-            <div className="flex items-center gap-2">
-              {!company?.id && (
-                <select
-                  className="rounded border px-2 py-1 text-sm"
-                  value={saveCompanyId}
-                  onChange={(e) => setSaveCompanyId(e.target.value)}
-                >
-                  <option value="">— Choose company —</option>
-                  {companies.map((c)=> <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              )}
-              {!company?.id && !!guess?.name && (
-                <button className="rounded border px-3 py-1.5 text-sm" onClick={createAndUseGuess}>
-                  Create “{guess.name}”
-                </button>
-              )}
-              <button
-                className="rounded bg-gray-900 text-white px-3 py-1.5 text-sm disabled:opacity-50"
-                onClick={onAddLeads}
-                disabled={selectedCount === 0 || (!company?.id && !saveCompanyId)}
-              >
-                Add to HR Leads
-              </button>
-            </div>
+        {/* Actions row */}
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <select
+            className="rounded-xl border px-3 py-2"
+            value={savingCompanyId}
+            onChange={(e) => setSavingCompanyId(e.target.value)}
+          >
+            <option value="">{company?.name ? "— Choose company —" : "— Choose company —"}</option>
+            {companiesForSelect.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+
+          <button
+            onClick={createCompanyAndUse}
+            className="px-3 py-2 rounded-xl border"
+            disabled={!company?.name}
+            title="Create a company from the left card and use it as the save target"
+          >
+            Create “{company?.name || "company"}”
+          </button>
+
+          <button
+            onClick={addSelectedToLeads}
+            className="px-3 py-2 rounded-xl bg-gray-900 text-white disabled:opacity-50"
+            disabled={!savingCompanyId || !Object.values(selected).some(Boolean)}
+          >
+            Add to HR Leads
+          </button>
+        </div>
+
+        {/* Results header chips with timings */}
+        {rows.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            <Chip ok>Data Source: {status.data} • {fmtMs(timings.provider_ms)}</Chip>
+            <Chip ok={status.db_ok}>DB</Chip>
+            <Chip ok={status.llm_ok}>LLM • {fmtMs(timings.llm_ms)}</Chip>
+            {timings.smtp_ms ? <Chip ok>SMTP • {fmtMs(timings.smtp_ms)}</Chip> : null}
           </div>
         )}
 
-        {/* results */}
-        {result && (
-          <div className="rounded-2xl border bg-white overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 border-b">
-              <div className="text-sm text-gray-500">
-                {summary?.total_candidates != null ? `Candidates: ${summary.total_candidates}` :
-                 summary?.kept != null && summary?.found != null ? `Kept ${summary.kept} of ${summary.found}` : null}
-              </div>
-              <div className="flex items-center gap-2">
-                <Chip ok={summary?.provider === "live"} label={`Data Source: ${summary?.provider || "—"}${timings?.provider_ms ? ` • ${timings.provider_ms}ms` : ""}`} />
-                <Chip ok={!!status.db_ok} label={`DB${timings?.db_ms ? ` • ${timings.db_ms}ms` : ""}`} />
-                <Chip ok={!!status.llm_ok} label={`LLM${timings?.llm_ms ? ` • ${timings.llm_ms}ms` : ""}`} />
-              </div>
-            </div>
+        {/* Errors */}
+        {err && <div className="text-red-600 mb-3">{err}</div>}
 
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm table-fixed">
-                <thead className="bg-gray-50 text-left">
-                  <tr>
-                    <TH className="w-10" />
-                    <TH className="w-44">Name</TH>
-                    <TH className="w-28">Emirate</TH>
-                    <TH className="w-64">Title</TH>
-                    <TH className="w-64">Email</TH>
-                    <TH className="w-40">LinkedIn</TH>
-                    <TH className="w-24">Confidence</TH>
-                    <TH className="w-28">Status</TH>
-                    <TH className="w-24">Source</TH>
+        {/* Results table */}
+        <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <Th>
+                  <input type="checkbox" checked={allChecked} onChange={toggleAll} />
+                </Th>
+                <Th>Name</Th>
+                <Th>Emirate</Th>
+                <Th>Title</Th>
+                <Th>Email</Th>
+                <Th>LinkedIn</Th>
+                <Th>Confidence</Th>
+                <Th>Status</Th>
+                <Th>Source</Th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {loading ? (
+                <tr><td colSpan={9} className="px-4 py-6 text-center text-gray-500">Loading…</td></tr>
+              ) : rows.length === 0 ? (
+                <tr><td colSpan={9} className="px-4 py-10 text-center text-gray-500">
+                  No contacts found (only real people shown; generic mailboxes hidden).
+                </td></tr>
+              ) : (
+                rows.map((r) => (
+                  <tr key={r._id} className="hover:bg-gray-50/60">
+                    <Td>
+                      <input
+                        type="checkbox"
+                        checked={!!selected[r._id]}
+                        onChange={(e) => setSelected({ ...selected, [r._id]: e.target.checked })}
+                      />
+                    </Td>
+                    <Td className="font-medium">{r.name || "—"}</Td>
+                    <Td>{r.emirate || "—"}</Td>
+                    <Td>{r.designation || "—"}</Td>
+                    <Td>
+                      {r.email ? (
+                        <a className="underline underline-offset-2" href={`mailto:${r.email}`}>{r.email}</a>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </Td>
+                    <Td>
+                      {r.linkedin_url ? (
+                        <a className="underline underline-offset-2" href={r.linkedin_url} target="_blank" rel="noreferrer">
+                          LinkedIn
+                        </a>
+                      ) : <span className="text-gray-400">—</span>}
+                    </Td>
+                    <Td>{typeof r.confidence === "number" ? r.confidence.toFixed(2) : "—"}</Td>
+                    <Td><Badge>{r.email_status || "unknown"}</Badge></Td>
+                    <Td>{r.source || "live"}</Td>
                   </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {contacts.length === 0 ? (
-                    <tr><td colSpan={9} className="py-6 text-center text-gray-500">No contacts found.</td></tr>
-                  ) : contacts.map((c, i) => (
-                    <tr key={i} className="align-top">
-                      <TD><input type="checkbox" checked={!!checked[i]} onChange={()=>toggle(i)} /></TD>
-                      <TD className="font-medium">{c.name || "—"}</TD>
-                      <TD>{c.emirate || emirateOf(c.location) || "—"}</TD>
-                      <TD>{c.designation || "—"}</TD>
-                      <TD className="whitespace-nowrap">
-                        {c.email ? <a className="underline" href={`mailto:${c.email}`}>{c.email}</a> : <span className="text-gray-400">—</span>}
-                      </TD>
-                      <TD className="truncate">
-                        {c.linkedin_url ? <a className="underline" href={c.linkedin_url} target="_blank" rel="noreferrer">LinkedIn</a> : <span className="text-gray-400">—</span>}
-                      </TD>
-                      <TD>{c.confidence != null ? Number(c.confidence).toFixed(2) : "—"}</TD>
-                      <TD>{c.email_status || "—"}</TD>
-                      <TD className="text-gray-500">{c.source || summary?.provider || "—"}</TD>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </main>
+    </div>
+  );
+}
 
-            <div className="px-4 py-3 text-xs text-gray-500 border-t">
-              {company?.id
-                ? "Company mode: verified contacts are saved automatically."
-                : "Search mode: results are not saved. Select rows and click “Add to HR Leads” to store them."}
-            </div>
+/* ---------------- UI bits ---------------- */
+function CompanyCard({ company, quality, onCreateAndUse, onClear }) {
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-white sticky top-6">
+      <div className="p-4 border-b">
+        <div className="text-xs uppercase font-semibold text-gray-500">Company</div>
+        <div className="mt-2 text-lg font-semibold leading-tight">
+          {company?.name || <span className="text-gray-400">No company</span>}
+        </div>
+        {company?.mode && (
+          <div className="mt-1 text-xs text-gray-500">Mode: {company.mode}</div>
+        )}
+      </div>
+
+      <div className="p-4 space-y-2 text-sm">
+        <Field label="Domain">
+          {company?.domain ? company.domain : "—"}
+        </Field>
+        <Field label="Website">
+          {company?.website_url ? (
+            <a className="underline underline-offset-2" href={company.website_url} target="_blank" rel="noreferrer">
+              {crop(company.website_url, 36)}
+            </a>
+          ) : "—"}
+        </Field>
+        <Field label="LinkedIn">
+          {company?.linkedin_url ? (
+            <a className="underline underline-offset-2" href={company.linkedin_url} target="_blank" rel="noreferrer">
+              {crop(company.linkedin_url, 36)}
+            </a>
+          ) : "—"}
+        </Field>
+        <Field label="HQ">{company?.hq || "—"}</Field>
+        <Field label="Industry">{company?.industry || "—"}</Field>
+        <Field label="Size">{company?.size || "—"}</Field>
+      </div>
+
+      <div className="p-4 border-t">
+        <div className="text-xs uppercase font-semibold text-gray-500 mb-1">Quality</div>
+        {quality ? (
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-medium">{Math.round(quality.score * 100)}%</div>
+            <div className="text-xs text-gray-500 text-right w-48">{quality.explanation}</div>
           </div>
+        ) : (
+          <div className="text-xs text-gray-400">No explanation available.</div>
         )}
 
-        {result && (
-          <div className="pt-2">
-            <button className="text-sm underline" onClick={()=>setShowRaw(v=>!v)}>
-              {showRaw ? "Hide raw response" : "Show raw response"}
-            </button>
-            {showRaw && (
-              <div className="mt-2 rounded-xl border bg-gray-50 p-3">
-                <pre className="text-xs whitespace-pre-wrap text-gray-800">
-                  {JSON.stringify(result, null, 2)}
-                </pre>
-              </div>
-            )}
-          </div>
-        )}
+        <div className="flex gap-2 mt-3">
+          <button className="px-3 py-2 rounded-xl border" onClick={onCreateAndUse} disabled={!company?.name}>
+            Create & use
+          </button>
+          <button className="px-3 py-2 rounded-xl border" onClick={onClear}>Clear</button>
+        </div>
       </div>
     </div>
   );
 }
 
-/* ---------------- left-rail portal ---------------- */
-function LeftRailCompanyPortal({ selected, guess, onCreateGuess, onClear }) {
-  const container = document.querySelector("#upr-company-sidebar,[data-company-sidebar]");
-  if (!container) {
-    // fallback inline card (kept minimal)
-    if (!selected && !guess) return null;
-    const c = selected || guess;
-    return (
-      <div className="max-w-sm">
-        <div className="rounded-2xl border bg-white p-4 text-sm space-y-2">
-          <div className="text-gray-900 font-semibold">{c.name || "—"}</div>
-          <div className="text-gray-600">Domain: {c.domain || "—"}</div>
-          <div className="text-gray-600">Mode: {selected ? "Selected" : "Guess"}</div>
-          <div className="pt-2 flex gap-2">
-            {guess && <button className="rounded border px-2 py-1" onClick={onCreateGuess}>Create & use</button>}
-            <button className="rounded border px-2 py-1" onClick={onClear}>Clear</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-  if (!selected && !guess) return null;
-  const c = selected || guess;
-  return createPortal(
-    <div className="rounded-2xl border bg-white p-4 text-sm space-y-2">
-      <div className="text-gray-900 font-semibold">{c.name || "—"}</div>
-      <div className="text-gray-600">Domain: {c.domain || "—"}</div>
-      <div className="text-gray-600">Mode: {selected ? "Selected" : "Guess"}</div>
-      <div className="pt-2 flex gap-2">
-        {guess && <button className="rounded border px-2 py-1" onClick={onCreateGuess}>Create & use</button>}
-        <button className="rounded border px-2 py-1" onClick={onClear}>Clear</button>
-      </div>
-    </div>,
-    container
-  );
-}
-
-/* ---------------- small UI bits ---------------- */
-function Chip({ ok, label }) {
+function Chip({ children, ok = true }) {
   return (
-    <span className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm">
-      <span className={`h-2 w-2 rounded-full ${ok ? "bg-green-500" : "bg-yellow-500"}`} />
-      {label}
+    <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${ok ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+      • {children}
     </span>
   );
 }
-function TH({ className="", children }) {
-  return <th className={`px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 ${className}`}>{children}</th>;
+function Th({ children }) {
+  return <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{children}</th>;
 }
-function TD({ className="", children }) {
-  return <td className={`px-3 py-2 ${className}`}>{children}</td>;
+function Td({ children, className = "" }) {
+  return <td className={`px-3 py-3 align-top ${className}`}>{children}</td>;
 }
+function Badge({ children }) {
+  return <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700">{children}</span>;
+}
+function Field({ label, children }) {
+  return (
+    <div className="flex items-start justify-between">
+      <div className="text-xs text-gray-500 w-24">{label}</div>
+      <div className="text-gray-800 max-w-[12rem] text-right">{children}</div>
+    </div>
+  );
+}
+
+/* ---------------- utils ---------------- */
+function crop(s, n) { s = String(s || ""); return s.length > n ? s.slice(0, n - 1) + "…" : s; }
+function tryUrlToDomain(u) {
+  try { return new URL(u.startsWith("http") ? u : `https://${u}`).hostname.replace(/^www\./, ""); } catch { return null; }
+}
+function fmtMs(v) { if (!v && v !== 0) return ""; return `${v}ms`; }

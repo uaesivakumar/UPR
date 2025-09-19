@@ -58,11 +58,11 @@ const log = (...a) => { try { console.error(...a); } catch {} };
 const now = () => Date.now();
 const ms = (t0) => Math.max(0, Date.now() - t0);
 
-const stopwords = /\b(inc|llc|ltd|limited|international|intl|company|co|corp|corporation|group|holdings?|school|bank|market|solutions?)\b/gi;
+const STOPWORDS = /\b(inc|llc|ltd|limited|international|intl|company|co|corp|corporation|group|holdings?|school|bank|market|solutions?)\b/gi;
 
 function cleanName(s = "") {
   return String(s)
-    .replace(stopwords, " ")
+    .replace(STOPWORDS, " ")
     .replace(/[^a-z0-9\s&-]/gi, " ")
     .replace(/\s{2,}/g, " ")
     .trim();
@@ -129,6 +129,7 @@ function joinNonEmpty(...parts) {
   return parts.filter(Boolean).join(", ");
 }
 
+/* ------------------------------ MOCK ------------------------------ */
 function mockFromQuery(q) {
   const domain = wordsToDomain(q) || "example.com";
   const results = [
@@ -165,28 +166,30 @@ function mockFromQuery(q) {
     status: "completed",
     company_id: null,
     results,
-    summary: {
-      total_candidates: results.length,
-      kept: results.length,
-      pattern_used: `first.last@${domain}`,
-      verification_provider: "mock",
-      provider: "mock",
-      company_guess: { name: q, domain },
-      timings: {},
-    },
   };
 }
 
 /* ------------------------------ LLM company resolver ------------------------------ */
-async function resolveCompany(q, timings) {
+async function resolveCompanyRich(q, timings) {
   const t0 = now();
   const cleaned = cleanName(q);
   const acr = acronymOf(cleaned);
 
+  // If no key, return a guessed shell.
   if (!LLM_OK) {
     const domain = wordsToDomain(cleaned);
     timings.llm_ms = (timings.llm_ms || 0) + ms(t0);
-    return { name: cleaned, domain, synonyms: [cleaned, acr].filter(Boolean) };
+    return {
+      name: cleaned,
+      domain,
+      website_url: domain ? `https://www.${domain}` : null,
+      linkedin_url: null,
+      hq: null,
+      industry: null,
+      size: null,
+      synonyms: [cleaned, acr].filter(Boolean),
+      mode: "Guess",
+    };
   }
 
   try {
@@ -198,8 +201,12 @@ async function resolveCompany(q, timings) {
         temperature: 0,
         response_format: { type: "json_object" },
         messages: [
-          { role: "system", content: "Return JSON {name, domain, synonyms[]} for the company. Domain must be the primary website (e.g., kbr.com). Only JSON." },
-          { role: "user", content: cleaned }
+          {
+            role: "system",
+            content:
+              "Return JSON only with keys: name, domain, website_url, linkedin_url, hq, industry, size, synonyms[]. Domain must be primary (e.g., kbr.com).",
+          },
+          { role: "user", content: cleaned },
         ],
       }),
     });
@@ -208,9 +215,11 @@ async function resolveCompany(q, timings) {
       const txt = j?.choices?.[0]?.message?.content || "{}";
       const obj = JSON.parse(txt);
       obj.name ||= cleaned;
+      obj.domain ||= wordsToDomain(obj.name || cleaned);
+      obj.website_url ||= (obj.domain ? `https://www.${obj.domain}` : null);
       obj.synonyms = Array.isArray(obj.synonyms) ? obj.synonyms : [];
-      if (!obj.domain) obj.domain = wordsToDomain(obj.name || cleaned);
       if (acr) obj.synonyms.push(acr);
+      obj.mode = "LLM";
       timings.llm_ms = (timings.llm_ms || 0) + ms(t0);
       return obj;
     }
@@ -219,7 +228,33 @@ async function resolveCompany(q, timings) {
   }
   const domain = wordsToDomain(cleaned);
   timings.llm_ms = (timings.llm_ms || 0) + ms(t0);
-  return { name: cleaned, domain, synonyms: [cleaned, acr].filter(Boolean) };
+  return {
+    name: cleaned,
+    domain,
+    website_url: domain ? `https://www.${domain}` : null,
+    linkedin_url: null,
+    hq: null,
+    industry: null,
+    size: null,
+    synonyms: [cleaned, acr].filter(Boolean),
+    mode: "Guess",
+  };
+}
+
+function qualityScore({ domain, linkedin_url, uaeCount, patternConfidence, hq }) {
+  let s = 0;
+  if (domain) s += 0.2;
+  if (linkedin_url) s += 0.15;
+  if (uaeCount) s += Math.min(uaeCount, 10) / 10 * 0.4; // up to +0.4
+  if (patternConfidence) s += Math.min(Math.max(patternConfidence, 0), 1) * 0.2;
+  if (hq && /uae|united arab emirates|dubai|abu dhabi/i.test(hq)) s += 0.05;
+  s = Math.max(0, Math.min(1, s));
+  const reasons = [];
+  if (domain) reasons.push("has primary domain");
+  if (linkedin_url) reasons.push("LinkedIn page found");
+  if (uaeCount) reasons.push(`${uaeCount} UAE HR/admin/finance contacts`);
+  if (patternConfidence) reasons.push(`email pattern≈${Math.round(patternConfidence * 100)}%`);
+  return { score: s, explanation: reasons.join("; ") || "No signals available" };
 }
 
 /* ------------------------------ Status chip ------------------------------ */
@@ -233,17 +268,17 @@ router.get("/status", async (_req, res) => {
 router.get("/mock", async (req, res) => {
   const q = String(req.query.q || "").trim();
   if (!q) return res.status(400).json({ error: "q is required" });
-  return res.json({ ok: true, data: mockFromQuery(q) });
+  return res.json({ ok: true, data: { ...mockFromQuery(q), summary: { provider: HAS_APOLLO ? "mock_fallback" : "mock" } } });
 });
 
-/* ------------------------------ Free-text SEARCH (UAE filtered) ------------------------------ */
+/* ------------------------------ Free-text SEARCH (UAE filtered + SMTP on patterned) ------------------------------ */
 router.get("/search", async (req, res) => {
   const q = String(req.query.q || "").trim();
   if (!q) return res.status(400).json({ error: "q is required" });
 
   const timings = {};
   try {
-    const guess = await resolveCompany(q, timings);
+    const guess = await resolveCompanyRich(q, timings);
 
     let people = [];
     if (HAS_APOLLO) {
@@ -266,10 +301,25 @@ router.get("/search", async (req, res) => {
 
     if (!people.length) {
       const mock = mockFromQuery(q);
-      mock.summary.provider = HAS_APOLLO ? "mock_fallback" : "mock";
-      mock.summary.company_guess = guess;
-      mock.summary.timings = timings;
-      return res.json({ ok: true, data: mock });
+      const qs = qualityScore({
+        domain: guess.domain,
+        linkedin_url: guess.linkedin_url,
+        uaeCount: 0,
+        patternConfidence: 0,
+        hq: guess.hq,
+      });
+      return res.json({
+        ok: true,
+        data: {
+          ...mock,
+          summary: {
+            provider: HAS_APOLLO ? "mock_fallback" : "mock",
+            company_guess: guess,
+            timings,
+            quality: qs,
+          },
+        },
+      });
     }
 
     const domain =
@@ -300,13 +350,12 @@ router.get("/search", async (req, res) => {
         email_reason = "provider_placeholder";
       }
       if (!email && domain && first && last) {
-        let pat = applyPattern(first, last, "first.last", domain);
-        if (pat && typeof pat === "string" && !pat.includes("@")) pat = `${pat}@${domain}`;
-        if (pat) {
-          email = pat;
-          email_status = "patterned";
-          email_reason = "pattern_guess";
-        }
+        // always produce concrete patterned email (not "first.last")
+        let e = applyPattern(first, last, "first.last", domain);
+        if (e && typeof e === "string" && !/@/.test(e)) e = `${e}@${domain}`;
+        email = e;
+        email_status = "patterned";
+        email_reason = "pattern_guess";
       }
 
       const seniority = bucketSeniority(title || "");
@@ -334,7 +383,28 @@ router.get("/search", async (req, res) => {
       });
     }
 
+    // SMTP verify top patterned emails (quick pass)
+    const tSmtp = now();
+    let verified = 0;
+    for (const c of normalized) {
+      if (!c.email || c.email_status !== "patterned") continue;
+      const v = await verifyEmail(c.email);
+      c.email_status = v.status || c.email_status;
+      c.email_reason = v.reason || c.email_reason;
+      verified++;
+      if (verified >= 10) break; // cap to keep UI snappy
+    }
+    timings.smtp_ms = ms(tSmtp);
+
     normalized.sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
+
+    const qs = qualityScore({
+      domain,
+      linkedin_url: guess.linkedin_url,
+      uaeCount: normalized.length,
+      patternConfidence: 0.8, // heuristic for search-mode
+      hq: guess.hq,
+    });
 
     return res.json({
       ok: true,
@@ -346,21 +416,27 @@ router.get("/search", async (req, res) => {
           total_candidates: normalized.length,
           kept: normalized.length,
           provider: "live",
-          company_guess: guess,
+          company_guess: { ...guess, domain },
           timings,
+          quality: qs,
         },
       },
     });
   } catch (e) {
     log("search error", e);
+    const guess = await resolveCompanyRich(q, {});
     const mock = mockFromQuery(q);
-    mock.summary.provider = "error_fallback";
-    mock.summary.timings = timings;
-    return res.json({ ok: true, data: mock });
+    const qs = qualityScore({
+      domain: guess.domain, linkedin_url: guess.linkedin_url, uaeCount: 0, patternConfidence: 0, hq: guess.hq
+    });
+    return res.json({
+      ok: true,
+      data: { ...mock, summary: { provider: "error_fallback", company_guess: guess, timings, quality: qs } },
+    });
   }
 });
 
-/* ------------------------------ Company-selected ENRICH (UAE filtered) ------------------------------ */
+/* ------------------------------ Company-selected ENRICH (UAE filtered + SMTP verify) ------------------------------ */
 router.post("/", async (req, res) => {
   const { company_id, max_contacts = 3 } = req.body || {};
   if (!company_id) return res.status(400).json({ error: "company_id is required" });
@@ -445,7 +521,7 @@ router.post("/", async (req, res) => {
       candidates = candidates.map(c => {
         if (!c.email && c.first_name && c.last_name) {
           let e = applyPattern(c.first_name, c.last_name, pattern.pattern, company.domain);
-          if (e && typeof e === "string" && !e.includes("@")) e = `${e}@${company.domain}`;
+          if (e && typeof e === "string" && !/@/.test(e)) e = `${e}@${company.domain}`;
           if (e) {
             c.email = e;
             c.email_status = "patterned";
@@ -456,6 +532,7 @@ router.post("/", async (req, res) => {
       });
     }
 
+    // SMTP verify everyone we plan to keep
     for (const c of candidates) {
       if (!c.email) continue;
       const v = await verifyEmail(c.email);
@@ -512,6 +589,13 @@ router.post("/", async (req, res) => {
         primary_contact_id: saved[0]?.id || null,
         provider,
         timings,
+        quality: qualityScore({
+          domain: company.domain,
+          linkedin_url: null,
+          uaeCount: kept.length,
+          patternConfidence: pattern?.confidence || 0.8,
+          hq: null
+        }),
       }
     };
 
@@ -582,13 +666,11 @@ async function upsertLead(company_id, c) {
 }
 
 /* ------------------------------ Apollo helpers ------------------------------ */
-/** Very compact keyword string to avoid Apollo "Value too long" */
 function compactApolloKeywords() {
-  // Keep this ≤ ~120 chars
+  // Keep very short to avoid 422 “Value too long”
   return "HR OR Human Resources OR People OR Talent OR Recruiter OR Payroll OR Finance OR Accounting OR Admin";
 }
 
-/** Map Apollo person → normalized fields we use */
 function mapApollo(p) {
   return {
     name: [p.first_name, p.last_name].filter(Boolean).join(" ").trim() || p.name || "",
@@ -606,8 +688,6 @@ function mapApollo(p) {
     location: deriveLocation(p),
   };
 }
-
-/** Try to normalize a location string from various Apollo fields */
 function deriveLocation(p = {}) {
   const city = p.city || p.person_city || p.current_city;
   const region = p.state || p.region || p.person_region || p.current_region;
@@ -616,7 +696,6 @@ function deriveLocation(p = {}) {
   return raw || joinNonEmpty(city, region, country);
 }
 
-/** Simple POST with X-Api-Key header only */
 async function apolloPOST(endpoint, body) {
   try {
     const res = await fetch(endpoint, {
@@ -632,18 +711,16 @@ async function apolloPOST(endpoint, body) {
     return { ok: false, status: 0, json: null };
   }
 }
-
 async function apolloPeopleSearch({ body, timings }) {
   const endpoint = "https://api.apollo.io/v1/people/search";
   const t0 = now();
   const r = await apolloPOST(endpoint, body);
-  timings.provider_ms = (timings?.provider_ms || 0) + ms(t0);
+  if (timings) timings.provider_ms = (timings.provider_ms || 0) + ms(t0);
   if (!r.ok) return [];
   const j = r.json || {};
   const people = j.people || j.matches || j.results || [];
   return people.map(mapApollo);
 }
-
 async function apolloPeopleByName({ name, keywords, limit = 25, timings, locations = [] }) {
   const body = {
     q_organization_name: name,

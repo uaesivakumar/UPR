@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-19T13:38:50Z",
-  "generated_human": "Fri, 19 Sep 2025 13:38:50 GMT",
+  "generated": "2025-09-19T14:59:19Z",
+  "generated_human": "Fri, 19 Sep 2025 14:59:19 GMT",
   "branch": "main",
-  "commit": "2f23716",
+  "commit": "fedf40d",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -40,19 +40,18 @@
     },
     {
       "path": "dashboard/src/features/enrichment/EnrichmentView.jsx",
-      "size": 15278,
-      "mtime": "2025-09-19T13:28:07.125Z",
-      "sha256": "682556e8c3e55feccd0c6ded76f8ae73d908f53ed41472f87d58d1809c420214",
+      "size": 15871,
+      "mtime": "2025-09-19T14:58:16.542Z",
+      "sha256": "42be6e3539f9db82c761279c930563d7a2b6bc4c518f956e9a330a5b42598e0f",
       "imports": [
-        "import React, { useCallback, useEffect, useMemo, useState } from \"react\";",
-        "import { createPortal } from \"react-dom\";",
+        "import { useEffect, useMemo, useState } from \"react\";",
         "import { authFetch } from \"../../utils/auth\";"
       ],
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "// dashboard/src/features/enrichment/EnrichmentView.jsx\nimport React, { useCallback, useEffect, useMemo, useState } from \"react\";\nimport { createPortal } from \"react-dom\";\nimport { authFetch } from \"../../utils/auth\";\n\nexport default function EnrichmentView() {\n  const [text, setText] = useState(\"\");\n  const [err, setErr] = useState(\"\");\n  const [loading, setLoading] = useState(false);\n\n  const [status, setStatus] = useState({ db_ok: null, llm_ok: null, data_source: null });\n  const [company, setCompany] = useState(null);\n  const [guess, setGuess] = useState(null);\n  const [result, setResult] = useState(null);\n\n  const [companies, setCompanies] = useState([]);\n  const [saveCompanyId, setSaveCompanyId] = useState(\"\");\n  const [checked, setChecked] = useState({});\n  const [showRaw, setShowRaw] = useState(false);\n\n  /* ---------- status chips ---------- */\n  const loadStatus = useCallback(async () => {\n    try {\n      const r = await authFetch(\"/api/enrich/status\");\n      const j = await r.json();\n      if (j?.data) setStatus(j.data);\n    } catch {}\n  }, []);\n  useEffect(() => { loadStatus(); const t = setInterval(loadStatus, 20000); return () => clearInterval(t); }, [loadStatus]);\n\n  /* ---------- listen selection from Companies page ---------- */\n  useEffect(() => {\n    const h = (e) => {\n      const c = e?.detail || null;\n      setCompany(c);\n      if (c?.name) setText(c.name);\n      setSaveCompanyId(c?.id || \"\");\n    };\n    window.addEventListener(\"upr:companySidebar\", h);\n    return () => window.removeEventListener(\"upr:companySidebar\", h);",
-      "tail": "      <div className=\"pt-2 flex gap-2\">\n        {guess && <button className=\"rounded border px-2 py-1\" onClick={onCreateGuess}>Create & use</button>}\n        <button className=\"rounded border px-2 py-1\" onClick={onClear}>Clear</button>\n      </div>\n    </div>,\n    container\n  );\n}\n\n/* ---------------- small UI bits ---------------- */\nfunction Chip({ ok, label }) {\n  return (\n    <span className=\"inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm\">\n      <span className={`h-2 w-2 rounded-full ${ok ? \"bg-green-500\" : \"bg-yellow-500\"}`} />\n      {label}\n    </span>\n  );\n}\nfunction TH({ className=\"\", children }) {\n  return <th className={`px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 ${className}`}>{children}</th>;\n}\nfunction TD({ className=\"\", children }) {\n  return <td className={`px-3 py-2 ${className}`}>{children}</td>;\n}\n"
+      "head": "import { useEffect, useMemo, useState } from \"react\";\nimport { authFetch } from \"../../utils/auth\";\n\nexport default function EnrichmentView() {\n  const [query, setQuery] = useState(\"\");\n  const [loading, setLoading] = useState(false);\n  const [err, setErr] = useState(\"\");\n\n  const [company, setCompany] = useState(null); // left sidebar company (LLM guess or selected)\n  const [quality, setQuality] = useState(null);\n  const [timings, setTimings] = useState({}); // { llm_ms, provider_ms, smtp_ms }\n\n  const [rows, setRows] = useState([]);\n  const [selected, setSelected] = useState({}); // id->bool\n  const [savingCompanyId, setSavingCompanyId] = useState(\"\"); // when we need to save into an existing company\n  const [companiesForSelect, setCompaniesForSelect] = useState([]);\n\n  // status lights\n  const [status, setStatus] = useState({ data: \"live\", db_ok: true, llm_ok: true });\n\n  // Listen for selection broadcasted from Companies page (if user clicks a row there)\n  useEffect(() => {\n    const handler = (e) => {\n      const c = e.detail || null;\n      if (c) {\n        setCompany({\n          name: c.name,\n          domain: c.domain || (c.website_url ? tryUrlToDomain(c.website_url) : null),\n          website_url: c.website_url || null,\n          linkedin_url: c.linkedin_url || null,\n          hq: c.hq || null,\n          industry: c.industry || null,\n          size: c.size || null,\n          mode: \"Selected\",\n        });\n        setSavingCompanyId(c.id);\n      }\n    };\n    window.addEventListener(\"upr:companySidebar\", handler);\n    return () => window.removeEventListener(\"upr:companySidebar\", handler);",
+      "tail": "function Th({ children }) {\n  return <th className=\"px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500\">{children}</th>;\n}\nfunction Td({ children, className = \"\" }) {\n  return <td className={`px-3 py-3 align-top ${className}`}>{children}</td>;\n}\nfunction Badge({ children }) {\n  return <span className=\"inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700\">{children}</span>;\n}\nfunction Field({ label, children }) {\n  return (\n    <div className=\"flex items-start justify-between\">\n      <div className=\"text-xs text-gray-500 w-24\">{label}</div>\n      <div className=\"text-gray-800 max-w-[12rem] text-right\">{children}</div>\n    </div>\n  );\n}\n\n/* ---------------- utils ---------------- */\nfunction crop(s, n) { s = String(s || \"\"); return s.length > n ? s.slice(0, n - 1) + \"…\" : s; }\nfunction tryUrlToDomain(u) {\n  try { return new URL(u.startsWith(\"http\") ? u : `https://${u}`).hostname.replace(/^www\\./, \"\"); } catch { return null; }\n}\nfunction fmtMs(v) { if (!v && v !== 0) return \"\"; return `${v}ms`; }\n"
     },
     {
       "path": "dashboard/src/features/enrichment/LLMStatus.jsx",
@@ -258,9 +257,9 @@
     },
     {
       "path": "routes/enrich.js",
-      "size": 22734,
-      "mtime": "2025-09-19T13:38:03.425Z",
-      "sha256": "cc5c254c32048b2072926218acafbbefcb83b14f3faf6f095439df8caa5c1401",
+      "size": 25277,
+      "mtime": "2025-09-19T14:54:32.242Z",
+      "sha256": "cb71f3ff91f19408e335fa71187e939e904815036d6ea768f77af3dbe0c0608c",
       "imports": [
         "import express from \"express\";",
         "import { nanoid } from \"nanoid\";",
@@ -276,7 +275,7 @@
       "appUses": [],
       "endpoints": [],
       "head": "// routes/enrich.js\nimport express from \"express\";\nimport { nanoid } from \"nanoid\";\nimport { pool } from \"../utils/db.js\";\n\nimport {\n  bucketRole,\n  bucketSeniority,\n  isAgencyRecruiter,\n  scoreCandidate,\n} from \"../utils/patternHelpers.js\";\nimport {\n  inferPatternFromSamples,\n  applyPattern,\n  loadPatternFromCache,\n  savePatternToCache,\n} from \"../utils/emailPatterns.js\";\nimport { verifyEmail } from \"../utils/emailVerify.js\";\n\nconst router = express.Router();\n\n/* ------------------------------ ENV ------------------------------ */\nconst APOLLO_API_KEY =\n  process.env.APOLLO_API_KEY ||\n  process.env.APOLLOIO_API_KEY ||\n  process.env.APOLLO_TOKEN ||\n  \"\";\nconst OPENAI_KEY = process.env.OPENAI_API_KEY || \"\";\n\nconst HAS_APOLLO = !!APOLLO_API_KEY;\nconst LLM_OK = !!OPENAI_KEY;\n\n/* ------------------------------ Role & geo filters ------------------------------ */\nconst HR_WORDS = [\n  \"HR\",\"Human Resources\",\"People\",\"Talent\",\"Recruiting\",\"People Operations\",\n  \"Head of People\",\"HR Manager\",\"HR Director\",\"Compensation\",\"Benefits\",\"Payroll\",\n];\nconst ADMIN_WORDS = [\"Admin\",\"Administration\",\"Office Manager\",\"Executive Assistant\"];\nconst FIN_WORDS = [\"Finance\",\"Financial Controller\",\"CFO\",\"Accounts\",\"Accounting\",\"Procurement\"];\nconst ALLOWED_BUCKETS = new Set([\"hr\",\"admin\",\"finance\"]);",
-      "tail": "  const people = j.people || j.matches || j.results || [];\n  return people.map(mapApollo);\n}\n\nasync function apolloPeopleByName({ name, keywords, limit = 25, timings, locations = [] }) {\n  const body = {\n    q_organization_name: name,\n    q_keywords: keywords,\n    page: 1,\n    per_page: Math.min(Math.max(limit, 1), 25),\n    person_locations: locations.length ? locations : [\"United Arab Emirates\"],\n  };\n  return apolloPeopleSearch({ body, timings });\n}\nasync function apolloPeopleByDomain({ domain, keywords, limit = 25, timings, locations = [] }) {\n  const body = {\n    q_organization_domains: [domain],\n    q_keywords: keywords,\n    page: 1,\n    per_page: Math.min(Math.max(limit, 1), 25),\n    person_locations: locations.length ? locations : [\"United Arab Emirates\"],\n  };\n  return apolloPeopleSearch({ body, timings });\n}\n"
+      "tail": "  const j = r.json || {};\n  const people = j.people || j.matches || j.results || [];\n  return people.map(mapApollo);\n}\nasync function apolloPeopleByName({ name, keywords, limit = 25, timings, locations = [] }) {\n  const body = {\n    q_organization_name: name,\n    q_keywords: keywords,\n    page: 1,\n    per_page: Math.min(Math.max(limit, 1), 25),\n    person_locations: locations.length ? locations : [\"United Arab Emirates\"],\n  };\n  return apolloPeopleSearch({ body, timings });\n}\nasync function apolloPeopleByDomain({ domain, keywords, limit = 25, timings, locations = [] }) {\n  const body = {\n    q_organization_domains: [domain],\n    q_keywords: keywords,\n    page: 1,\n    per_page: Math.min(Math.max(limit, 1), 25),\n    person_locations: locations.length ? locations : [\"United Arab Emirates\"],\n  };\n  return apolloPeopleSearch({ body, timings });\n}\n"
     },
     {
       "path": "routes/hrLeads.js",
