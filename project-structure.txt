@@ -1,4 +1,4 @@
-# Generated: 2025-09-19T15:44:30Z
+# Generated: 2025-09-19T16:05:10Z
 .DS_Store
 .dockerignore
 .githooks/pre-commit
@@ -50,6 +50,7 @@ package.json
 package.json.bak
 project-structure.txt
 routes/companies.js
+routes/diag.js
 routes/email.js
 routes/enrich.js
 routes/enrich/enrichCompany.js

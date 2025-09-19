@@ -1,8 +1,8 @@
 # UPR — Project Checkpoint (auto)
 
-**Generated:** 2025-09-19T15:44:30Z  
+**Generated:** 2025-09-19T16:05:11Z  
 **Branch:** main  
-**Commit:** c2df452
+**Commit:** f1461a5
 **Package:** upr-dashboard
 
 ---
@@ -17,7 +17,7 @@
 <details><summary>Click to expand</summary>
 
 ```
-# Generated: 2025-09-19T15:44:30Z
+# Generated: 2025-09-19T16:05:10Z
 .DS_Store
 .dockerignore
 .githooks/pre-commit
@@ -69,6 +69,7 @@ package.json
 package.json.bak
 project-structure.txt
 routes/companies.js
+routes/diag.js
 routes/email.js
 routes/enrich.js
 routes/enrich/enrichCompany.js
@@ -141,6 +142,7 @@ dashboard/src/pages/LeadsPage.jsx
 dashboard/src/pages/Login.jsx
 dashboard/src/pages/MessagesPage.jsx
 routes/companies.js
+routes/diag.js
 routes/email.js
 routes/enrich.js
 routes/enrich/enrichCompany.js

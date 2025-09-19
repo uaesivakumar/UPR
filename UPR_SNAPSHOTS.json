@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-19T15:44:30Z",
-  "generated_human": "Fri, 19 Sep 2025 15:44:30 GMT",
+  "generated": "2025-09-19T16:05:11Z",
+  "generated_human": "Fri, 19 Sep 2025 16:05:11 GMT",
   "branch": "main",
-  "commit": "c2df452",
+  "commit": "f1461a5",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -234,6 +234,22 @@
       "tail": "    const { id } = req.params;\n    const c = await pool.query(\"SELECT * FROM targeted_companies WHERE id=$1\", [id]);\n    if (!c.rowCount) return bad(res, \"not found\", 404);\n\n    const n = await pool.query(\"SELECT tags FROM news_items WHERE company_id=$1\", [id]);\n    const qscore = computeQScore(c.rows[0], n.rows);\n\n    const u = await pool.query(\n      `UPDATE targeted_companies\n         SET qscore=$1, updated_at=now()\n       WHERE id=$2\n       RETURNING id, name, type, locations, website_url, linkedin_url,\n                 status, status_remarks, about_blurb, qscore,\n                 created_at AS created, updated_at`,\n      [qscore, id]\n    );\n    return ok(res, u.rows[0]);\n  } catch (e) {\n    console.error(e);\n    return bad(res, \"server error\", 500);\n  }\n});\n\nexport default router;\n"
     },
     {
+      "path": "routes/diag.js",
+      "size": 1603,
+      "mtime": "2025-09-19T16:05:10.752Z",
+      "sha256": "3f9c2995d73215852eb97ff798454c79ac3ab8a86f54efa6652a7716de90c3ac",
+      "imports": [
+        "import express from \"express\";",
+        "import os from \"os\";",
+        "import { pool } from \"../utils/db.js\";"
+      ],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "import express from \"express\";\nimport os from \"os\";\nimport { pool } from \"../utils/db.js\";\n\nconst router = express.Router();\n\nfunction listRoutes(app) {\n  try {\n    const out = [];\n    for (const layer of (app?._router?.stack || [])) {\n      if (layer?.route) {\n        const methods = Object.keys(layer.route.methods || {})\n          .filter(Boolean).map(m => m.toUpperCase()).join(\",\");\n        out.push(`${methods} ${layer.route.path}`);\n      } else if (layer?.name === \"router\" && layer?.handle?.stack) {\n        for (const r of layer.handle.stack) {\n          if (r?.route) {\n            const methods = Object.keys(r.route.methods || {})\n              .filter(Boolean).map(m => m.toUpperCase()).join(\",\");\n            out.push(`${methods} ${r.route.path}`);\n          }\n        }\n      }\n    }\n    return out;\n  } catch {\n    return [];\n  }\n}\n\nrouter.get(\"/\", async (req, res) => {\n  // DB health\n  let db_ok = false;\n  let db_error = null;\n  try {\n    await pool.query(\"SELECT 1\");\n    db_ok = true;\n  } catch (e) {\n    db_error = String(e?.message || e);\n  }",
+      "tail": "    \"DATABASE_URL\",\n    \"UPR_ADMIN_USER\",\n    \"UPR_ADMIN_PASS\",\n    \"JWT_SECRET\",\n    \"APOLLO_API_KEY\",\n    \"OPENAI_API_KEY\",\n    \"NEVERBOUNCE_API_KEY\",\n    \"ZEROBOUNCE_API_KEY\",\n  ];\n  const env = {};\n  for (const k of envKeys) env[k] = !!process.env[k];\n\n  res.json({\n    ok: true,\n    db_ok,\n    db_error,\n    node: process.version,\n    platform: `${os.platform()} ${os.release()}`,\n    routesMounted: listRoutes(req.app),\n    env,\n  });\n});\n\nexport default router;\n"
+    },
+    {
       "path": "routes/email.js",
       "size": 5237,
       "mtime": "2025-09-14T03:28:29.613Z",
@@ -456,9 +472,9 @@
     },
     {
       "path": "server.js",
-      "size": 5902,
-      "mtime": "2025-09-19T15:44:30.560Z",
-      "sha256": "6442b685dc69b4ca13376344323ec650f1a27d8be8f9e54d027ae256d5cfa615",
+      "size": 5986,
+      "mtime": "2025-09-19T16:05:10.761Z",
+      "sha256": "daaaced3657b81ad060a702a2d5d165efee67679ff055064735051db84a0b2d1",
       "imports": [
         "import express from \"express\";",
         "import path from \"path\";",
@@ -470,6 +486,7 @@
         "import hrLeadsRouter from \"./routes/hrLeads.js\";",
         "import newsRouter from \"./routes/news.js\";",
         "import enrichRouter from \"./routes/enrich.js\";",
+        "import diagRouter from \"./routes/diag.js\";",
         "import { signJwt } from \"./utils/jwt.js\";",
         "import os from \"os\";"
       ],
@@ -486,13 +503,14 @@
         "app.use(\"/api/companies\", companiesRouter);",
         "app.use(\"/api/hr-leads\", hrLeadsRouter);",
         "app.use(\"/api/news\", newsRouter);",
-        "app.use(\"/api/enrich\", enrichRouter);"
+        "app.use(\"/api/enrich\", enrichRouter);",
+        "app.use(\"/api/__diag_full\", diagRouter);"
       ],
       "endpoints": [
         "app.get(\"/health\", (_req, res) => res.json({ ok: true }));",
         "app.get(\"/api/auth/verify\", adminOnly, (_req, res) => res.json({ ok: true }));"
       ],
-      "head": "import express from \"express\";\nimport path from \"path\";\nimport fs from \"fs\";\nimport { fileURLToPath } from \"url\";\n\nimport { pool } from \"./utils/db.js\";\nimport { adminOnly } from \"./utils/adminOnly.js\";\n\nimport companiesRouter from \"./routes/companies.js\";\nimport hrLeadsRouter from \"./routes/hrLeads.js\";\nimport newsRouter from \"./routes/news.js\";\nimport enrichRouter from \"./routes/enrich.js\"; // <-- refactored aggregator\nimport { signJwt } from \"./utils/jwt.js\"; // username/password login\n\nconst __filename = fileURLToPath(import.meta.url);\nconst __dirname = path.dirname(__filename);\n\nconst app = express();\nconst PORT = process.env.PORT || 10000;\n\n// ---------- Middleware ----------\napp.use(express.json({ limit: \"2mb\" }));\napp.use(express.urlencoded({ extended: true }));\n\n// ---------- Health / Diagnostics ----------\napp.get(\"/health\", (_req, res) => res.json({ ok: true }));\napp.get(\"/__diag\", async (_req, res) => {\n  let db_ok = false;\n  try { await pool.query(\"SELECT 1\"); db_ok = true; } catch {}\n  const env = [\n    \"DATABASE_URL\",\"NEVERBOUNCE_API_KEY\",\"ZEROBOUNCE_API_KEY\",\n    \"ADMIN_USERNAME\",\"ADMIN_PASSWORD\",\"JWT_SECRET\",\n    \"OPENAI_API_KEY\",\"APOLLO_API_KEY\",\"APOLLOIO_API_KEY\",\"APOLLO_TOKEN\"\n  ].reduce((o,k)=> (o[k] = !!process.env[k], o), {});\n  const routesMounted =\n    (app._router?.stack || [])\n      .filter(l => l?.route)\n      .map(l => (Object.keys(l.route.methods)[0] || \"GET\") + \" \" + l.route.path);\n  res.json({ ok: true, db_ok, env, routesMounted });\n});",
+      "head": "import express from \"express\";\nimport path from \"path\";\nimport fs from \"fs\";\nimport { fileURLToPath } from \"url\";\n\nimport { pool } from \"./utils/db.js\";\nimport { adminOnly } from \"./utils/adminOnly.js\";\n\nimport companiesRouter from \"./routes/companies.js\";\nimport hrLeadsRouter from \"./routes/hrLeads.js\";\nimport newsRouter from \"./routes/news.js\";\nimport enrichRouter from \"./routes/enrich.js\"; // <-- refactored aggregator\nimport diagRouter from \"./routes/diag.js\";\nimport { signJwt } from \"./utils/jwt.js\"; // username/password login\n\nconst __filename = fileURLToPath(import.meta.url);\nconst __dirname = path.dirname(__filename);\n\nconst app = express();\nconst PORT = process.env.PORT || 10000;\n\n// ---------- Middleware ----------\napp.use(express.json({ limit: \"2mb\" }));\napp.use(express.urlencoded({ extended: true }));\n\n// ---------- Health / Diagnostics ----------\napp.get(\"/health\", (_req, res) => res.json({ ok: true }));\napp.get(\"/__diag\", async (_req, res) => {\n  let db_ok = false;\n  try { await pool.query(\"SELECT 1\"); db_ok = true; } catch {}\n  const env = [\n    \"DATABASE_URL\",\"NEVERBOUNCE_API_KEY\",\"ZEROBOUNCE_API_KEY\",\n    \"ADMIN_USERNAME\",\"ADMIN_PASSWORD\",\"JWT_SECRET\",\n    \"OPENAI_API_KEY\",\"APOLLO_API_KEY\",\"APOLLOIO_API_KEY\",\"APOLLO_TOKEN\"\n  ].reduce((o,k)=> (o[k] = !!process.env[k], o), {});\n  const routesMounted =\n    (app._router?.stack || [])\n      .filter(l => l?.route)\n      .map(l => (Object.keys(l.route.methods)[0] || \"GET\") + \" \" + l.route.path);\n  res.json({ ok: true, db_ok, env, routesMounted });",
       "tail": "    \"UPR_ADMIN_USER\",\n    \"UPR_ADMIN_PASS\",\n    \"JWT_SECRET\",\n    \"APOLLO_API_KEY\",\n    \"OPENAI_API_KEY\",\n    \"NEVERBOUNCE_API_KEY\",\n    \"ZEROBOUNCE_API_KEY\",\n  ];\n  const env = {};\n  for (const k of envKeys) env[k] = !!process.env[k];\n\n  res.json({\n    ok: true,\n    db_ok,\n    db_error,\n    node: process.version,\n    platform: `${os.platform()} ${os.release()}`,\n    routesMounted: listRoutes(app),\n    env,\n  });\n});\napp.listen(PORT, () => {\n  console.log(`UPR backend listening on ${PORT}`);\n});\n"
     },
     {

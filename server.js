@@ -10,6 +10,7 @@ import companiesRouter from "./routes/companies.js";
 import hrLeadsRouter from "./routes/hrLeads.js";
 import newsRouter from "./routes/news.js";
 import enrichRouter from "./routes/enrich.js"; // <-- refactored aggregator
+import diagRouter from "./routes/diag.js";
 import { signJwt } from "./utils/jwt.js"; // username/password login
 
 const __filename = fileURLToPath(import.meta.url);
@@ -97,6 +98,7 @@ app.use("/api/companies", companiesRouter);
 app.use("/api/hr-leads", hrLeadsRouter);
 app.use("/api/news", newsRouter);
 app.use("/api/enrich", enrichRouter);
+app.use("/api/__diag_full", diagRouter);
 
 // ---------- Static (dashboard SPA) ----------
 const dashboardDist = path.join(__dirname, "dashboard", "dist");
