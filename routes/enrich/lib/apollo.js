@@ -1,205 +1,92 @@
 /**
- * Apollo provider wrapper
+ * Apollo provider wrapper (uses X-Api-Key header).
  * Exports:
- *   - compactApolloKeywords(text, limit?)
- *   - apolloPeopleByDomain(domain | {domain, ...opts})
- *   - apolloPeopleByName(name | {name, ...opts})
- *   - searchPeopleByCompany({ name, domain, linkedin_url, ...opts })
- *   - deriveLocation(personLike)
- *
- * Requires: APOLLO_API_KEY
+ *  - searchPeopleByCompany({ name?, domain?, limit?, roleFilters? })
+ *  - apolloPeopleByDomain(domain, { limit?, roleFilters? })
+ *  - compactApolloKeywords(q)
+ *  - deriveLocation(person)
  */
 
-const API = "https://api.apollo.io/v1/people/search";
+const APOLLO_BASE = "https://api.apollo.io/v1";
 
-/* ---------------- helpers ---------------- */
-
-function clean(s = "", n = 80) {
-  return String(s).trim().replace(/\s+/g, " ").slice(0, n);
-}
-function pickRoleBucket(title = "") {
-  const t = String(title).toLowerCase();
-  if (/(hr|people|talent|recruit|human resources)/.test(t)) return "hr";
-  if (/(admin|administrator|office|operations)/.test(t)) return "admin";
-  if (/(finance|account|payroll|treasury)/.test(t)) return "finance";
-  return "other";
-}
-function seniorityFromTitle(title = "") {
-  const t = String(title).toLowerCase();
-  if (/(chief|cxo|cfo|coo|chro|chief human|chief people|chief talent)/.test(t)) return "cxo";
-  if (/(vp|vice president)/.test(t)) return "vp";
-  if (/(director)/.test(t)) return "director";
-  if (/(head)/.test(t)) return "head";
-  if (/(manager|lead)/.test(t)) return "manager";
-  return "staff";
-}
-function mkLocation(p = {}) {
-  const parts = [p.city, p.state, p.country].filter(Boolean);
-  return parts.join(", ");
-}
-/** Public helper expected by enrichCompany.js */
-export function deriveLocation(p = {}) {
-  return mkLocation(p) || p.location || p.city || p.state || p.country || "";
+function apolloHeaders() {
+  const key = process.env.APOLLO_API_KEY || "";
+  return {
+    "Content-Type": "application/json",
+    "Accept": "application/json",
+    "X-Api-Key": key, // IMPORTANT: header (not query string)
+  };
 }
 
-/** Deduplicate + keep salient tokens for org names */
-export function compactApolloKeywords(text = "", limit = 6) {
-  const stop = new Set([
-    "the","and","of","for","inc","llc","ltd","company","co","group","international","global","solutions","services"
-  ]);
-  const toks = String(text).toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
-  const uniq = [];
-  for (const t of toks) {
-    if (stop.has(t) || t.length < 3) continue;
-    if (!uniq.includes(t)) uniq.push(t);
+function roleFiltersToQuery(roleFilters = ["hr","admin","finance"]) {
+  // Titles we care about (high recall but focused)
+  const titles = [
+    "hr", "human resources", "talent", "recruit", "people", "people operations", "people & culture",
+    "admin", "office manager", "operations",
+    "finance", "account", "payroll"
+  ];
+  // Apollo uses 'person_titles' OR 'q_keywords' depending on endpoint; we’ll use q_keywords to be flexible
+  return titles.join(" OR ");
+}
+
+async function apolloPOST(path, body) {
+  if (!process.env.APOLLO_API_KEY) {
+    return { ok: true, people: [], provider: "mock", reason: "no_api_key" };
   }
-  return uniq.slice(0, limit);
-}
-
-/* ---------------- core HTTP ---------------- */
-
-async function callApollo(body) {
-  const key = process.env.APOLLO_API_KEY;
-  if (!key) {
-    console.warn("apollo: missing APOLLO_API_KEY");
-    return { people: [] };
-  }
-
-  const resp = await fetch(API, {
+  const resp = await fetch(`${APOLLO_BASE}${path}`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Api-Key": key,               // IMPORTANT: Apollo requires X-Api-Key header
-    },
-    body: JSON.stringify(body),
+    headers: apolloHeaders(),
+    body: JSON.stringify(body || {}),
   });
-
-  const status = resp.status;
   if (!resp.ok) {
-    let payload = null;
-    try { payload = await resp.json(); } catch {}
-    console.error("apollo non-200", status, payload || await resp.text());
-    return { people: [] };
+    let err;
+    try { err = await resp.json(); } catch { err = { error: await resp.text() }; }
+    console.error("apollo non-200", resp.status, err);
+    return { ok: false, error: err?.error || `apollo_${resp.status}` };
   }
-
-  try { return await resp.json(); } catch { return { people: [] }; }
+  return await resp.json();
 }
 
-function normalizeResults(arr = []) {
-  const list = Array.isArray(arr) ? arr : [];
-  return list.map((p) => {
-    const fullName = p.name || [p.first_name, p.last_name].filter(Boolean).join(" ");
-    const title = p.title || p.label || p.headline || "";
-    const email = p.email || p.primary_email || p.personal_emails?.[0] || p.work_email || null;
-    const email_status = p.email_status || (email ? "provider" : "unknown");
-    const location = deriveLocation(p);
-    const confidence = typeof p.confidence === "number" ? p.confidence : (email ? 0.9 : 0.85);
+export async function searchPeopleByCompany({ name, domain, limit = 10, roleFilters } = {}) {
+  const per_page = Math.min(Math.max(Number(limit) || 10, 1), 25);
+  const q_keywords = roleFiltersToQuery(roleFilters);
 
-    return {
-      name: fullName,
-      designation: title,
-      linkedin_url: p.linkedin_url || p.linkedin || null,
-      email,
-      email_status,
-      email_reason: email ? "provider" : "no_email",
-      role_bucket: pickRoleBucket(title),
-      seniority: seniorityFromTitle(title),
-      source: "live",
-      confidence,
-      location,
-      pattern_hint: p.email_pattern || p.pattern || null,
-    };
-  }).filter(r => ["hr","admin","finance"].includes((r.role_bucket||"").toLowerCase()));
+  const body = {
+    q_keywords,
+    person_locations: ["United Arab Emirates"],
+    person_seniority_levels: ["manager","director","vp","cxo","head","senior","staff"],
+    organization_domains: domain ? [domain] : undefined,
+    organization_names: !domain && name ? [name] : undefined,
+    page: 1,
+    per_page,
+  };
+
+  const data = await apolloPOST("/people/search", body);
+  if (!data || !data.people) return [];
+  return data.people;
 }
 
-/* ---------------- outward API ---------------- */
-
-/**
- * apolloPeopleByDomain(domainOrOpts)
- * domainOrOpts: string | { domain, page?, per_page?, locations?, departments?, seniorities? }
- */
-export async function apolloPeopleByDomain(domainOrOpts) {
-  const opts = typeof domainOrOpts === "string" ? { domain: domainOrOpts } : (domainOrOpts || {});
-  const {
-    domain,
-    page = 1,
-    per_page = 25,
-    locations = ["United Arab Emirates"],
-    departments = ["Human Resources", "Administrative", "Accounting", "Finance"],
-    seniorities = ["manager","head","director","vp","cxo","lead","owner","partner","principal","staff"],
-  } = opts;
-
+export async function apolloPeopleByDomain(domain, { limit = 10, roleFilters } = {}) {
   if (!domain) return [];
-
-  const body = {
-    page,
-    per_page,
-    person_locations: locations,
-    person_departments: departments,
-    person_seniorities: seniorities,
-    organization_domains: [String(domain).toLowerCase()],
-  };
-
-  const data = await callApollo(body);
-  const people = Array.isArray(data.people) ? data.people
-                : Array.isArray(data.contacts) ? data.contacts
-                : [];
-  return normalizeResults(people);
+  const people = await searchPeopleByCompany({ domain, limit, roleFilters });
+  return people;
 }
 
-/**
- * apolloPeopleByName(nameOrOpts)
- */
-export async function apolloPeopleByName(nameOrOpts) {
-  const opts = typeof nameOrOpts === "string" ? { name: nameOrOpts } : (nameOrOpts || {});
-  const {
-    name,
-    page = 1,
-    per_page = 25,
-    locations = ["United Arab Emirates"],
-    departments = ["Human Resources", "Administrative", "Accounting", "Finance"],
-    seniorities = ["manager","head","director","vp","cxo","lead","owner","partner","principal","staff"],
-  } = opts;
-
-  if (!name) return [];
-
-  const body = {
-    page,
-    per_page,
-    person_locations: locations,
-    person_departments: departments,
-    person_seniorities: seniorities,
-    q_organization_name: clean(name, 50),
-  };
-
-  const data = await callApollo(body);
-  const people = Array.isArray(data.people) ? data.people
-                : Array.isArray(data.contacts) ? data.contacts
-                : [];
-  return normalizeResults(people);
+export function compactApolloKeywords(q = "") {
+  return String(q).replace(/[^a-z0-9 ]/gi, " ").replace(/\s+/g, " ").trim();
 }
 
-/**
- * searchPeopleByCompany — convenience chooser used by search.js
- */
-export async function searchPeopleByCompany({ name, domain, linkedin_url } = {}) {
-  if (domain) {
-    return apolloPeopleByDomain({ domain });
-  }
-  if (name) {
-    return apolloPeopleByName({ name });
-  }
-  // last resort: try compacted keywords from linkedin_url/company name mash
-  const kw = clean((linkedin_url || name || ""), 80);
-  const tokens = compactApolloKeywords(kw, 4).join(" ");
-  if (tokens) return apolloPeopleByName(tokens);
-  return [];
+export function deriveLocation(p = {}) {
+  return (
+    p?.location ||
+    [p?.city, p?.state, p?.country].filter(Boolean).join(", ") ||
+    ""
+  );
 }
 
 export default {
-  compactApolloKeywords,
-  apolloPeopleByDomain,
-  apolloPeopleByName,
   searchPeopleByCompany,
+  apolloPeopleByDomain,
+  compactApolloKeywords,
   deriveLocation,
 };

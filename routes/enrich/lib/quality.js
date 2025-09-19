@@ -1,69 +1,68 @@
 /**
- * Quality heuristics for companies & candidates
- * Exports:
- *   - roleBucket(title)
- *   - bucketSeniority(title)
- *   - scoreCandidate(c)
- *   - qualityScore(summaryLike)       // company-level
- *   - scoreQuality(summaryLike)       // alias for back-compat
+ * Quality scoring utilities
+ *  - roleBucket(title)
+ *  - bucketSeniority(title)
+ *  - scoreCandidate(c)
+ *  - qualityScore(companyGuess, candidates)
+ *  - scoreQuality(...)  // alias kept for older imports
  */
 
+const HR_RX = /(human\s*resources|hr|talent|recruit(ing|er)?|people ops?|people\s*(and)?\s*culture)/i;
+const ADMIN_RX = /\b(admin(istration)?|office\s*manager|operations?|ops)\b/i;
+const FIN_RX = /\b(finance|account(s|ing)?|payroll|fp&a)\b/i;
+
 export function roleBucket(title = "") {
-  const t = String(title).toLowerCase();
-  if (/(hr|people|talent|recruit|human resources)/.test(t)) return "hr";
-  if (/(admin|administrator|office|operations)/.test(t)) return "admin";
-  if (/(finance|account|payroll|treasury)/.test(t)) return "finance";
+  if (HR_RX.test(title)) return "hr";
+  if (ADMIN_RX.test(title)) return "admin";
+  if (FIN_RX.test(title)) return "finance";
   return "other";
 }
 
 export function bucketSeniority(title = "") {
   const t = String(title).toLowerCase();
-  if (/(chief|cxo|cfo|coo|chro|chief human|chief people|chief talent)/.test(t)) return "cxo";
-  if (/(vp|vice president)/.test(t)) return "vp";
-  if (/(director)/.test(t)) return "director";
-  if (/(head)/.test(t)) return "head";
-  if (/(manager|lead)/.test(t)) return "manager";
+  if (/chief|cxo|cfo|coo|chro|vp|vice president|director|head/.test(t)) return "head";
+  if (/lead|manager|supervisor/.test(t)) return "manager";
+  if (/sr\.?|senior/.test(t)) return "senior";
+  if (/intern|junior|assistant/.test(t)) return "junior";
   return "staff";
 }
 
 export function scoreCandidate(c = {}) {
   let s = 0.5;
+  const bucket = c.role_bucket || roleBucket(c.designation || c.title || "");
+  const senior = c.seniority || bucketSeniority(c.designation || c.title || "");
 
-  const bucket = c.role_bucket || roleBucket(c.designation || c.title);
-  if (["hr","admin","finance"].includes(bucket)) s += 0.15;
-  const senior = c.seniority || bucketSeniority(c.designation || c.title);
-  if (["manager","head","director","vp","cxo"].includes(senior)) s += 0.1;
+  if (bucket === "hr") s += 0.2;
+  if (bucket === "admin" || bucket === "finance") s += 0.1;
+  if (c.emirate && c.emirate !== "United Arab Emirates") s += 0.1; // emirate-level match
+  if (senior === "head" || senior === "manager") s += 0.05;
 
-  if (typeof c.confidence === "number") {
-    s += Math.max(-0.1, Math.min(0.2, c.confidence - 0.85));
-  }
+  if (c.email_status === "valid") s += 0.1;
+  if (c.email_status === "accept_all") s += 0.02;
 
-  if (c.emirate || /united arab emirates|uae/i.test(c.location || "")) s += 0.05;
-
-  const emailStatus = String(c.email_status || "").toLowerCase();
-  if (emailStatus === "valid" || emailStatus === "provider") s += 0.1;
-  if (emailStatus === "accept_all") s += 0.03;
-
-  return Math.max(0, Math.min(1, s));
+  s = Math.max(0, Math.min(0.98, s));
+  return Number(s.toFixed(2));
 }
 
-/** Company-level scoring */
-export function qualityScore(summary = {}) {
+export function qualityScore(companyGuess = {}, candidates = []) {
   let s = 0.5;
+  if (companyGuess?.domain) s += 0.15;
+  if (companyGuess?.linkedin_url) s += 0.05;
 
-  if (summary.company_guess?.domain) s += 0.15;
-  if (summary.company_guess?.linkedin_url) s += 0.1;
+  const uaeCount = candidates.filter((c) => (c.emirate || "").length && (c.country || "").toLowerCase().includes("united arab emirates")).length
+    || candidates.filter((c) => (c.location || "").toLowerCase().includes("united arab emirates")).length;
 
-  const kept = Number(summary.kept || summary.total_candidates || 0);
-  if (kept >= 5) s += 0.1;
-  if (kept >= 10) s += 0.05;
+  if (uaeCount >= 5) s += 0.15;
+  else if (uaeCount >= 1) s += 0.05;
 
-  if (summary.email_pattern_confidence >= 0.7) s += 0.05;
+  const patterned = candidates.filter((c) => c.email && !c.email.includes("@example.")).length;
+  if (patterned >= 5) s += 0.15;
+  else if (patterned >= 1) s += 0.05;
 
-  return Math.max(0, Math.min(1, s));
+  return Number(Math.max(0, Math.min(0.98, s)).toFixed(2));
 }
 
-/** Back-compat alias */
+// legacy alias
 export const scoreQuality = qualityScore;
 
 export default {

@@ -1,112 +1,146 @@
 /**
- * Email pattern helpers
- * Exports:
- *   - inferPatternFromSamples(samples, domain?)
- *   - applyPattern(fullName, domain, pattern)
- *   - applyEmailPattern({ name }, domain, pattern)  // convenience
- *   - isProviderPlaceholderEmail(email)
+ * Email utilities:
+ *  - inferPatternFromSamples(emails[], domain?)
+ *  - applyPattern(person, domain, pattern)
+ *  - applyEmailPattern(person, domain, pattern)  // alias of applyPattern
+ *  - isProviderPlaceholderEmail(email)
+ *  - loadPatternFromCache(domain)
+ *  - savePatternToCache(domain, pattern)
+ *  - verifyEmail(email)  // NeverBounce/ZeroBounce if configured, else "unknown"
  */
 
-const PATTERNS = [
-  "first.last",
-  "flast",
-  "firstlast",
-  "first",
-  "last",
-  "f.last",
-  "first.l",
-  "first_last",
-  "lfirst",
-];
+const PATTERN_CACHE = new Map();
 
-function splitName(fullName = "") {
-  const clean = String(fullName || "").trim().replace(/\s+/g, " ");
-  if (!clean) return { first: "", last: "" };
-  const parts = clean.split(" ");
-  const first = parts[0] || "";
-  const last = parts.length > 1 ? parts[parts.length - 1] : "";
-  return { first: first.toLowerCase(), last: last.toLowerCase() };
+/** very small name tokenizer */
+function splitName(obj) {
+  const raw =
+    obj?.name ||
+    [obj?.first_name, obj?.last_name].filter(Boolean).join(" ") ||
+    "";
+  const s = String(raw).trim().replace(/\s+/g, " ");
+  if (!s) return { first: "", last: "" };
+  const parts = s.split(" ");
+  const first = (obj?.first_name || parts[0] || "").toLowerCase();
+  const last = (obj?.last_name || parts.slice(-1)[0] || "").toLowerCase();
+  return { first, last };
 }
 
-function buildLocal(first, last, pattern) {
-  const f = first || "";
-  const l = last || "";
-  switch (pattern) {
-    case "first.last":   return `${f}.${l}`;
-    case "flast":        return `${f.slice(0,1)}${l}`;
-    case "firstlast":    return `${f}${l}`;
-    case "first":        return f;
-    case "last":         return l;
-    case "f.last":       return `${f.slice(0,1)}.${l}`;
-    case "first.l":      return `${f}.${l.slice(0,1)}`;
-    case "first_last":   return `${f}_${l}`;
-    case "lfirst":       return `${l}${f}`;
-    default:             return `${f}.${l}`; // default to first.last
-  }
+/** apply a guessed pattern to produce an email string */
+export function applyPattern(person, domain, pattern) {
+  const { first, last } = splitName(person);
+  const f = first.replace(/[^a-z]/g, "");
+  const l = last.replace(/[^a-z]/g, "");
+  const fl = f?.[0] || "";
+  const ll = l?.[0] || "";
+  const d = String(domain || "").toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*/, "");
+
+  if (!d || (!f && !l)) return "";
+
+  const local = (() => {
+    switch (String(pattern || "").toLowerCase()) {
+      case "first.last": return `${f}.${l}`;
+      case "first_last": return `${f}_${l}`;
+      case "firstlast":  return `${f}${l}`;
+      case "f.last":     return `${fl}.${l}`;
+      case "first.l":    return `${f}.${ll}`;
+      case "first":      return `${f}`;
+      case "last":       return `${l}`;
+      default:
+        // fallback heuristic: prefer first.last if both exist, else firstlast
+        return f && l ? `${f}.${l}` : (f || l);
+    }
+  })();
+
+  return local ? `${local}@${d}` : "";
 }
 
-/** Apply a known pattern to fullName@domain */
-export function applyPattern(fullName, domain, pattern = "first.last") {
-  const { first, last } = splitName(fullName);
-  const local = buildLocal(first, last, pattern);
-  const dom = String(domain || "").toLowerCase().replace(/^https?:\/\//, "");
-  return `${local}@${dom}`;
-}
-
-/** Back-compat alias for earlier imports */
+/** alias kept for older imports */
 export const applyEmailPattern = applyPattern;
 
-/**
- * Guess pattern from samples of { name, email } (same domain ideally)
- * Returns { pattern, confidence, domain? }
- */
-export function inferPatternFromSamples(samples = [], domainHint = "") {
-  const arr = Array.isArray(samples) ? samples : [];
-  const score = new Map(PATTERNS.map(p => [p, 0]));
-
-  let domain = (domainHint || "").toLowerCase();
-  for (const s of arr) {
-    const name = s?.name || s?.full_name || "";
-    const email = String(s?.email || "").toLowerCase();
-    if (!email || !name) continue;
-
-    const m = email.match(/@([a-z0-9.\-]+)$/i);
-    if (m && !domain) domain = m[1];
-
-    const { first, last } = splitName(name);
-    for (const p of PATTERNS) {
-      const expect = `${buildLocal(first, last, p)}@${m ? m[1] : domain || ""}`;
-      if (expect && email === expect) {
-        score.set(p, (score.get(p) || 0) + 2);
-      } else {
-        const local = buildLocal(first, last, p);
-        if (email.startsWith(local + "@")) {
-          score.set(p, (score.get(p) || 0) + 1);
-        }
-      }
-    }
-  }
-
-  // pick best
-  let best = "first.last";
-  let bestVal = -Infinity;
-  for (const [p, v] of score.entries()) {
-    if (v > bestVal) { best = p; bestVal = v; }
-  }
-  const confidence = Math.max(0.5, Math.min(1, bestVal / Math.max(2, arr.length * 2)));
-  return { pattern: best, confidence, domain };
+/** detect apollo placeholder or other locked emails */
+export function isProviderPlaceholderEmail(email) {
+  const s = String(email || "").toLowerCase();
+  return (
+    !s ||
+    s.includes("email_not_unlocked@") ||
+    s.includes("placeholder@") ||
+    s.includes("blocked@") ||
+    s === "n/a"
+  );
 }
 
-/** Detect provider placeholders we should replace with a patterned email guess */
-export function isProviderPlaceholderEmail(email = "") {
-  const e = String(email || "").toLowerCase();
-  return (
-    !e ||
-    /email[_\-]?not[_\-]?unlocked/.test(e) ||
-    /protected/.test(e) ||
-    /unavailable/.test(e) ||
-    /example\.com$/.test(e)
-  );
+/** naive pattern inference from sample emails (same domain preferred) */
+export function inferPatternFromSamples(emails = [], domain = "") {
+  const d = (domain || "").toLowerCase();
+  const locals = [];
+  for (const e of emails) {
+    const m = String(e || "").toLowerCase().match(/^([^@]+)@([^@]+)$/);
+    if (!m) continue;
+    const [, local, host] = m;
+    if (d && host !== d) continue; // prefer same domain
+    locals.push(local);
+  }
+  if (!locals.length) return "";
+
+  const hasDot = locals.some((l) => /^[a-z]+\.([a-z]+)$/.test(l));
+  const hasUnd = locals.some((l) => /^[a-z]+_([a-z]+)$/.test(l));
+  const hasInitialDot = locals.some((l) => /^[a-z]\.[a-z]+$/.test(l));
+  const hasFirstOnly = locals.some((l) => /^[a-z]+$/.test(l));
+  const hasConcat = locals.some((l) => /^[a-z]+[a-z]+$/.test(l));
+
+  if (hasDot) return "first.last";
+  if (hasUnd) return "first_last";
+  if (hasInitialDot) return "f.last";
+  if (hasConcat) return "firstlast";
+  if (hasFirstOnly) return "first";
+  return "first.last";
+}
+
+/** per-process memory cache */
+export function loadPatternFromCache(domain) {
+  const k = (domain || "").toLowerCase();
+  return PATTERN_CACHE.get(k) || "";
+}
+export function savePatternToCache(domain, pattern) {
+  const k = (domain || "").toLowerCase();
+  if (!k || !pattern) return;
+  PATTERN_CACHE.set(k, String(pattern));
+}
+
+/** Email verification against NeverBounce or ZeroBounce (if keys exist) */
+export async function verifyEmail(email) {
+  try {
+    const nb = process.env.NEVERBOUNCE_API_KEY;
+    if (nb) {
+      const resp = await fetch("https://api.neverbounce.com/v4/single/check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: nb, email }),
+      });
+      const json = await resp.json();
+      if (json && json.result) {
+        // map NB results to our schema
+        const map = { valid: "valid", invalid: "invalid", catchall: "accept_all", disposable: "risky", unknown: "unknown" };
+        return { status: map[json.result] || "unknown", reason: "neverbounce" };
+      }
+    }
+
+    const zb = process.env.ZEROBOUNCE_API_KEY;
+    if (zb) {
+      const url = new URL("https://api.zerobounce.net/v2/validate");
+      url.searchParams.set("api_key", zb);
+      url.searchParams.set("email", email);
+      const resp = await fetch(url.toString());
+      const json = await resp.json();
+      if (json && json.status) {
+        const map = { valid: "valid", invalid: "invalid", catch_all: "accept_all", unknown: "unknown" };
+        return { status: map[json.status] || "unknown", reason: "zerobounce" };
+      }
+    }
+  } catch (e) {
+    return { status: "unknown", reason: "verifier_error" };
+  }
+  return { status: "unknown", reason: "no_verifier" };
 }
 
 export default {
@@ -114,4 +148,7 @@ export default {
   applyPattern,
   applyEmailPattern,
   isProviderPlaceholderEmail,
+  loadPatternFromCache,
+  savePatternToCache,
+  verifyEmail,
 };
