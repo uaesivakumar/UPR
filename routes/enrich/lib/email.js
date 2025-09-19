@@ -2,7 +2,9 @@
  * Email helpers
  * Exports:
  *  - applyEmailPattern(fullName, domain, pattern="first.last") -> string email
+ *  - applyPattern(...)  // alias kept for older callers
  *  - inferPatternFromSamples(domain, samples)
+ *  - isProviderPlaceholderEmail(email)
  *  - verifyEmailSMTP(email)  (stub; returns unknown unless you wire NB/ZB)
  */
 
@@ -37,6 +39,28 @@ export function applyEmailPattern(fullName, domain, pattern="first.last"){
   return table[pattern] || table["first.last"];
 }
 
+/** Back-compat alias expected by older routes (e.g., enrichCompany.js) */
+export function applyPattern(fullName, domain, pattern="first.last") {
+  return applyEmailPattern(fullName, domain, pattern);
+}
+
+/** Detect provider placeholders / redacted emails */
+export function isProviderPlaceholderEmail(email) {
+  if (!email) return true;
+  const s = String(email).trim().toLowerCase();
+
+  // not an actual email => treat as placeholder (e.g., "first.last")
+  if (!s.includes("@")) return true;
+
+  const local = s.split("@")[0];
+  // common placeholder signals from providers
+  if (/(not[_-]?unlocked|locked|redacted|placeholder|hidden|masked|noreveal)/.test(local)) return true;
+  if (/(example|test)/.test(local)) return true;
+
+  // looks real enough
+  return false;
+}
+
 export function inferPatternFromSamples(domain, samples=[]){
   const dom = normDomain(domain);
   const pats = ["first.last","firstlast","f.last","first.l","first_last","first-last","first","last","firstl","flast"];
@@ -61,5 +85,14 @@ export async function verifyEmailSMTP(_email){
   if (!process.env.NEVERBOUNCE_API_KEY && !process.env.ZEROBOUNCE_API_KEY) {
     return { status:"unknown", reason:"no_verifier" };
   }
+  // TODO: wire NeverBounce/ZeroBounce; normalize to {status, reason}
   return { status:"unknown", reason:"not_implemented" };
 }
+
+export default {
+  applyEmailPattern,
+  applyPattern,
+  isProviderPlaceholderEmail,
+  inferPatternFromSamples,
+  verifyEmailSMTP,
+};

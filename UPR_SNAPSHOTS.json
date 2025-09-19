@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-19T17:07:23Z",
-  "generated_human": "Fri, 19 Sep 2025 17:07:23 GMT",
+  "generated": "2025-09-19T17:10:10Z",
+  "generated_human": "Fri, 19 Sep 2025 17:10:10 GMT",
   "branch": "main",
-  "commit": "ad5e01d",
+  "commit": "d2efb65",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -329,9 +329,9 @@
     },
     {
       "path": "routes/enrich/lib/email.js",
-      "size": 2618,
-      "mtime": "2025-09-19T17:03:50.153Z",
-      "sha256": "9e253f5a07fd081db5274bd19e7ea8a8e66c808e21e7280aef1bb29378fd0b1c",
+      "size": 3689,
+      "mtime": "2025-09-19T17:10:10.229Z",
+      "sha256": "ec5639ec059a7cc59f699710fff4762371b480d6faf282cfb12683c6a74a61b3",
       "imports": [],
       "envs": [
         "NEVERBOUNCE_API_KEY",
@@ -339,8 +339,8 @@
       ],
       "appUses": [],
       "endpoints": [],
-      "head": "/**\n * Email helpers\n * Exports:\n *  - applyEmailPattern(fullName, domain, pattern=\"first.last\") -> string email\n *  - inferPatternFromSamples(domain, samples)\n *  - verifyEmailSMTP(email)  (stub; returns unknown unless you wire NB/ZB)\n */\n\nfunction clean(s=\"\"){ return String(s).normalize(\"NFKD\"); }\nfunction splitName(fullName=\"\"){\n  const raw = clean(fullName).trim().replace(/\\s+/g,\" \");\n  if (!raw) return [\"\",\"\"];\n  const parts = raw.split(\" \");\n  return [parts[0]||\"\", parts.length>1 ? parts[parts.length-1] : \"\"];\n}\nfunction slug(s=\"\"){ return clean(s).toLowerCase().replace(/[^a-z]/g,\"\"); }\nfunction normDomain(d=\"\"){ return String(d).trim().toLowerCase().replace(/^https?:\\/\\//,\"\").replace(/\\/.*$/,\"\"); }\n\n/** Build email from a pattern id */\nexport function applyEmailPattern(fullName, domain, pattern=\"first.last\"){\n  if (!fullName || !domain) return null;\n  const dom = normDomain(domain);\n  const [fraw, lraw] = splitName(fullName);\n  const f = slug(fraw), l = slug(lraw), fi = f.slice(0,1), li = l.slice(0,1);\n  const table = {\n    \"first.last\": `${f}.${l}@${dom}`,\n    \"firstlast\":  `${f}${l}@${dom}`,\n    \"f.last\":     `${fi}.${l}@${dom}`,\n    \"first.l\":    `${f}.${li}@${dom}`,\n    \"first_last\": `${f}_${l}@${dom}`,\n    \"first-last\": `${f}-${l}@${dom}`,\n    \"first\":      `${f}@${dom}`,\n    \"last\":       `${l}@${dom}`,\n    \"firstl\":     `${f}${li}@${dom}`,\n    \"flast\":      `${fi}${l}@${dom}`,\n  };\n  return table[pattern] || table[\"first.last\"];\n}\n\nexport function inferPatternFromSamples(domain, samples=[]){",
-      "tail": "  const pats = [\"first.last\",\"firstlast\",\"f.last\",\"first.l\",\"first_last\",\"first-last\",\"first\",\"last\",\"firstl\",\"flast\"];\n  const score = Object.fromEntries(pats.map(p=>[p,0]));\n  for (const e of samples){\n    if (typeof e!==\"string\") continue;\n    const email = e.toLowerCase().trim();\n    if (!email.endsWith(`@${dom}`)) continue;\n    const local = email.split(\"@\")[0];\n    if (/\\./.test(local)) score[\"first.last\"]+=1;\n    if (!/\\W/.test(local)) score[\"firstlast\"]+=0.5;\n    if (/^[a-z]\\.[a-z]/.test(local)) score[\"f.last\"]+=1;\n    if (/^[a-z]+\\.[a-z]$/.test(local)) score[\"first.l\"]+=1;\n    if (/_/.test(local)) score[\"first_last\"]+=1;\n    if (/-/.test(local)) score[\"first-last\"]+=1;\n  }\n  const best = Object.entries(score).sort((a,b)=>b[1]-a[1])[0];\n  return best && best[1]>0 ? best[0] : \"first.last\";\n}\n\nexport async function verifyEmailSMTP(_email){\n  if (!process.env.NEVERBOUNCE_API_KEY && !process.env.ZEROBOUNCE_API_KEY) {\n    return { status:\"unknown\", reason:\"no_verifier\" };\n  }\n  return { status:\"unknown\", reason:\"not_implemented\" };\n}\n"
+      "head": "/**\n * Email helpers\n * Exports:\n *  - applyEmailPattern(fullName, domain, pattern=\"first.last\") -> string email\n *  - applyPattern(...)  // alias kept for older callers\n *  - inferPatternFromSamples(domain, samples)\n *  - isProviderPlaceholderEmail(email)\n *  - verifyEmailSMTP(email)  (stub; returns unknown unless you wire NB/ZB)\n */\n\nfunction clean(s=\"\"){ return String(s).normalize(\"NFKD\"); }\nfunction splitName(fullName=\"\"){\n  const raw = clean(fullName).trim().replace(/\\s+/g,\" \");\n  if (!raw) return [\"\",\"\"];\n  const parts = raw.split(\" \");\n  return [parts[0]||\"\", parts.length>1 ? parts[parts.length-1] : \"\"];\n}\nfunction slug(s=\"\"){ return clean(s).toLowerCase().replace(/[^a-z]/g,\"\"); }\nfunction normDomain(d=\"\"){ return String(d).trim().toLowerCase().replace(/^https?:\\/\\//,\"\").replace(/\\/.*$/,\"\"); }\n\n/** Build email from a pattern id */\nexport function applyEmailPattern(fullName, domain, pattern=\"first.last\"){\n  if (!fullName || !domain) return null;\n  const dom = normDomain(domain);\n  const [fraw, lraw] = splitName(fullName);\n  const f = slug(fraw), l = slug(lraw), fi = f.slice(0,1), li = l.slice(0,1);\n  const table = {\n    \"first.last\": `${f}.${l}@${dom}`,\n    \"firstlast\":  `${f}${l}@${dom}`,\n    \"f.last\":     `${fi}.${l}@${dom}`,\n    \"first.l\":    `${f}.${li}@${dom}`,\n    \"first_last\": `${f}_${l}@${dom}`,\n    \"first-last\": `${f}-${l}@${dom}`,\n    \"first\":      `${f}@${dom}`,\n    \"last\":       `${l}@${dom}`,\n    \"firstl\":     `${f}${li}@${dom}`,\n    \"flast\":      `${fi}${l}@${dom}`,\n  };\n  return table[pattern] || table[\"first.last\"];\n}",
+      "tail": "    if (/^[a-z]\\.[a-z]/.test(local)) score[\"f.last\"]+=1;\n    if (/^[a-z]+\\.[a-z]$/.test(local)) score[\"first.l\"]+=1;\n    if (/_/.test(local)) score[\"first_last\"]+=1;\n    if (/-/.test(local)) score[\"first-last\"]+=1;\n  }\n  const best = Object.entries(score).sort((a,b)=>b[1]-a[1])[0];\n  return best && best[1]>0 ? best[0] : \"first.last\";\n}\n\nexport async function verifyEmailSMTP(_email){\n  if (!process.env.NEVERBOUNCE_API_KEY && !process.env.ZEROBOUNCE_API_KEY) {\n    return { status:\"unknown\", reason:\"no_verifier\" };\n  }\n  // TODO: wire NeverBounce/ZeroBounce; normalize to {status, reason}\n  return { status:\"unknown\", reason:\"not_implemented\" };\n}\n\nexport default {\n  applyEmailPattern,\n  applyPattern,\n  isProviderPlaceholderEmail,\n  inferPatternFromSamples,\n  verifyEmailSMTP,\n};\n"
     },
     {
       "path": "routes/enrich/lib/geo.js",
