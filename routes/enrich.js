@@ -21,57 +21,74 @@ const router = express.Router();
 
 /* ------------------------------ ENV ------------------------------ */
 const APOLLO_API_KEY =
-  process.env.APOLLO_API_KEY || process.env.APOLLOIO_API_KEY || process.env.APOLLO_TOKEN || "";
+  process.env.APOLLO_API_KEY ||
+  process.env.APOLLOIO_API_KEY ||
+  process.env.APOLLO_TOKEN ||
+  "";
 const OPENAI_KEY = process.env.OPENAI_API_KEY || "";
 
 const HAS_APOLLO = !!APOLLO_API_KEY;
 const LLM_OK = !!OPENAI_KEY;
 
-/* ------------------------------ Role filters ------------------------------ */
+/* ------------------------------ Role & geo filters ------------------------------ */
 const HR_WORDS = [
-  "HR","Human Resources","People","Talent","Recruiting","People Operations","Head of People","HR Manager","HR Director","Compensation","Benefits","Payroll"
+  "HR", "Human Resources", "People", "Talent", "Recruiting",
+  "People Operations", "Head of People", "HR Manager", "HR Director",
+  "Compensation", "Benefits", "Payroll"
 ];
-const ADMIN_WORDS = ["Admin","Administration","Office Manager","Executive Assistant"];
-const FIN_WORDS = ["Finance","Financial Controller","CFO","Accounts","Accounting","Procurement"];
+const ADMIN_WORDS = ["Admin", "Administration", "Office Manager", "Executive Assistant"];
+const FIN_WORDS = ["Finance", "Financial Controller", "CFO", "Accounts", "Accounting", "Procurement"];
+const ALLOWED_BUCKETS = new Set(["hr", "admin", "finance"]);
 
-const ALLOWED_BUCKETS = new Set(["hr","admin","finance"]);
+const UAE_EMIRATES = [
+  { key: "abu dhabi", label: "Abu Dhabi" },
+  { key: "dubai", label: "Dubai" },
+  { key: "sharjah", label: "Sharjah" },
+  { key: "ajman", label: "Ajman" },
+  { key: "ras al khaimah", label: "Ras Al Khaimah" },
+  { key: "umm al quwain", label: "Umm Al Quwain" },
+  { key: "fujairah", label: "Fujairah" },
+];
+const UAE_KEYS = [
+  "united arab emirates", "uae",
+  ...UAE_EMIRATES.map(e => e.key)
+];
 
-/* ------------------------------ In-memory jobs ------------------------------ */
+/* ------------------------------ Jobs ------------------------------ */
 const jobs = new Map();
 
-/* ------------------------------ utils ------------------------------ */
+/* ------------------------------ helpers ------------------------------ */
 const log = (...a) => { try { console.error(...a); } catch {} };
 const now = () => Date.now();
 const ms = (t0) => Math.max(0, Date.now() - t0);
 
-const stopwords = /\b(inc|llc|ltd|limited|international|intl|company|co|corp|corporation|group|holdings?|school|bank|market)\b/gi;
+const stopwords = /\b(inc|llc|ltd|limited|international|intl|company|co|corp|corporation|group|holdings?|school|bank|market|solutions?)\b/gi;
 
-function cleanName(s="") {
+function cleanName(s = "") {
   return String(s)
-    .replace(stopwords, "")
+    .replace(stopwords, " ")
     .replace(/[^a-z0-9\s&-]/gi, " ")
     .replace(/\s{2,}/g, " ")
     .trim();
 }
-function acronymOf(name="") {
+function acronymOf(name = "") {
   const a = name.split(/[\s&-]+/).filter(Boolean).map(w => w[0]?.toUpperCase()).join("");
   return a || null;
 }
-function wordsToDomain(name="") {
-  // heuristic: “Gems United Indian School” -> “gemsunitedindianschool.com”
+function wordsToDomain(name = "") {
   const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "");
   return base ? `${base}.com` : null;
 }
-function firstOf(full=""){ const p=String(full).trim().split(/\s+/); return p[0]||""; }
-function lastOf(full=""){ const p=String(full).trim().split(/\s+/); return p.length>1?p[p.length-1]:""; }
+function firstOf(full = "") { const p = String(full).trim().split(/\s+/); return p[0] || ""; }
+function lastOf(full = "") { const p = String(full).trim().split(/\s+/); return p.length > 1 ? p[p.length - 1] : ""; }
 
-function roleBucket(title="") {
+function roleBucket(title = "") {
   const b = bucketRole(title);
   if (ALLOWED_BUCKETS.has(b)) return b;
   const t = title.toLowerCase();
-  if (HR_WORDS.some(k=>t.includes(k.toLowerCase()))) return "hr";
-  if (ADMIN_WORDS.some(k=>t.includes(k.toLowerCase()))) return "admin";
-  if (FIN_WORDS.some(k=>t.includes(k.toLowerCase()))) return "finance";
+  if (HR_WORDS.some(k => t.includes(k.toLowerCase()))) return "hr";
+  if (ADMIN_WORDS.some(k => t.includes(k.toLowerCase()))) return "admin";
+  if (FIN_WORDS.some(k => t.includes(k.toLowerCase()))) return "finance";
   return "other";
 }
 
@@ -80,10 +97,10 @@ function detectOrgDomain(p) {
   const org = p.organization || p.company || p.employer || {};
   let d = org.domain || org.primary_domain || org.email_domain || null;
   if (!d && org.website_url) {
-    try { d = new URL(org.website_url.startsWith("http")?org.website_url:`https://${org.website_url}`).hostname; }
+    try { d = new URL(org.website_url.startsWith("http") ? org.website_url : `https://${org.website_url}`).hostname; }
     catch {}
   }
-  return d ? d.replace(/^www\./,"").toLowerCase() : null;
+  return d ? d.replace(/^www\./, "").toLowerCase() : null;
 }
 
 function isProviderPlaceholderEmail(e) {
@@ -92,11 +109,28 @@ function isProviderPlaceholderEmail(e) {
   return (
     s === "first.last" ||
     s === "first.last@" ||
-    s.endsWith("@domain.com") ||
     s === "first.last@domain.com" ||
     s === "firstlast@domain.com" ||
+    s.endsWith("@domain.com") ||
     s.startsWith("email_not_unlocked@")
   );
+}
+
+function emirateFromLocation(loc = "") {
+  const s = String(loc).toLowerCase();
+  if (!s) return null;
+  for (const e of UAE_EMIRATES) {
+    if (s.includes(e.key)) return e.label;
+  }
+  if (s.includes("united arab emirates") || s === "uae") return "UAE";
+  return null;
+}
+function isUAE(loc = "") {
+  const s = String(loc).toLowerCase();
+  return UAE_KEYS.some(k => s.includes(k));
+}
+function joinNonEmpty(...parts) {
+  return parts.filter(Boolean).join(", ");
 }
 
 function mockFromQuery(q) {
@@ -113,6 +147,8 @@ function mockFromQuery(q) {
       seniority: "manager",
       source: "mock",
       confidence: 0.92,
+      location: "Dubai, United Arab Emirates",
+      emirate: "Dubai",
     },
     {
       name: "John Smith",
@@ -125,6 +161,8 @@ function mockFromQuery(q) {
       seniority: "head",
       source: "mock",
       confidence: 0.88,
+      location: "Abu Dhabi, United Arab Emirates",
+      emirate: "Abu Dhabi",
     },
   ];
   return {
@@ -149,10 +187,9 @@ async function resolveCompany(q, timings) {
   const cleaned = cleanName(q);
   const acr = acronymOf(cleaned);
 
-  // quick curated alias
   if (/kellogg\s*brown\s*and\s*root/i.test(q)) {
     timings.llm_ms = (timings.llm_ms || 0) + ms(t0);
-    return { name: "KBR", domain: "kbr.com", synonyms: ["KBR","Kellogg Brown & Root"] };
+    return { name: "Cognizant Technology Solutions".replace("Cognizant", "KBR") && "KBR", domain: "kbr.com", synonyms: ["KBR", "Kellogg Brown & Root"] };
   }
 
   if (!LLM_OK) {
@@ -208,7 +245,7 @@ router.get("/mock", async (req, res) => {
   return res.json({ ok: true, data: mockFromQuery(q) });
 });
 
-/* ------------------------------ Free-text SEARCH ------------------------------ */
+/* ------------------------------ Free-text SEARCH (UAE filtered) ------------------------------ */
 router.get("/search", async (req, res) => {
   const q = String(req.query.q || "").trim();
   if (!q) return res.status(400).json({ error: "q is required" });
@@ -220,19 +257,20 @@ router.get("/search", async (req, res) => {
     let people = [];
     if (HAS_APOLLO) {
       const keywords = [...HR_WORDS, ...ADMIN_WORDS, ...FIN_WORDS].join(" OR ");
-      // try by domain first if we have one
+      const zones = ["United Arab Emirates", "UAE", ...UAE_EMIRATES.map(e => e.label)];
+      // domain-first
       if (guess.domain) {
-        people = await apolloPeopleByDomain({ domain: guess.domain, keywords, limit: 25, timings });
+        people = await apolloPeopleByDomain({ domain: guess.domain, keywords, limit: 50, timings, locations: zones });
       }
       // fallback to org name
       if (!people.length) {
-        people = await apolloPeopleByName({ name: guess.name, keywords, limit: 25, timings });
+        people = await apolloPeopleByName({ name: guess.name, keywords, limit: 50, timings, locations: zones });
       }
-      // last-chance: relaxed name
+      // last-chance synonyms
       if (!people.length && guess.synonyms?.length) {
         for (const s of guess.synonyms) {
           // eslint-disable-next-line no-await-in-loop
-          const batch = await apolloPeopleByName({ name: s, limit: 25, timings });
+          const batch = await apolloPeopleByName({ name: s, keywords, limit: 50, timings, locations: zones });
           if (batch.length) { people = batch; break; }
         }
       }
@@ -246,7 +284,6 @@ router.get("/search", async (req, res) => {
       return res.json({ ok: true, data: mock });
     }
 
-    // Determine domain from candidates or guess
     const domain =
       people.map(detectOrgDomain).filter(Boolean)[0] ||
       guess.domain ||
@@ -260,19 +297,22 @@ router.get("/search", async (req, res) => {
 
       const first = p.first_name || firstOf(p.name || "");
       const last  = p.last_name  || lastOf(p.name || "");
+      const location = deriveLocation(p);
+      const emirate = emirateFromLocation(location);
+
+      // Keep only UAE
+      if (!(emirate || isUAE(location))) continue;
 
       let email = p.email || null;
       let email_status = email ? "provider" : "unknown";
       let email_reason = email ? "provider_supplied" : undefined;
 
-      // Drop provider placeholders (we’ll re-pattern only if we have a real domain)
       if (email && isProviderPlaceholderEmail(email)) {
         email = null;
         email_status = "unknown";
         email_reason = "provider_placeholder";
       }
       if (!email && domain && first && last) {
-        // pattern with REAL domain only
         let pat = applyPattern(first, last, "first.last", domain);
         if (pat && typeof pat === "string" && !pat.includes("@")) pat = `${pat}@${domain}`;
         if (pat) {
@@ -286,7 +326,7 @@ router.get("/search", async (req, res) => {
       const confidence = scoreCandidate({
         role_bucket: bucket,
         seniority,
-        geo_fit: 0.85,
+        geo_fit: emirate ? 1.0 : 0.7,
         email_status,
         company_match: domain ? 1.0 : 0.6,
       });
@@ -302,10 +342,12 @@ router.get("/search", async (req, res) => {
         seniority,
         source: "live",
         confidence: Number(confidence.toFixed(2)),
+        location,
+        emirate: emirate || null,
       });
     }
 
-    normalized.sort((a,b)=> (b.confidence||0) - (a.confidence||0));
+    normalized.sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
 
     return res.json({
       ok: true,
@@ -319,8 +361,8 @@ router.get("/search", async (req, res) => {
           provider: "live",
           company_guess: guess,
           timings,
-        }
-      }
+        },
+      },
     });
   } catch (e) {
     log("search error", e);
@@ -331,7 +373,7 @@ router.get("/search", async (req, res) => {
   }
 });
 
-/* ------------------------------ Company-selected ENRICH ------------------------------ */
+/* ------------------------------ Company-selected ENRICH (UAE filtered) ------------------------------ */
 router.post("/", async (req, res) => {
   const { company_id, max_contacts = 3 } = req.body || {};
   if (!company_id) return res.status(400).json({ error: "company_id is required" });
@@ -349,26 +391,27 @@ router.post("/", async (req, res) => {
 
     if (!company.domain && company.website_url) {
       try {
-        const u = new URL(company.website_url.startsWith("http")?company.website_url:`https://${company.website_url}`);
-        company.domain = u.hostname.replace(/^www\./,"");
+        const u = new URL(company.website_url.startsWith("http") ? company.website_url : `https://${company.website_url}`);
+        company.domain = u.hostname.replace(/^www\./, "");
       } catch {}
     }
 
-    let provider = "none";
     const tP = now();
     let people = [];
+    let provider = "none";
 
     if (HAS_APOLLO && company.domain) {
+      const zones = ["United Arab Emirates", "UAE", ...UAE_EMIRATES.map(e => e.label)];
       people = await apolloPeopleByDomain({
         domain: company.domain,
         keywords: [...HR_WORDS, ...ADMIN_WORDS, ...FIN_WORDS].join(" OR "),
-        limit: max_contacts * 6,
+        limit: max_contacts * 8,
+        locations: zones,
       });
       provider = people.length ? "live" : "none";
     }
     const timings = { provider_ms: ms(tP) };
 
-    // infer pattern
     let learned = null;
     const samples = people
       .filter(c => c.email && c.first_name && c.last_name)
@@ -382,30 +425,35 @@ router.post("/", async (req, res) => {
 
     let pattern = null;
     if (company.email_pattern && (company.pattern_confidence ?? 0) >= 0.7) {
-      pattern = { pattern: company.email_pattern, confidence: Number(company.pattern_confidence)||0 };
+      pattern = { pattern: company.email_pattern, confidence: Number(company.pattern_confidence) || 0 };
     } else if (company.domain) {
       const cached = await loadPatternFromCache(pool, company.domain);
       if (cached) pattern = cached;
     }
     if (!pattern && learned) pattern = learned;
 
-    // map + filter
-    let candidates = people.map(p => ({
-      source: "live",
-      name: [p.first_name, p.last_name].filter(Boolean).join(" ").trim() || p.name || "",
-      first_name: p.first_name || firstOf(p.name),
-      last_name: p.last_name || lastOf(p.name),
-      designation: p.title || p.designation || "",
-      linkedin_url: p.linkedin || p.linkedin_url || "",
-      email: (p.email && !isProviderPlaceholderEmail(p.email)) ? p.email : null,
-      email_status: (p.email && !isProviderPlaceholderEmail(p.email)) ? "provider" : "unknown",
-      email_reason: (p.email && !isProviderPlaceholderEmail(p.email)) ? "provider_supplied" : undefined,
-      role_bucket: roleBucket(p.title || p.designation || ""),
-      seniority: bucketSeniority(p.title || p.designation || ""),
-      geo_fit: 1.0,
-    })).filter(c => ALLOWED_BUCKETS.has(c.role_bucket) && !isAgencyRecruiter(c));
+    let candidates = people.map(p => {
+      const location = deriveLocation(p);
+      const emirate = emirateFromLocation(location);
+      return {
+        source: "live",
+        name: [p.first_name, p.last_name].filter(Boolean).join(" ").trim() || p.name || "",
+        first_name: p.first_name || firstOf(p.name),
+        last_name: p.last_name || lastOf(p.name),
+        designation: p.title || p.designation || "",
+        linkedin_url: p.linkedin || p.linkedin_url || "",
+        email: (p.email && !isProviderPlaceholderEmail(p.email)) ? p.email : null,
+        email_status: (p.email && !isProviderPlaceholderEmail(p.email)) ? "provider" : "unknown",
+        email_reason: (p.email && !isProviderPlaceholderEmail(p.email)) ? "provider_supplied" : undefined,
+        role_bucket: roleBucket(p.title || p.designation || ""),
+        seniority: bucketSeniority(p.title || p.designation || ""),
+        location,
+        emirate,
+        geo_fit: emirate ? 1.0 : 0.7,
+      };
+    })
+    .filter(c => ALLOWED_BUCKETS.has(c.role_bucket) && (c.emirate || isUAE(c.location)) && !isAgencyRecruiter(c));
 
-    // pattern if possible
     if (company.domain && pattern?.pattern) {
       candidates = candidates.map(c => {
         if (!c.email && c.first_name && c.last_name) {
@@ -421,7 +469,6 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // verify
     for (const c of candidates) {
       if (!c.email) continue;
       const v = await verifyEmail(c.email);
@@ -429,7 +476,6 @@ router.post("/", async (req, res) => {
       c.email_reason = v.reason || c.email_reason;
     }
 
-    // score
     candidates = candidates.map(c => ({
       ...c,
       confidence: scoreCandidate({
@@ -439,9 +485,8 @@ router.post("/", async (req, res) => {
         email_status: c.email_status,
         company_match: 1.0,
       })
-    })).sort((a,b)=> b.confidence - a.confidence);
+    })).sort((a, b) => b.confidence - a.confidence);
 
-    // keep top uniques
     const kept = [];
     const seen = new Set();
     for (const c of candidates) {
@@ -451,7 +496,6 @@ router.post("/", async (req, res) => {
       }
     }
 
-    // save to DB
     const saved = [];
     for (const c of kept) {
       try { saved.push(await upsertLead(company_id, c)); }
@@ -470,8 +514,10 @@ router.post("/", async (req, res) => {
         email_reason: c.email_reason,
         role_bucket: c.role_bucket,
         seniority: c.seniority,
-        confidence: Number((c.confidence||0).toFixed(2)),
+        confidence: Number((c.confidence || 0).toFixed(2)),
         source: c.source || "live",
+        location: c.location || null,
+        emirate: c.emirate || null,
       })),
       summary: {
         found: candidates.length,
@@ -549,24 +595,33 @@ async function upsertLead(company_id, c) {
 }
 
 /* ------------------------------ Apollo helpers ------------------------------ */
-async function apolloPeopleByName({ name, keywords, limit = 25, timings }) {
+async function apolloPeopleByName({ name, keywords, limit = 25, timings, locations = [] }) {
   return await apolloPeopleSearch({
     body: {
       q_organization_name: name,
       q_keywords: keywords,
       page: 1,
-      per_page: Math.min(Math.max(limit,1),25),
+      per_page: Math.min(Math.max(limit, 1), 50),
+      // best-effort geo hints (Apollo accepts a few variants)
+      q_person_locations: locations,
+      person_locations: locations,
+      q_locations: locations,
+      country: "United Arab Emirates",
     },
     timings,
   });
 }
-async function apolloPeopleByDomain({ domain, keywords, limit = 25, timings }) {
+async function apolloPeopleByDomain({ domain, keywords, limit = 25, timings, locations = [] }) {
   return await apolloPeopleSearch({
     body: {
       q_organization_domains: [domain],
       q_keywords: keywords,
       page: 1,
-      per_page: Math.min(Math.max(limit,1),25),
+      per_page: Math.min(Math.max(limit, 1), 50),
+      q_person_locations: locations,
+      person_locations: locations,
+      q_locations: locations,
+      country: "United Arab Emirates",
     },
     timings,
   });
@@ -575,27 +630,24 @@ async function apolloPeopleSearch({ body, timings }) {
   const endpoint = "https://api.apollo.io/v1/people/search";
   const t0 = now();
 
-  // Try api_key in body
   let r = await tryFetch(endpoint, {
     method: "POST",
-    headers: { "Content-Type":"application/json" },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ api_key: APOLLO_API_KEY, ...body })
   });
   let people = extractPeople(r);
   if (!people.length) {
-    // Try bearer
     r = await tryFetch(endpoint, {
       method: "POST",
-      headers: { "Content-Type":"application/json", Authorization:`Bearer ${APOLLO_API_KEY}` },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${APOLLO_API_KEY}` },
       body: JSON.stringify(body)
     });
     people = extractPeople(r);
   }
   if (!people.length) {
-    // Try X-Api-Key
     r = await tryFetch(endpoint, {
       method: "POST",
-      headers: { "Content-Type":"application/json", "X-Api-Key": APOLLO_API_KEY },
+      headers: { "Content-Type": "application/json", "X-Api-Key": APOLLO_API_KEY },
       body: JSON.stringify(body)
     });
     people = extractPeople(r);
@@ -620,6 +672,14 @@ async function tryFetch(url, init) {
     return { ok: false, status: 0, json: null };
   }
 }
+function deriveLocation(p = {}) {
+  // best-effort normalize person location from Apollo variations
+  const city = p.city || p.person_city || p.current_city;
+  const region = p.state || p.region || p.person_region || p.current_region;
+  const country = p.country || p.country_name || p.person_country || p.current_country || p.location_country;
+  const raw = p.location || p.current_location || p.person_location;
+  return raw || joinNonEmpty(city, region, country);
+}
 function mapApollo(p) {
   return {
     name: [p.first_name, p.last_name].filter(Boolean).join(" ").trim() || p.name || "",
@@ -634,5 +694,6 @@ function mapApollo(p) {
       website_url: p.organization_website_url || p.company_website_url || null,
     },
     seniority: p.seniority || null,
+    location: deriveLocation(p),
   };
 }
