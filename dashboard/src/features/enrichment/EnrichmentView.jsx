@@ -1,327 +1,311 @@
-import React, { useMemo, useState, useCallback } from "react";
+// dashboard/src/features/enrichment/EnrichmentView.jsx
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { authFetch } from "../../utils/auth";
-import LLMStatus from "./LLMStatus";
 
-/** Helpers */
-async function safeJson(resp) {
-  try { return await resp.json(); } catch { return null; }
-}
-function prettyStatus(s) { return String(s || "unknown").toLowerCase(); }
-function statusPillClass(s) {
-  const v = String(s || "unknown").toLowerCase();
-  if (v === "validated")
-    return "text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200";
-  if (v === "bounced" || v === "invalid")
-    return "text-[10px] px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200";
-  if (v === "patterned" || v === "guessed")
-    return "text-[10px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200";
-  return "text-[10px] px-2 py-0.5 rounded-full bg-gray-50 text-gray-700 border border-gray-200";
-}
-async function copyToClipboard(text) {
-  try { await navigator.clipboard.writeText(text); }
-  catch {
-    const el = document.createElement("textarea");
-    el.value = text; document.body.appendChild(el); el.select();
-    document.execCommand("copy"); document.body.removeChild(el);
-  }
-}
-
-function ScoreBadge({ score }) {
-  if (typeof score !== "number") return null;
-  const color =
-    score >= 80
-      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-      : score >= 60
-      ? "bg-amber-50 text-amber-700 border-amber-200"
-      : "bg-gray-100 text-gray-700 border-gray-200";
-  return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-sm border ${color}`}>
-      Score: <span className="font-semibold">{score}</span>/100
-    </span>
-  );
-}
-
-/** Main Enrichment view (company card now lives in Sidebar) */
-export default function EnrichmentView({ initialQuery = "", onCompanyChange }) {
-  const [query, setQuery] = useState(initialQuery);
-  const [err, setErr] = useState(null);
+/**
+ * Optional props:
+ *  - initialQuery?: string
+ *  - onCompanyChange?: (company|null) => void
+ */
+export default function EnrichmentView({ initialQuery = "", onCompanyChange = () => {} }) {
+  // UI state
+  const [text, setText] = useState(initialQuery);
   const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState(null);
+  const [llmErr, setLlmErr] = useState(null);
 
-  const [result, setResult] = useState(null);
-  const [primaryContactKey, setPrimaryContactKey] = useState(null);
+  // Selected company from CompaniesPage (via window event)
+  const [company, setCompany] = useState(null); // { id, name, domain, website_url }
 
-  // Always-visible LLM badge
-  const [llmStatus, setLlmStatus] = useState("idle");
-  const [llmModel, setLlmModel] = useState(null);
-  const [llmDuration, setLlmDuration] = useState(null);
-  const [llmErrText, setLlmErrText] = useState(null);
+  // API result
+  const [result, setResult] = useState(null); // { status, company_id|null, results: [], summary: {} }
 
-  const primaryContact = useMemo(() => {
-    if (!result || !result.contacts?.length) return null;
-    return result.contacts.find((c) => c._k === primaryContactKey) ?? result.contacts[0];
-  }, [result, primaryContactKey]);
+  const inputRef = useRef(null);
 
-  const isBlank = (s) => !s || s.trim().length === 0;
-
-  const runEnrichment = useCallback(async (e) => {
-    e?.preventDefault?.();
-    setErr(null);
-    setResult(null);
-    setPrimaryContactKey(null);
-
-    const input = query.trim();
-    if (isBlank(input)) { setErr("input required"); return; }
-
-    setLoading(true);
-    setLlmStatus("running"); setLlmModel(null); setLlmDuration(null); setLlmErrText(null);
-
-    const t0 = performance.now();
-    try {
-      // Tell backend to fetch across HR / TA / Payroll / Finance / Admin / Onboarding etc.
-      const res = await authFetch("/api/enrich", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ input, departments: ["hr","hrbp","ta","payroll","finance","admin","office_admin","onboarding"] }),
+  // Listen for broadcasted selections from CompaniesPage (or anywhere else)
+  useEffect(() => {
+    const onSidebarCompany = (e) => {
+      const detail = e?.detail || null;
+      if (!detail) {
+        setCompany(null);
+        onCompanyChange(null);
+        return;
+      }
+      setCompany({
+        id: detail.id,
+        name: detail.name,
+        domain: detail.domain,
+        website_url: detail.website_url,
       });
+      if (detail.name && !text) setText(detail.name);
+      onCompanyChange(detail);
+    };
+    window.addEventListener("upr:companySidebar", onSidebarCompany);
+    return () => window.removeEventListener("upr:companySidebar", onSidebarCompany);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onCompanyChange]);
 
-      const data = await safeJson(res);
-      if (!res.ok || !data?.ok) throw new Error(data?.error || "enrichment failed");
+  // If initialQuery changes (route param ?q=), sync into input
+  useEffect(() => {
+    if (initialQuery) setText(initialQuery);
+  }, [initialQuery]);
 
-      const payload = data.data || {};
-      const duration_ms = payload?._meta?.duration_ms ?? Math.round(performance.now() - t0);
-      const model = payload?._meta?.model || "openai";
+  const canSubmit = useMemo(() => {
+    return Boolean(company?.id) || Boolean(text && text.trim().length > 0);
+  }, [company, text]);
 
-      // Filter: only **real people** (must have person name) and no generic mailbox emails
-      const GENERIC_MAILBOX = /^(info|contact|admin|office|hello|support|careers|hr|jobs|payroll|finance|accounts|team|help|sales|pr|media|press|recruitment|talent|onboarding|noreply|no-reply)@/i;
+  const callMock = useCallback(async (q) => {
+    const res = await authFetch(`/api/enrich/mock?q=${encodeURIComponent(q)}`);
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      throw new Error(`Mock enrich failed (${res.status}): ${t || res.statusText}`);
+    }
+    return res.json();
+  }, []);
 
-      const contacts = Array.isArray(payload.contacts) ? payload.contacts : [];
-      const realPeople = contacts
-        .filter((c) => {
-          const nameOk = !!String(c.name || "").trim();
-          if (!nameOk) return false;
-          const email = c.email || c.email_guess || "";
-          if (!email) return true; // allow if name exists but email guessed later
-          return !GENERIC_MAILBOX.test(String(email).toLowerCase());
-        })
-        .map((c, i) => ({ _k: c.id || `${c.name || "x"}-${c.email || c.email_guess || "x"}-${i}`, ...c }));
+  const callReal = useCallback(async (company_id) => {
+    const res = await authFetch(`/api/enrich`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        company_id,
+        max_contacts: 3,
+        role: "hr",
+        geo: "uae",
+      }),
+    });
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      throw new Error(`Enrich failed (${res.status}): ${t || res.statusText}`);
+    }
+    return res.json();
+  }, []);
 
-      const next = { ...payload, contacts: realPeople };
-      setResult(next);
-      setPrimaryContactKey(realPeople?.[0]?._k ?? null);
+  const clearSelected = useCallback(() => {
+    setCompany(null);
+    onCompanyChange(null);
+    // also tell the rest of the app
+    window.dispatchEvent(new CustomEvent("upr:companySidebar", { detail: null }));
+  }, [onCompanyChange]);
 
-      // update left sidebar company card
-      onCompanyChange?.(next.company || null);
-      window.dispatchEvent(new CustomEvent("upr:companySidebar", { detail: next.company || null }));
+  const handleEnrich = useCallback(async () => {
+    if (!canSubmit) return;
+    setLoading(true);
+    setErr(null);
+    setLlmErr(null);
+    setResult(null);
 
-      setLlmModel(model); setLlmDuration(duration_ms); setLlmStatus("ok");
-    } catch (e2) {
-      setErr(e2?.message || "Something went wrong");
-      setLlmErrText(e2?.message || "Unknown error");
-      setLlmStatus("error");
-      onCompanyChange?.(null);
-      window.dispatchEvent(new CustomEvent("upr:companySidebar", { detail: null }));
+    try {
+      let data;
+      if (company?.id) {
+        data = await callReal(company.id);
+        // make sure the sidebar keeps this visible (optional)
+        window.dispatchEvent(new CustomEvent("upr:companySidebar", { detail: company }));
+      } else {
+        const q = text.trim();
+        if (!q) throw new Error("company_id is required");
+        data = await callMock(q);
+        // no company in mock mode
+        window.dispatchEvent(new CustomEvent("upr:companySidebar", { detail: null }));
+      }
+      setResult(data || null);
+    } catch (e) {
+      setErr(e?.message || "Enrichment failed");
+      setLlmErr("error");
     } finally {
       setLoading(false);
     }
-  }, [query, onCompanyChange]);
+  }, [canSubmit, company, text, callMock, callReal]);
 
-  const saveAsLead = useCallback(async () => {
-    if (!result?.company?.name) { alert("No company to save."); return; }
-    const c = primaryContact;
-    const payload = {
-      company: {
-        name: result.company.name,
-        type: result.company.type ?? null,
-        locations: result.company.locations ?? (result.company.hq ? [result.company.hq] : []),
-        website_url: result.company.website ?? null,
-        linkedin_url: result.company.linkedin ?? null,
-      },
-      contact: c ? {
-        name: c.name ?? null,
-        designation: c.title ?? "Decision Maker",
-        linkedin_url: c.linkedin ?? null,
-        location: c.dept ?? result.company.hq ?? null,
-        email: c.email ?? c.email_guess ?? null,
-        email_status: c.email_status || (c.email ? "validated" : c.email_guess ? "patterned" : "unknown"),
-        confidence: typeof c.confidence === "number" ? c.confidence : null,
-      } : null,
-      status: "New",
-      notes: (result.outreachDraft ? "Draft present. " : "") + "Saved from Enrichment UI",
-    };
-    try {
-      const res = await authFetch("/api/hr-leads/from-enrichment", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await safeJson(res);
-      if (!res.ok || !data?.ok) throw new Error(data?.error || "Failed to create HR lead");
-      alert("Lead saved ✅");
-    } catch (e) {
-      alert(e?.message || "Failed to save lead");
-    }
-  }, [result, primaryContact]);
-
-  // Quality explainability
-  const q = result?.quality || null;
-  const qScore = typeof q?.score === "number" ? q.score : null;
-  const qFactors = Array.isArray(q?.factors) ? q.factors : [];
+  const contacts = result?.results || [];
+  const summary = result?.summary || {};
+  const isMock = !company?.id;
 
   return (
-    <div className="max-w-6xl mx-auto p-6 space-y-6">
-      {/* Always-visible LLM status */}
-      <LLMStatus status={llmStatus} model={llmModel} durationMs={llmDuration} errorText={llmErrText} />
-
-      {/* Header */}
+    <div className="p-6 space-y-6">
+      {/* Top status row */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Enrichment</h1>
-          <p className="text-sm text-gray-500">
-            Paste a company website / LinkedIn URL, or describe the target (e.g., “G42 UAE Finance Director”).
-          </p>
-        </div>
+        <div />
+        {llmErr && (
+          <span className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm">
+            <span className="inline-block h-2 w-2 rounded-full bg-red-500" />
+            LLM error
+          </span>
+        )}
+        <div />
       </div>
 
-      {/* Query box */}
-      <form onSubmit={runEnrichment} className="bg-white rounded-2xl border border-gray-200 p-4 md:p-5 space-y-3 shadow-sm">
-        <label className="block text-sm font-medium text-gray-700">Input</label>
-        <div className="flex flex-col md:flex-row gap-3">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">Enrichment</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Paste a company website / LinkedIn URL, or select a company from the list.
+          </p>
+        </div>
+
+        {/* Selected company pill */}
+        {company?.name && (
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-sm font-medium text-gray-700">
+              <span className="mr-1 opacity-70">Selected:</span> {company.name}
+            </span>
+            <button
+              onClick={clearSelected}
+              className="text-sm underline text-gray-700 hover:text-gray-900"
+              title="Clear selection"
+            >
+              clear
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Input + Enrich */}
+      <div className="max-w-3xl mx-auto w-full">
+        <label className="block text-sm text-gray-500 mb-2 text-center">
+          {company?.id
+            ? "Real enrichment mode (POST /api/enrich)."
+            : "No company selected — using mock (GET /api/enrich/mock?q=...)."}
+        </label>
+
+        <div className="flex items-stretch gap-2">
           <input
-            value={query}
-            onChange={(e) => { setQuery(e.target.value); if (err && e.target.value.trim().length > 0) setErr(null); }}
-            placeholder="https://company.com  |  linkedin.com/company/...  |  'ADGM fintech HR head UAE'"
-            className="flex-1 rounded-xl border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200"
+            ref={inputRef}
+            className="w-full rounded-md border px-3 py-2 focus:outline-none focus:ring"
+            placeholder="Enter company name (e.g., Revolut) — or pick a company from the Companies page"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && canSubmit && !loading) handleEnrich();
+            }}
+            disabled={!!company?.id}
           />
           <button
-            type="submit"
-            disabled={loading}
-            className="rounded-xl bg-gray-900 text-white px-4 py-2 font-medium hover:bg-black disabled:opacity-60"
+            className="rounded-md bg-gray-900 text-white px-4 py-2 disabled:opacity-50"
+            onClick={handleEnrich}
+            disabled={!canSubmit || loading}
           >
-            {loading ? "Enriching…" : "Enrich"}
+            {loading ? "Enriching..." : "Enrich"}
           </button>
         </div>
-        {err && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{err}</div>}
-      </form>
 
-      {/* Quality explainability (top-right area) */}
-      {result && (
-        <section className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-lg font-semibold text-gray-900">Quality</h3>
-            <ScoreBadge score={qScore} />
+        {!company?.id && (!text || !text.trim()) && (
+          <div className="mt-2 text-sm text-red-600 text-center">
+            company_id is required (select a company) or type a name to use mock.
           </div>
-          {qFactors.length ? (
-            <ul className="grid md:grid-cols-2 gap-2">
-              {qFactors.map((f, i) => (
-                <li key={i} className="text-sm text-gray-700 flex items-start gap-2">
-                  <span className="mt-1 inline-block w-2 h-2 rounded-full bg-gray-400" />
-                  <span>
-                    <span className="font-medium">{f.label}</span>
-                    {typeof f.impact === "number" && <span className="ml-1 text-gray-500">(+{Math.round(f.impact)})</span>}
-                    {f.detail && <span className="ml-2 text-gray-600">— {f.detail}</span>}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <div className="text-sm text-gray-500">No explanation available.</div>
-          )}
-        </section>
-      )}
+        )}
+        {err && <div className="mt-2 text-sm text-red-600 text-center">{err}</div>}
+      </div>
 
-      {/* Contacts & Outreach */}
+      {/* Results */}
       {result && (
-        <section className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-gray-900">Suggested Contacts</h2>
-          </div>
+        <div className="max-w-5xl mx-auto w-full">
+          <div className="rounded-xl border p-4 bg-white">
+            <div className="flex items-center justify-between">
+              <div className="font-medium">
+                {company?.name ? (
+                  <>
+                    Results for <span className="font-semibold">{company.name}</span>
+                  </>
+                ) : (
+                  <>Results (mock)</>
+                )}
+              </div>
+              <div className="text-sm text-gray-500">
+                {summary?.kept != null && summary?.found != null
+                  ? `Kept ${summary.kept} of ${summary.found}`
+                  : summary?.total_candidates != null
+                  ? `Candidates: ${summary.total_candidates}`
+                  : null}
+              </div>
+            </div>
 
-          {(!result.contacts || result.contacts.length === 0) ? (
-            <div className="mt-4 text-sm text-gray-500">No contacts found (only real people shown; generic mailboxes hidden).</div>
-          ) : (
+            {/* Contacts list */}
             <div className="mt-4 overflow-x-auto">
               <table className="min-w-full text-sm">
-                <thead className="bg-gray-50 text-gray-700 text-left">
+                <thead className="bg-gray-50 text-left">
                   <tr>
-                    <th className="px-4 py-2">Primary</th>
-                    <th className="px-4 py-2">Name</th>
-                    <th className="px-4 py-2">Title</th>
-                    <th className="px-4 py-2">Dept</th>
-                    <th className="px-4 py-2">Email</th>
-                    <th className="px-4 py-2">Status</th>
-                    <th className="px-4 py-2">Accuracy</th>
-                    <th className="px-4 py-2">LinkedIn</th>
-                    <th className="px-4 py-2">Actions</th>
+                    <Th>Name</Th>
+                    <Th>Title</Th>
+                    <Th>Email</Th>
+                    <Th>LinkedIn</Th>
+                    <Th>Confidence</Th>
+                    <Th>Status</Th>
+                    <Th>Source</Th>
                   </tr>
                 </thead>
-                <tbody>
-                  {result.contacts.map((c) => {
-                    const email = c.email || c.email_guess || null;
-                    const isGuess = !c.email && !!c.email_guess;
-                    const emailStatus = c.email_status || (isGuess ? "patterned" : "unknown");
-                    const conf = typeof c.confidence === "number" ? Math.round(c.confidence * 100) : null;
-                    return (
-                      <tr key={c._k} className="border-t border-gray-100">
-                        <td className="px-4 py-2 whitespace-nowrap">
-                          <input
-                            type="radio"
-                            name="primary"
-                            checked={primaryContactKey === c._k}
-                            onChange={() => setPrimaryContactKey(c._k)}
-                            className="h-4 w-4"
-                            aria-label="Primary contact"
-                          />
-                        </td>
-                        <td className="px-4 py-2 whitespace-nowrap">{c.name || "—"}</td>
-                        <td className="px-4 py-2">{c.title || "—"}</td>
-                        <td className="px-4 py-2">{c.dept || "—"}</td>
-                        <td className="px-4 py-2 whitespace-nowrap">
-                          {email ? (
-                            <span className="inline-flex items-center gap-2">
-                              <a className="underline" href={`mailto:${email}`}>{email}</a>
-                              {isGuess && (
-                                <span className="text-[10px] px-1 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
-                                  guess
-                                </span>
-                              )}
-                            </span>
-                          ) : "—"}
-                        </td>
-                        <td className="px-4 py-2">
-                          <span className={statusPillClass(emailStatus)}>{prettyStatus(emailStatus)}</span>
-                        </td>
-                        <td className="px-4 py-2">{conf !== null ? `${conf}%` : "—"}</td>
-                        <td className="px-4 py-2">
-                          {c.linkedin ? <a className="underline" href={c.linkedin} target="_blank" rel="noreferrer">Profile</a> : "—"}
-                        </td>
-                        <td className="px-4 py-2">
-                          <button
-                            onClick={() =>
-                              copyToClipboard(
-                                result.outreachDraft ||
-                                `Hi ${c.name?.split(" ")[0] || ""},\n\nWe help with payroll onboarding for premium employers in the UAE. If you prefer, I can share a tailored plan for ${result.company?.name}.`
-                              )
-                            }
-                            className="rounded-lg border px-3 py-1.5 text-xs hover:bg-gray-50"
-                          >
-                            Copy Draft
-                          </button>
-                          <button
-                            onClick={saveAsLead}
-                            className="ml-2 rounded-lg bg-gray-900 text-white px-3 py-1.5 text-xs hover:bg-black"
-                          >
-                            Save Lead
-                          </button>
-                        </td>
+                <tbody className="divide-y">
+                  {contacts.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-6 text-center text-gray-500">
+                        No contacts found.
+                      </td>
+                    </tr>
+                  ) : (
+                    contacts.map((c, idx) => (
+                      <tr key={idx} className="align-top">
+                        <Td className="font-medium">{c.name || "—"}</Td>
+                        <Td>{c.designation || "—"}</Td>
+                        <Td>
+                          {c.email ? (
+                            <a href={`mailto:${c.email}`} className="underline break-all">
+                              {c.email}
+                            </a>
+                          ) : (
+                            "—"
+                          )}
+                        </Td>
+                        <Td>
+                          {c.linkedin_url ? (
+                            <a href={c.linkedin_url} target="_blank" rel="noreferrer" className="underline break-all">
+                              LinkedIn
+                            </a>
+                          ) : (
+                            "—"
+                          )}
+                        </Td>
+                        <Td>{c.confidence != null ? c.confidence.toFixed(2) : "—"}</Td>
+                        <Td>{c.email_status || "—"}</Td>
+                        <Td className="text-gray-500">{c.source || (isMock ? "mock" : "provider_or_pattern")}</Td>
                       </tr>
-                    );
-                  })}
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
-          )}
-        </section>
+
+            {/* Footer note */}
+            <div className="mt-4 text-xs text-gray-500">
+              {company?.id
+                ? "Best-effort insert into HR Leads is performed server-side if the table exists."
+                : "Mock mode: no database writes are performed."}
+            </div>
+          </div>
+
+          {/* Raw JSON pane for debugging */}
+          <div className="mt-4 rounded-xl border p-3 bg-gray-50">
+            <div className="text-xs font-semibold mb-2 text-gray-600">Raw response</div>
+            <pre className="text-xs whitespace-pre-wrap text-gray-800">
+              {JSON.stringify(result, null, 2)}
+            </pre>
+          </div>
+        </div>
       )}
     </div>
   );
+}
+
+/* ---------- small UI helpers ---------- */
+
+function Th({ children }) {
+  return (
+    <th scope="col" className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+      {children}
+    </th>
+  );
+}
+
+function Td({ children, className = "" }) {
+  return <td className={`px-3 py-2 ${className}`}>{children}</td>;
 }

@@ -51,6 +51,21 @@ export default function CompaniesPage() {
     };
   }, [qs]);
 
+  // NEW: broadcast selection so Enrichment switches to real flow
+  const handlePick = (company) => {
+    if (!company) return;
+    window.dispatchEvent(
+      new CustomEvent("upr:companySidebar", {
+        detail: {
+          id: company.id,
+          name: company.name,
+          domain: company.domain,
+          website_url: company.website_url,
+        },
+      })
+    );
+  };
+
   return (
     <div className="p-6">
       {/* Header */}
@@ -125,7 +140,7 @@ export default function CompaniesPage() {
                 </td>
               </tr>
             ) : (
-              rows.map((r) => <CompanyRow key={r.id} r={r} />)
+              rows.map((r) => <CompanyRow key={r.id} r={r} onPick={handlePick} />)
             )}
           </tbody>
         </table>
@@ -134,15 +149,31 @@ export default function CompaniesPage() {
   );
 }
 
-function CompanyRow({ r }) {
+function CompanyRow({ r, onPick }) {
   const createdRaw = r.created ?? r.created_at; // tolerate either key
   const created =
     createdRaw && !Number.isNaN(new Date(createdRaw).getTime())
       ? new Date(createdRaw).toLocaleDateString()
       : "—";
 
+  // NEW: keyboard + mouse interaction to broadcast pick
+  const onActivate = () => onPick && onPick(r);
+  const onKeyDown = (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onActivate();
+    }
+  };
+
   return (
-    <tr className="hover:bg-gray-50/60">
+    <tr
+      className="hover:bg-gray-50/60 cursor-pointer"
+      onClick={onActivate}
+      onKeyDown={onKeyDown}
+      role="button"
+      tabIndex={0}
+      title="Click to use this company in Enrichment"
+    >
       <Td>
         <div className="flex flex-col">
           <div className="font-medium text-gray-900">{r.name || "—"}</div>

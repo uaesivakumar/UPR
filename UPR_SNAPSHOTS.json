@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-19T09:44:19Z",
-  "generated_human": "Fri, 19 Sep 2025 09:44:19 GMT",
+  "generated": "2025-09-19T09:56:48Z",
+  "generated_human": "Fri, 19 Sep 2025 09:56:48 GMT",
   "branch": "main",
-  "commit": "0c090f7",
+  "commit": "18db862",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -40,19 +40,18 @@
     },
     {
       "path": "dashboard/src/features/enrichment/EnrichmentView.jsx",
-      "size": 14873,
-      "mtime": "2025-09-14T09:41:07.565Z",
-      "sha256": "a9e58b2705d114b333d667a6fddd73dc271ec2ae65890e009749f358c09c72d5",
+      "size": 11052,
+      "mtime": "2025-09-19T09:55:39.555Z",
+      "sha256": "e124b4a31a58701c76271a942225eff0418cbedb8ef255eb0140010378adc2bd",
       "imports": [
-        "import React, { useMemo, useState, useCallback } from \"react\";",
-        "import { authFetch } from \"../../utils/auth\";",
-        "import LLMStatus from \"./LLMStatus\";"
+        "import React, { useCallback, useEffect, useMemo, useRef, useState } from \"react\";",
+        "import { authFetch } from \"../../utils/auth\";"
       ],
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "import React, { useMemo, useState, useCallback } from \"react\";\nimport { authFetch } from \"../../utils/auth\";\nimport LLMStatus from \"./LLMStatus\";\n\n/** Helpers */\nasync function safeJson(resp) {\n  try { return await resp.json(); } catch { return null; }\n}\nfunction prettyStatus(s) { return String(s || \"unknown\").toLowerCase(); }\nfunction statusPillClass(s) {\n  const v = String(s || \"unknown\").toLowerCase();\n  if (v === \"validated\")\n    return \"text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200\";\n  if (v === \"bounced\" || v === \"invalid\")\n    return \"text-[10px] px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200\";\n  if (v === \"patterned\" || v === \"guessed\")\n    return \"text-[10px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200\";\n  return \"text-[10px] px-2 py-0.5 rounded-full bg-gray-50 text-gray-700 border border-gray-200\";\n}\nasync function copyToClipboard(text) {\n  try { await navigator.clipboard.writeText(text); }\n  catch {\n    const el = document.createElement(\"textarea\");\n    el.value = text; document.body.appendChild(el); el.select();\n    document.execCommand(\"copy\"); document.body.removeChild(el);\n  }\n}\n\nfunction ScoreBadge({ score }) {\n  if (typeof score !== \"number\") return null;\n  const color =\n    score >= 80\n      ? \"bg-emerald-50 text-emerald-700 border-emerald-200\"\n      : score >= 60\n      ? \"bg-amber-50 text-amber-700 border-amber-200\"\n      : \"bg-gray-100 text-gray-700 border-gray-200\";\n  return (\n    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-sm border ${color}`}>\n      Score: <span className=\"font-semibold\">{score}</span>/100\n    </span>",
-      "tail": "                            }\n                            className=\"rounded-lg border px-3 py-1.5 text-xs hover:bg-gray-50\"\n                          >\n                            Copy Draft\n                          </button>\n                          <button\n                            onClick={saveAsLead}\n                            className=\"ml-2 rounded-lg bg-gray-900 text-white px-3 py-1.5 text-xs hover:bg-black\"\n                          >\n                            Save Lead\n                          </button>\n                        </td>\n                      </tr>\n                    );\n                  })}\n                </tbody>\n              </table>\n            </div>\n          )}\n        </section>\n      )}\n    </div>\n  );\n}\n"
+      "head": "// dashboard/src/features/enrichment/EnrichmentView.jsx\nimport React, { useCallback, useEffect, useMemo, useRef, useState } from \"react\";\nimport { authFetch } from \"../../utils/auth\";\n\n/**\n * Optional props:\n *  - initialQuery?: string\n *  - onCompanyChange?: (company|null) => void\n */\nexport default function EnrichmentView({ initialQuery = \"\", onCompanyChange = () => {} }) {\n  // UI state\n  const [text, setText] = useState(initialQuery);\n  const [loading, setLoading] = useState(false);\n  const [err, setErr] = useState(null);\n  const [llmErr, setLlmErr] = useState(null);\n\n  // Selected company from CompaniesPage (via window event)\n  const [company, setCompany] = useState(null); // { id, name, domain, website_url }\n\n  // API result\n  const [result, setResult] = useState(null); // { status, company_id|null, results: [], summary: {} }\n\n  const inputRef = useRef(null);\n\n  // Listen for broadcasted selections from CompaniesPage (or anywhere else)\n  useEffect(() => {\n    const onSidebarCompany = (e) => {\n      const detail = e?.detail || null;\n      if (!detail) {\n        setCompany(null);\n        onCompanyChange(null);\n        return;\n      }\n      setCompany({\n        id: detail.id,\n        name: detail.name,\n        domain: detail.domain,\n        website_url: detail.website_url,\n      });\n      if (detail.name && !text) setText(detail.name);",
+      "tail": "            <div className=\"text-xs font-semibold mb-2 text-gray-600\">Raw response</div>\n            <pre className=\"text-xs whitespace-pre-wrap text-gray-800\">\n              {JSON.stringify(result, null, 2)}\n            </pre>\n          </div>\n        </div>\n      )}\n    </div>\n  );\n}\n\n/* ---------- small UI helpers ---------- */\n\nfunction Th({ children }) {\n  return (\n    <th scope=\"col\" className=\"px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500\">\n      {children}\n    </th>\n  );\n}\n\nfunction Td({ children, className = \"\" }) {\n  return <td className={`px-3 py-2 ${className}`}>{children}</td>;\n}\n"
     },
     {
       "path": "dashboard/src/features/enrichment/LLMStatus.jsx",
@@ -101,9 +100,9 @@
     },
     {
       "path": "dashboard/src/pages/CompaniesPage.jsx",
-      "size": 7115,
-      "mtime": "2025-09-13T16:10:49.887Z",
-      "sha256": "fc43a133651ccac6122205fd0a725b6c7e2c13b2da018b1dd9cd5212082380c4",
+      "size": 7940,
+      "mtime": "2025-09-19T09:52:07.726Z",
+      "sha256": "32f200eab28aacb689e234083216a1fc0f792cd595e5c514371a221b4d8740c4",
       "imports": [
         "import { useEffect, useMemo, useState } from \"react\";",
         "import { authFetch } from \"../utils/auth\";"
