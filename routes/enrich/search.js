@@ -1,213 +1,263 @@
-import express from "express";
+// routes/enrich/search.js
+import { Router } from "express";
 
-// Import libs defensively as namespaces to avoid named-export breakages
-import * as apollo from "./lib/apollo.js";
-import * as llm from "./lib/llm.js";
-import * as geo from "./lib/geo.js";
-import * as quality from "./lib/quality.js";
-import * as email from "./lib/email.js";
+// Data providers / helpers
+import {
+  // flexible: any of these may be no-ops depending on your apollo.js
+  searchPeopleByCompany,
+  compactApolloKeywords,
+} from "./lib/apollo.js";
 
-const router = express.Router();
+import {
+  qualityScore,
+  scoreCandidate,   // used per-row for confidence tweaks (safe if pass-through)
+} from "./lib/quality.js";
 
-/* ------------------------------ helpers/utils ------------------------------ */
+import {
+  emirateFromLocation,
+  tagEmirate,         // graceful if it just returns input.emirate internally
+  isUAE,
+} from "./lib/geo.js";
 
-const pickFn = (...cands) => cands.find((f) => typeof f === "function");
+import {
+  inferPatternFromSamples,
+  applyPattern as applyEmailPattern,   // alias to what email.js exports
+  isProviderPlaceholderEmail,
+  loadPatternFromCache,
+  savePatternToCache,
+  verifyEmail,                          // may return { status:'unknown', reason:'no_verifier' }
+} from "./lib/email.js";
 
-const toDomain = (str) => {
-  if (!str) return "";
-  const s = String(str).trim();
-  try {
-    if (/^https?:\/\//i.test(s)) return new URL(s).hostname.replace(/^www\./i, "");
-    // already looks like a domain
-    return s.replace(/^www\./i, "").split("/")[0];
-  } catch {
-    return s.replace(/^www\./i, "").split("/")[0];
+import { guessCompany as llmGuessCompany } from "./lib/llm.js";
+
+const router = Router();
+
+/**
+ * Normalize a person row to UI schema
+ */
+function normalizeCandidate(raw, domainHint) {
+  const name = raw?.name || [raw?.first_name, raw?.last_name].filter(Boolean).join(" ").trim();
+  const designation = raw?.designation || raw?.title || "";
+  const linkedin_url = raw?.linkedin_url || raw?.linkedin || "";
+  const email = raw?.email || "";
+  const location = raw?.location || raw?.city || raw?.country || "";
+
+  // Emirate tagging (best-effort)
+  let emirate = raw?.emirate || emirateFromLocation(location) || "";
+  if (!emirate && location) {
+    emirate = tagEmirate(location) || "";
   }
-};
 
-const emirateFallback = (loc = "") => {
-  const s = String(loc || "").toLowerCase();
-  if (s.includes("abu dhabi")) return "Abu Dhabi";
-  if (s.includes("dubai")) return "Dubai";
-  if (s.includes("sharjah")) return "Sharjah";
-  if (s.includes("ajman")) return "Ajman";
-  if (s.includes("umm al") || s.includes("uaq")) return "Umm Al Quwain";
-  if (s.includes("ras al khaimah") || s.includes("rak")) return "Ras Al Khaimah";
-  if (s.includes("fujairah")) return "Fujairah";
-  return "";
-};
+  // Confidence / role bucket scoring may be a light wrapper inside scoreCandidate()
+  const confidence = (() => {
+    try {
+      return Number(scoreCandidate({ ...raw, name, designation, email, emirate }) || 0.75);
+    } catch {
+      return 0.75;
+    }
+  })();
 
-const tagEmirate = geo.tagEmirate || emirateFallback;
+  // Status from provider (if present) or unknown
+  const email_status = raw?.email_status || "unknown";
+  const email_reason = raw?.email_reason || (email ? "provider" : "no_verifier");
 
-const roleBucketGuess = (title = "") => {
-  const t = String(title || "").toLowerCase();
-  if (/hr|human\s*resources|talent|recruit/i.test(t)) return "hr";
-  if (/admin|office\s*manager|secretar/i.test(t)) return "admin";
-  if (/finance|account|payroll|treasur/i.test(t)) return "finance";
-  return "other";
-};
+  return {
+    name,
+    designation,
+    linkedin_url,
+    email,
+    email_status,
+    email_reason,
+    role_bucket: raw?.role_bucket || raw?.role || "",
+    seniority: raw?.seniority || "",
+    source: raw?.source || "live",
+    confidence,
+    location,
+    emirate,
+    domain_hint: domainHint || null,
+  };
+}
 
-const guessEmailFromPattern = (pattern, name, domain) => {
-  if (!pattern || !name || !domain) return null;
-  const n = String(name).trim();
-  const parts = n.split(/\s+/).filter(Boolean);
-  const first = (parts[0] || "").toLowerCase().replace(/[^a-z]/g, "");
-  const last = (parts[parts.length - 1] || "").toLowerCase().replace(/[^a-z]/g, "");
-  const f = first[0] || "";
-  const l = last[0] || "";
-
-  let local = null;
-
-  const p = String(pattern).toLowerCase();
-  if (p.includes("first.last")) local = `${first}.${last}`;
-  else if (p.includes("first_last")) local = `${first}_${last}`;
-  else if (p.includes("firstlast")) local = `${first}${last}`;
-  else if (p.includes("f.last")) local = `${f}.${last}`;
-  else if (p.includes("firstl")) local = `${first}${l}`;
-  else if (p.includes("first")) local = first;
-  else if (p.includes("last")) local = last;
-
-  if (!local) return null;
-  return `${local}@${domain}`;
-};
-
-const qualityHeuristic = ({ company, results }) => {
-  const domOk = !!company?.domain;
-  const liOk = !!company?.linkedin_url;
-  const uaeCount = (results || []).filter((r) => /united arab emirates|dubai|abu dhabi|sharjah|rak|fujairah|ajman|umm al quwain/i.test(String(r.location || ""))).length;
-  const hrish = (results || []).filter((r) => /hr|human\s*resources|talent|recruit|people/i.test(String(r.designation || r.title || ""))).length;
-
-  let score = 0.2 * (domOk ? 1 : 0) + 0.2 * (liOk ? 1 : 0);
-  score += Math.min(0.3, (uaeCount / Math.max(1, results.length)) * 0.3);
-  score += Math.min(0.3, (hrish / Math.max(1, results.length)) * 0.3);
-
-  const explanation = [
-    domOk ? "has primary domain" : null,
-    liOk ? "LinkedIn page found" : null,
-    `${uaeCount} UAE contacts`,
-    `${hrish} HR/talent contacts`,
-  ].filter(Boolean).join("; ");
-
-  return { score: Math.max(0, Math.min(1, score)), explanation };
-};
-
-const withTimeout = (p, ms = 12000) =>
-  Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), ms))]);
-
-/* ---------------------------------- route ---------------------------------- */
+/**
+ * Safely time an async fn, returning { ms, value, error }
+ */
+async function timeIt(fn) {
+  const t0 = Date.now();
+  try {
+    const value = await fn();
+    return { ms: Date.now() - t0, value, error: null };
+  } catch (error) {
+    return { ms: Date.now() - t0, value: null, error };
+  }
+}
 
 router.get("/search", async (req, res) => {
   const q = String(req.query.q || "").trim();
-  if (!q) return res.status(400).json({ ok: false, error: "missing q", data: { summary: null, results: [] } });
 
+  // Optional user corrections from the UI “Fix company” modal
   const overrides = {
-    name: (req.query.name || "").trim(),
-    domain: toDomain(req.query.domain || ""),
-    linkedin_url: (req.query.linkedin_url || "").trim(),
-    parent: (req.query.parent || "").trim(),
+    name: String(req.query.name || "").trim() || null,
+    domain: String(req.query.domain || "").trim() || null,
+    linkedin_url: String(req.query.linkedin_url || "").trim() || null,
+    parent: String(req.query.parent || "").trim() || null,
   };
 
-  const t0 = Date.now();
-  let companyGuess = null;
-  let llm_ms = 0;
-
-  try {
-    if (overrides.name || overrides.domain || overrides.linkedin_url || overrides.parent) {
-      companyGuess = {
-        name: overrides.name || q,
-        domain: overrides.domain || "",
-        linkedin_url: overrides.linkedin_url || "",
-        parent: overrides.parent || "",
-        mode: "manual",
-      };
-    } else {
-      const guessFn = pickFn(apollo.guessCompany, llm.guessCompany, llm.companyGuess);
-      if (guessFn) {
-        companyGuess = await withTimeout(Promise.resolve(guessFn(q)));
-      } else {
-        companyGuess = { name: q, domain: "", mode: "guess" };
-      }
-      companyGuess.domain = toDomain(companyGuess.domain || companyGuess.website_url || "");
-      companyGuess.mode = companyGuess.mode || "LLM";
-    }
-  } catch (e) {
-    companyGuess = { name: q, domain: "", mode: "fallback" };
-  } finally {
-    llm_ms = Date.now() - t0;
+  // Short-circuit empty query with a clean envelope (prevents UI spinner from hanging)
+  if (!q && !overrides.name && !overrides.domain && !overrides.linkedin_url) {
+    return res.json({
+      ok: true,
+      data: {
+        summary: {
+          provider: "live",
+          timings: { provider_ms: 0, llm_ms: 0, smtp_ms: 0 },
+          company_guess: null,
+          quality: { score: 0, explanation: "Empty query" },
+          total_candidates: 0,
+          kept: 0,
+        },
+        results: [],
+      },
+    });
   }
 
-  const t1 = Date.now();
-  let rawResults = [];
-  let provider_ms = 0;
-  let provider = "live";
-
-  try {
-    const peopleFn =
-      pickFn(apollo.searchPeopleByCompany, apollo.searchPeople, apollo.peopleByCompany, apollo.apolloPeopleByCompany) ||
-      null;
-    if (peopleFn) {
-      rawResults = await withTimeout(Promise.resolve(peopleFn(companyGuess, { q })), 10000);
-    } else {
-      rawResults = [];
+  // 1) Company disambiguation (LLM best-effort). Never block results if it fails.
+  const llm = await timeIt(async () => {
+    try {
+      const g = await llmGuessCompany({
+        q,
+        overrides,
+      });
+      return g || null;
+    } catch {
+      return null;
     }
-  } catch (_e) {
-    rawResults = [];
-  } finally {
-    provider_ms = Date.now() - t1;
-  }
-
-  // Normalize + enrich each row
-  const domain = companyGuess?.domain || toDomain(companyGuess?.website_url || "");
-  const normalized = (rawResults || []).map((r) => {
-    const name = r.name || r.full_name || r.fullName || "";
-    const designation = r.designation || r.title || r.job_title || "";
-    const linkedin_url = r.linkedin_url || r.linkedin || r.linkedinUrl || "";
-    const location = r.location || r.city || r.region || "";
-    const source = r.source || "live";
-    const confidence = typeof r.confidence === "number" ? r.confidence : 0.8;
-
-    // Replace provider pattern placeholders with actual guess if needed
-    let emailAddr = r.email || "";
-    if (emailAddr && /first|last|f\.|_/.test(emailAddr) && domain && name) {
-      // looks like a pattern, try to resolve
-      const localPart = emailAddr.split("@")[0] || "";
-      const resolved = guessEmailFromPattern(localPart, name, domain);
-      if (resolved) emailAddr = resolved;
-    } else if (!emailAddr && r.pattern && domain && name) {
-      const resolved = guessEmailFromPattern(r.pattern, name, domain);
-      if (resolved) emailAddr = resolved;
-    }
-
-    return {
-      name,
-      designation,
-      linkedin_url,
-      email: emailAddr || null,
-      email_status: r.email_status || (emailAddr ? "unknown" : "none"),
-      email_reason: r.email_reason || (emailAddr ? "no_verifier" : "no_email"),
-      role_bucket: r.role_bucket || roleBucketGuess(designation),
-      seniority: r.seniority || r.level || null,
-      source,
-      confidence,
-      location,
-      emirate: tagEmirate(location),
-    };
   });
 
-  // Quality
-  const qualityFn = pickFn(quality.scoreQuality, quality.qualityScore, quality.computeQuality);
-  const qual = qualityFn ? qualityFn({ company: companyGuess, results: normalized }) : qualityHeuristic({ company: companyGuess, results: normalized });
+  // Compose the final guess with user overrides taking priority
+  const company_guess = {
+    ...(llm.value || {}),
+    ...(overrides.name ? { name: overrides.name } : {}),
+    ...(overrides.domain ? { domain: overrides.domain } : {}),
+    ...(overrides.linkedin_url ? { linkedin_url: overrides.linkedin_url } : {}),
+    ...(overrides.parent ? { parent: overrides.parent } : {}),
+    // Small normalization
+    website_url: (overrides.domain || llm.value?.domain)
+      ? `https://${(overrides.domain || llm.value?.domain || "").replace(/^https?:\/\//i, "")}`
+      : (llm.value?.website_url || undefined),
+    mode: overrides.name || overrides.domain || overrides.linkedin_url ? "User+LLM" : (llm.value ? "LLM" : "heuristic"),
+  };
 
+  // 2) Provider lookup (Apollo or equivalent)
+  const provider = await timeIt(async () => {
+    const key = compactApolloKeywords
+      ? compactApolloKeywords(q, company_guess?.name || "", company_guess?.domain || "", company_guess?.linkedin_url || "")
+      : q;
+
+    const rows = await searchPeopleByCompany({
+      query: key,
+      name: company_guess?.name || null,
+      domain: company_guess?.domain || null,
+      linkedin_url: company_guess?.linkedin_url || null,
+      parent: company_guess?.parent || null,
+      // You can pass other knobs (country filters, etc.) here.
+    });
+
+    return Array.isArray(rows) ? rows : [];
+  });
+
+  // 3) Normalize candidates
+  const normalized = (provider.value || []).map((r) => normalizeCandidate(r, company_guess?.domain || null));
+
+  // 4) Email pattern (infer/apply) — best effort, UAE-first
+  try {
+    const domain = (company_guess?.domain || "").toLowerCase();
+    if (domain) {
+      // build samples for pattern inference (skip obvious placeholders)
+      const samples = normalized
+        .filter((r) => r.email && !isProviderPlaceholderEmail(r.email))
+        .map((r) => ({ name: r.name, email: r.email }));
+
+      // include any cached pattern (helps for second searches)
+      const cached = await loadPatternFromCache(domain);
+      const inferred = samples.length ? await inferPatternFromSamples(samples, domain) : null;
+      const pattern = inferred || cached || null;
+
+      if (pattern) {
+        await savePatternToCache(domain, pattern);
+
+        for (const r of normalized) {
+          // only fill if missing AND looks UAE (reduce false positives for foreign branches)
+          if (!r.email && r.name && isUAE(r.location || r.emirate || "")) {
+            try {
+              r.email = applyEmailPattern(pattern, r.name, domain);
+              r.email_status = "unknown";
+              r.email_reason = "pattern";
+            } catch {
+              // ignore
+            }
+          }
+        }
+      }
+    }
+  } catch {
+    // never break the request for pattern issues
+  }
+
+  // 5) Optional verification pass (will be "unknown" if no verifier keys)
+  try {
+    await Promise.all(
+      normalized.map(async (r) => {
+        if (!r.email) return;
+        const { status, reason } = await verifyEmail(r.email);
+        r.email_status = status || r.email_status || "unknown";
+        if (reason) r.email_reason = reason;
+      })
+    );
+  } catch {
+    // ignore verifier errors; keep UI snappy
+  }
+
+  // 6) Final quality rollup
+  const quality = (() => {
+    try {
+      return qualityScore({
+        company: {
+          name: company_guess?.name || "",
+          domain: company_guess?.domain || "",
+          linkedin_url: company_guess?.linkedin_url || "",
+        },
+        contacts: normalized,
+      });
+    } catch {
+      return { score: 0.7, explanation: "Heuristic" };
+    }
+  })();
+
+  // 7) Response
+  const summary = {
+    total_candidates: provider.value ? provider.value.length : 0,
+    kept: normalized.length,
+    provider: "live",
+    company_guess,
+    timings: {
+      llm_ms: llm.ms,
+      provider_ms: provider.ms,
+      smtp_ms: 0,
+    },
+    quality,
+  };
+
+  // Even if provider errored, return ok: true with empty results so UI never spins forever.
   return res.json({
     ok: true,
     data: {
-      summary: {
-        provider,
-        company_guess: companyGuess,
-        quality: qual,
-        timings: { llm_ms, provider_ms, smtp_ms: 0 },
-      },
+      summary,
       results: normalized,
+    },
+    // surface non-fatal provider/llm errors in debug field (not used by UI)
+    debug: {
+      llm_error: llm.error ? String(llm.error?.message || llm.error) : null,
+      provider_error: provider.error ? String(provider.error?.message || provider.error) : null,
     },
   });
 });

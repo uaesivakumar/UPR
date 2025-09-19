@@ -1,66 +1,53 @@
-import React from "react";
-import { createBrowserRouter, RouterProvider, Outlet } from "react-router-dom";
-import Topbar from "./components/Topbar.jsx";
+// dashboard/src/App.jsx
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Sidebar from "./components/sidebar.jsx";
+import Topbar from "./components/Topbar.jsx";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
-import AppError from "./components/AppError.jsx";
 
-// pages (import directly; avoid lazy until we’re stable)
 import DashboardHome from "./pages/DashboardHome.jsx";
-import EnrichmentPage from "./pages/EnrichmentPage.jsx";
 import CompaniesPage from "./pages/CompaniesPage.jsx";
 import HRLeads from "./pages/HRLeads.jsx";
+import EnrichmentPage from "./pages/EnrichmentPage.jsx";
 import MessagesPage from "./pages/MessagesPage.jsx";
 import Login from "./pages/Login.jsx";
 
-function Shell() {
+function Shell({ children }) {
   return (
-    <div className="min-h-screen bg-gray-100">
-      <Topbar />
-      <div className="flex">
+    <div className="flex h-screen">
+      <aside className="w-72 shrink-0 border-r bg-white">
         <Sidebar />
-        <main className="flex-1 p-6">
-          <Outlet />
-        </main>
-      </div>
+      </aside>
+      <main className="flex-1 overflow-auto bg-gray-50">
+        <Topbar />
+        {children}
+      </main>
     </div>
   );
 }
 
-function NotFound() {
-  return <div className="p-6">Not found.</div>;
-}
-
-// Provide errorElement on EVERY top-level branch
-const router = createBrowserRouter([
-  {
-    path: "/login",
-    element: <Login />,
-    errorElement: <AppError />,
-  },
-  {
-    path: "/",
-    element: (
-      <ProtectedRoute>
-        <Shell />
-      </ProtectedRoute>
-    ),
-    errorElement: <AppError />,
-    children: [
-      { index: true, element: <DashboardHome /> },
-      { path: "enrichment", element: <EnrichmentPage /> },
-      { path: "companies", element: <CompaniesPage /> },
-      { path: "hr-leads", element: <HRLeads /> },
-      { path: "messages", element: <MessagesPage /> },
-      { path: "*", element: <NotFound /> },
-    ],
-  },
-]);
-
 export default function App() {
   return (
-    <AppError>
-      <RouterProvider router={router} />
-    </AppError>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <Shell />
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route path="dashboard" element={<DashboardHome />} />
+          <Route path="companies" element={<CompaniesPage />} />
+          <Route path="hr-leads" element={<HRLeads />} />
+          <Route path="enrichment" element={<EnrichmentPage />} />
+          <Route path="messages" element={<MessagesPage />} />
+          <Route path="*" element={<div className="p-6">Not found.</div>} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
   );
 }

@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-19T19:21:02Z",
-  "generated_human": "Fri, 19 Sep 2025 19:21:02 GMT",
+  "generated": "2025-09-19T19:30:22Z",
+  "generated_human": "Fri, 19 Sep 2025 19:30:22 GMT",
   "branch": "main",
-  "commit": "b2e3ba7",
+  "commit": "366d2df",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -407,22 +407,18 @@
     },
     {
       "path": "routes/enrich/search.js",
-      "size": 7768,
-      "mtime": "2025-09-19T19:20:57.790Z",
-      "sha256": "978643c6b3016c61aee2d4bbca66046e81fa6868ba6efaea5d3199ecfff73b49",
+      "size": 8215,
+      "mtime": "2025-09-19T19:29:34.094Z",
+      "sha256": "726b66a7f6606164fdbe54bcc07af83f3884a9df33d70cfb5f14da6425e42c44",
       "imports": [
-        "import express from \"express\";",
-        "import * as apollo from \"./lib/apollo.js\";",
-        "import * as llm from \"./lib/llm.js\";",
-        "import * as geo from \"./lib/geo.js\";",
-        "import * as quality from \"./lib/quality.js\";",
-        "import * as email from \"./lib/email.js\";"
+        "import { Router } from \"express\";",
+        "\nimport { guessCompany as llmGuessCompany } from \"./lib/llm.js\";"
       ],
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "import express from \"express\";\n\n// Import libs defensively as namespaces to avoid named-export breakages\nimport * as apollo from \"./lib/apollo.js\";\nimport * as llm from \"./lib/llm.js\";\nimport * as geo from \"./lib/geo.js\";\nimport * as quality from \"./lib/quality.js\";\nimport * as email from \"./lib/email.js\";\n\nconst router = express.Router();\n\n/* ------------------------------ helpers/utils ------------------------------ */\n\nconst pickFn = (...cands) => cands.find((f) => typeof f === \"function\");\n\nconst toDomain = (str) => {\n  if (!str) return \"\";\n  const s = String(str).trim();\n  try {\n    if (/^https?:\\/\\//i.test(s)) return new URL(s).hostname.replace(/^www\\./i, \"\");\n    // already looks like a domain\n    return s.replace(/^www\\./i, \"\").split(\"/\")[0];\n  } catch {\n    return s.replace(/^www\\./i, \"\").split(\"/\")[0];\n  }\n};\n\nconst emirateFallback = (loc = \"\") => {\n  const s = String(loc || \"\").toLowerCase();\n  if (s.includes(\"abu dhabi\")) return \"Abu Dhabi\";\n  if (s.includes(\"dubai\")) return \"Dubai\";\n  if (s.includes(\"sharjah\")) return \"Sharjah\";\n  if (s.includes(\"ajman\")) return \"Ajman\";\n  if (s.includes(\"umm al\") || s.includes(\"uaq\")) return \"Umm Al Quwain\";\n  if (s.includes(\"ras al khaimah\") || s.includes(\"rak\")) return \"Ras Al Khaimah\";\n  if (s.includes(\"fujairah\")) return \"Fujairah\";\n  return \"\";\n};\n\nconst tagEmirate = geo.tagEmirate || emirateFallback;",
-      "tail": "      location,\n      emirate: tagEmirate(location),\n    };\n  });\n\n  // Quality\n  const qualityFn = pickFn(quality.scoreQuality, quality.qualityScore, quality.computeQuality);\n  const qual = qualityFn ? qualityFn({ company: companyGuess, results: normalized }) : qualityHeuristic({ company: companyGuess, results: normalized });\n\n  return res.json({\n    ok: true,\n    data: {\n      summary: {\n        provider,\n        company_guess: companyGuess,\n        quality: qual,\n        timings: { llm_ms, provider_ms, smtp_ms: 0 },\n      },\n      results: normalized,\n    },\n  });\n});\n\nexport default router;\n"
+      "head": "// routes/enrich/search.js\nimport { Router } from \"express\";\n\n// Data providers / helpers\nimport {\n  // flexible: any of these may be no-ops depending on your apollo.js\n  searchPeopleByCompany,\n  compactApolloKeywords,\n} from \"./lib/apollo.js\";\n\nimport {\n  qualityScore,\n  scoreCandidate,   // used per-row for confidence tweaks (safe if pass-through)\n} from \"./lib/quality.js\";\n\nimport {\n  emirateFromLocation,\n  tagEmirate,         // graceful if it just returns input.emirate internally\n  isUAE,\n} from \"./lib/geo.js\";\n\nimport {\n  inferPatternFromSamples,\n  applyPattern as applyEmailPattern,   // alias to what email.js exports\n  isProviderPlaceholderEmail,\n  loadPatternFromCache,\n  savePatternToCache,\n  verifyEmail,                          // may return { status:'unknown', reason:'no_verifier' }\n} from \"./lib/email.js\";\n\nimport { guessCompany as llmGuessCompany } from \"./lib/llm.js\";\n\nconst router = Router();\n\n/**\n * Normalize a person row to UI schema\n */\nfunction normalizeCandidate(raw, domainHint) {\n  const name = raw?.name || [raw?.first_name, raw?.last_name].filter(Boolean).join(\" \").trim();\n  const designation = raw?.designation || raw?.title || \"\";",
+      "tail": "    timings: {\n      llm_ms: llm.ms,\n      provider_ms: provider.ms,\n      smtp_ms: 0,\n    },\n    quality,\n  };\n\n  // Even if provider errored, return ok: true with empty results so UI never spins forever.\n  return res.json({\n    ok: true,\n    data: {\n      summary,\n      results: normalized,\n    },\n    // surface non-fatal provider/llm errors in debug field (not used by UI)\n    debug: {\n      llm_error: llm.error ? String(llm.error?.message || llm.error) : null,\n      provider_error: provider.error ? String(provider.error?.message || provider.error) : null,\n    },\n  });\n});\n\nexport default router;\n"
     },
     {
       "path": "routes/hrLeads.js",
