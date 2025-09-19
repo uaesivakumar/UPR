@@ -1,24 +1,23 @@
-export const UAE_EMIRATES = [
-  { key: "abu dhabi", label: "Abu Dhabi" },
-  { key: "dubai", label: "Dubai" },
-  { key: "sharjah", label: "Sharjah" },
-  { key: "ajman", label: "Ajman" },
-  { key: "ras al khaimah", label: "Ras Al Khaimah" },
-  { key: "umm al quwain", label: "Umm Al Quwain" },
-  { key: "fujairah", label: "Fujairah" },
+/**
+ * Emirate tagger from a free-text location.
+ */
+const EMIRATES = [
+  "Abu Dhabi",
+  "Dubai",
+  "Sharjah",
+  "Ajman",
+  "Fujairah",
+  "Ras Al Khaimah",
+  "Umm Al Quwain",
 ];
-const UAE_KEYS = ["united arab emirates","uae", ...UAE_EMIRATES.map(e => e.key)];
 
-export function emirateFromLocation(loc = "") {
-  const s = String(loc).toLowerCase();
-  if (!s) return null;
-  for (const e of UAE_EMIRATES) {
-    if (s.includes(e.key)) return e.label;
+export function tagEmirate(location = "") {
+  const s = String(location).toLowerCase();
+  for (const e of EMIRATES) {
+    if (s.includes(e.toLowerCase())) return e;
   }
-  if (s.includes("united arab emirates") || s === "uae") return "UAE";
-  return null;
+  if (s.includes("united arab emirates") || s.includes("uae")) return "UAE";
+  return "";
 }
-export function isUAE(loc = "") {
-  const s = String(loc).toLowerCase();
-  return UAE_KEYS.some(k => s.includes(k));
-}
+
+export default { tagEmirate };

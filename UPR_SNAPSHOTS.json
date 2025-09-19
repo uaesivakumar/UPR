@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-19T16:51:41Z",
-  "generated_human": "Fri, 19 Sep 2025 16:51:41 GMT",
+  "generated": "2025-09-19T16:58:41Z",
+  "generated_human": "Fri, 19 Sep 2025 16:58:41 GMT",
   "branch": "main",
-  "commit": "452fad8",
+  "commit": "ff2ac43",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -315,19 +315,17 @@
     },
     {
       "path": "routes/enrich/lib/apollo.js",
-      "size": 3505,
-      "mtime": "2025-09-19T15:11:20.102Z",
-      "sha256": "1fbd33800d3c83de0c50bdbf3538c98757e3afdff81edaea9d6821211a449711",
+      "size": 4172,
+      "mtime": "2025-09-19T16:58:41.250Z",
+      "sha256": "938f8cbea24f91ae685a01d7d3a375e892b78b23cea61d914dd34f96b42733c0",
       "imports": [],
       "envs": [
-        "APOLLOIO_API_KEY",
-        "APOLLO_API_KEY",
-        "APOLLO_TOKEN"
+        "APOLLO_API_KEY"
       ],
       "appUses": [],
       "endpoints": [],
-      "head": "const APOLLO_API_KEY = process.env.APOLLO_API_KEY || process.env.APOLLOIO_API_KEY || process.env.APOLLO_TOKEN || \"\";\n\nexport function compactApolloKeywords() {\n  // Short to avoid \"Value too long\" 422s\n  return \"HR OR Human Resources OR People OR Talent OR Recruiter OR Payroll OR Finance OR Accounting OR Admin\";\n}\n\nexport function detectOrgDomain(p) {\n  const org = p.organization || p.company || p.employer || {};\n  let d = org.domain || org.primary_domain || org.email_domain || null;\n  if (!d && org.website_url) {\n    try { d = new URL(org.website_url.startsWith(\"http\") ? org.website_url : `https://${org.website_url}`).hostname; }\n    catch {}\n  }\n  return d ? d.replace(/^www\\./, \"\").toLowerCase() : null;\n}\n\nexport function deriveLocation(p = {}) {\n  const city = p.city || p.person_city || p.current_city;\n  const region = p.state || p.region || p.person_region || p.current_region;\n  const country = p.country || p.country_name || p.person_country || p.current_country || p.location_country;\n  const raw = p.location || p.current_location || p.person_location;\n  return raw || [city, region, country].filter(Boolean).join(\", \");\n}\n\nfunction mapApollo(p) {\n  return {\n    name: [p.first_name, p.last_name].filter(Boolean).join(\" \").trim() || p.name || \"\",\n    first_name: p.first_name || null,\n    last_name: p.last_name || null,\n    title: p.title || p.position || \"\",\n    designation: p.title || p.position || \"\",\n    linkedin_url: p.linkedin_url || p.linkedin || \"\",\n    email: p.email || null,\n    organization: p.organization || p.company || p.employer || {\n      domain: p.organization_domain || p.company_domain || null,\n      website_url: p.organization_website_url || p.company_website_url || null,\n    },\n    seniority: p.seniority || null,\n    location: deriveLocation(p),",
-      "tail": "  return people.map(mapApollo);\n}\n\nexport async function apolloPeopleByName({ name, keywords, limit = 25, timings, locations = [] }) {\n  const body = {\n    q_organization_name: name,\n    q_keywords: keywords,\n    page: 1,\n    per_page: Math.min(Math.max(limit, 1), 25),\n    person_locations: locations.length ? locations : [\"United Arab Emirates\"],\n  };\n  return apolloPeopleSearch({ body, timings });\n}\n\nexport async function apolloPeopleByDomain({ domain, keywords, limit = 25, timings, locations = [] }) {\n  const body = {\n    q_organization_domains: [domain],\n    q_keywords: keywords,\n    page: 1,\n    per_page: Math.min(Math.max(limit, 1), 25),\n    person_locations: locations.length ? locations : [\"United Arab Emirates\"],\n  };\n  return apolloPeopleSearch({ body, timings });\n}\n"
+      "head": "/**\n * Apollo provider wrapper.\n * Exports:\n *   - searchPeopleByCompany({ name, domain, linkedin_url })\n *\n * Requires env: APOLLO_API_KEY\n * Uses /v1/people/search with X-Api-Key header.\n *\n * Results are normalized to:\n * {\n *   name, designation, linkedin_url, email, email_status, email_reason,\n *   role_bucket, seniority, source: \"live\", confidence, location\n * }\n */\n\nconst API = \"https://api.apollo.io/v1/people/search\";\n\nfunction clean(s = \"\", n = 80) {\n  return String(s).trim().replace(/\\s+/g, \" \").slice(0, n);\n}\nfunction pickRoleBucket(title = \"\") {\n  const t = String(title).toLowerCase();\n  if (/(hr|people|talent|recruit|human resources)/.test(t)) return \"hr\";\n  if (/(admin|administrator|office|operations)/.test(t)) return \"admin\";\n  if (/(finance|account|payroll|treasury)/.test(t)) return \"finance\";\n  return \"other\";\n}\nfunction seniorityFromTitle(title = \"\") {\n  const t = String(title).toLowerCase();\n  if (/(chief|cxo|cfo|coo|chro|chief human|chief people|chief talent)/.test(t)) return \"cxo\";\n  if (/(vp|vice president)/.test(t)) return \"vp\";\n  if (/(director|head)/.test(t)) return \"head\";\n  if (/(manager|lead)/.test(t)) return \"manager\";\n  return \"staff\";\n}\nfunction mkLocation(p = {}) {\n  const parts = [p.city, p.state, p.country].filter(Boolean);\n  return parts.join(\", \");\n}\n",
+      "tail": "                      : email ? 0.9 : 0.85;\n\n    return {\n      name: fullName,\n      designation: title,\n      linkedin_url: p.linkedin_url || p.linkedin || null,\n      email,\n      email_status,\n      email_reason: email ? \"provider\" : \"no_email\",\n      role_bucket: pickRoleBucket(title),\n      seniority: seniorityFromTitle(title),\n      source: \"live\",\n      confidence,\n      location,\n      // some APIs return pattern hints like \"first.last\" in a separate field; capture if present\n      pattern_hint: p.email_pattern || p.pattern || null,\n    };\n  });\n\n  // only keep HR/Admin/Finance buckets (defense-in-depth)\n  return results.filter(r => [\"hr\",\"admin\",\"finance\"].includes(r.role_bucket));\n}\n\nexport default { searchPeopleByCompany };\n"
     },
     {
       "path": "routes/enrich/lib/email.js",
@@ -346,15 +344,15 @@
     },
     {
       "path": "routes/enrich/lib/geo.js",
-      "size": 818,
-      "mtime": "2025-09-19T15:11:20.110Z",
-      "sha256": "9a1c71db5cb59e2a033e7be06da0c391bf3f11420222ca3e3f36cea5c4a8b3c0",
+      "size": 472,
+      "mtime": "2025-09-19T16:58:41.253Z",
+      "sha256": "177dc7f99a8efecc0c28a25d25082c69ff5d3282c1b9918ed34cf63498a53c10",
       "imports": [],
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "export const UAE_EMIRATES = [\n  { key: \"abu dhabi\", label: \"Abu Dhabi\" },\n  { key: \"dubai\", label: \"Dubai\" },\n  { key: \"sharjah\", label: \"Sharjah\" },\n  { key: \"ajman\", label: \"Ajman\" },\n  { key: \"ras al khaimah\", label: \"Ras Al Khaimah\" },\n  { key: \"umm al quwain\", label: \"Umm Al Quwain\" },\n  { key: \"fujairah\", label: \"Fujairah\" },\n];\nconst UAE_KEYS = [\"united arab emirates\",\"uae\", ...UAE_EMIRATES.map(e => e.key)];\n\nexport function emirateFromLocation(loc = \"\") {\n  const s = String(loc).toLowerCase();\n  if (!s) return null;\n  for (const e of UAE_EMIRATES) {\n    if (s.includes(e.key)) return e.label;\n  }\n  if (s.includes(\"united arab emirates\") || s === \"uae\") return \"UAE\";\n  return null;\n}\nexport function isUAE(loc = \"\") {\n  const s = String(loc).toLowerCase();\n  return UAE_KEYS.some(k => s.includes(k));\n}\n",
-      "tail": "export const UAE_EMIRATES = [\n  { key: \"abu dhabi\", label: \"Abu Dhabi\" },\n  { key: \"dubai\", label: \"Dubai\" },\n  { key: \"sharjah\", label: \"Sharjah\" },\n  { key: \"ajman\", label: \"Ajman\" },\n  { key: \"ras al khaimah\", label: \"Ras Al Khaimah\" },\n  { key: \"umm al quwain\", label: \"Umm Al Quwain\" },\n  { key: \"fujairah\", label: \"Fujairah\" },\n];\nconst UAE_KEYS = [\"united arab emirates\",\"uae\", ...UAE_EMIRATES.map(e => e.key)];\n\nexport function emirateFromLocation(loc = \"\") {\n  const s = String(loc).toLowerCase();\n  if (!s) return null;\n  for (const e of UAE_EMIRATES) {\n    if (s.includes(e.key)) return e.label;\n  }\n  if (s.includes(\"united arab emirates\") || s === \"uae\") return \"UAE\";\n  return null;\n}\nexport function isUAE(loc = \"\") {\n  const s = String(loc).toLowerCase();\n  return UAE_KEYS.some(k => s.includes(k));\n}\n"
+      "head": "/**\n * Emirate tagger from a free-text location.\n */\nconst EMIRATES = [\n  \"Abu Dhabi\",\n  \"Dubai\",\n  \"Sharjah\",\n  \"Ajman\",\n  \"Fujairah\",\n  \"Ras Al Khaimah\",\n  \"Umm Al Quwain\",\n];\n\nexport function tagEmirate(location = \"\") {\n  const s = String(location).toLowerCase();\n  for (const e of EMIRATES) {\n    if (s.includes(e.toLowerCase())) return e;\n  }\n  if (s.includes(\"united arab emirates\") || s.includes(\"uae\")) return \"UAE\";\n  return \"\";\n}\n\nexport default { tagEmirate };\n",
+      "tail": "/**\n * Emirate tagger from a free-text location.\n */\nconst EMIRATES = [\n  \"Abu Dhabi\",\n  \"Dubai\",\n  \"Sharjah\",\n  \"Ajman\",\n  \"Fujairah\",\n  \"Ras Al Khaimah\",\n  \"Umm Al Quwain\",\n];\n\nexport function tagEmirate(location = \"\") {\n  const s = String(location).toLowerCase();\n  for (const e of EMIRATES) {\n    if (s.includes(e.toLowerCase())) return e;\n  }\n  if (s.includes(\"united arab emirates\") || s.includes(\"uae\")) return \"UAE\";\n  return \"\";\n}\n\nexport default { tagEmirate };\n"
     },
     {
       "path": "routes/enrich/lib/llm.js",
@@ -382,9 +380,9 @@
     },
     {
       "path": "routes/enrich/search.js",
-      "size": 2463,
-      "mtime": "2025-09-19T16:51:41.555Z",
-      "sha256": "8d55d824b05c15aa24a897b3309cf7bd353a584b9fa1d34de233bfe3a69c54d6",
+      "size": 3046,
+      "mtime": "2025-09-19T16:58:41.272Z",
+      "sha256": "e2d96257f3c23b5b053319ed6886a9ad4b084fba38e10b00b01032f5df608a10",
       "imports": [
         "import express from \"express\";",
         "import { guessCompany } from \"./lib/llm.js\";",

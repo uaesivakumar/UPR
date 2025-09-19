@@ -48,7 +48,20 @@ router.get("/", async (req, res) => {
 
     // 3) Post-process: emirate tagging + email pattern
     const results = (providerResults || []).map((r) => {
-      const em = tagEmirate(r.location);
+  const em = tagEmirate(r.location);
+  let out = { ...r, emirate: em };
+  if ((!out.email || !String(out.email).includes("@")) && guess.domain) {
+    const hint = (typeof out.pattern_hint === "string" && out.pattern_hint && !out.pattern_hint.includes("@"))
+      ? out.pattern_hint : (typeof out.email === "string" && !out.email.includes("@") ? out.email : "first.last");
+    const guessed = applyEmailPattern(out.name || "", guess.domain, hint);
+    if (guessed) {
+      out.email = guessed;
+      out.email_status = "patterned";
+      if (!out.email_reason) out.email_reason = "pattern_guess";
+    }
+  }
+  return out;
+});
       const withEmail = applyEmailPattern(guess.domain, r);
       return { ...withEmail, emirate: em };
     });
