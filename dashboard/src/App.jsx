@@ -2,8 +2,8 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Sidebar from "./components/sidebar.jsx";
 import Topbar from "./components/Topbar.jsx";
-import DashboardPage from "./pages/dashboard.jsx";
-import EnrichmentPage from "./pages/enrichmentpage.jsx";
+import DashboardPage from "./pages/DashboardHome.jsx";
+import EnrichmentPage from "./pages/EnrichmentPage.jsx";
 // ... other imports
 
 export default function App() {
