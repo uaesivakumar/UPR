@@ -1,375 +1,258 @@
 import { useEffect, useMemo, useState } from "react";
 import { authFetch } from "../utils/auth";
 
-/**
- * EnrichmentPage
- * - Works with new backend:
- *   GET  /api/enrich/status
- *   GET  /api/enrich/search?q=...
- *   POST /api/enrich { company_id, max_contacts }
- * - UAE focus, Emirate column, status chips (Data Source / DB / LLM with timings)
- * - Left company card (from LLM guess) + "Create & use" or clear
- * - Save selected rows to chosen company OR quick-create from card
- */
+function Pill({ ok=true, label, ms }) {
+  return (
+    <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${ok ? "border-green-200 bg-green-50 text-green-700" : "border-gray-200 bg-gray-50 text-gray-600"}`}>
+      <span className={`h-2 w-2 rounded-full ${ok ? "bg-green-500" : "bg-gray-400"}`}></span>
+      {label}{typeof ms === "number" ? ` • ${ms}ms` : ""}
+    </span>
+  );
+}
 
 export default function EnrichmentPage() {
-  // top status indicators
-  const [status, setStatus] = useState({ data_source: "mock", db_ok: false, llm_ok: false });
-  // llm-resolved company guess
-  const [guess, setGuess] = useState(null);
-  // input + results
   const [q, setQ] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState("");
-  const [timings, setTimings] = useState({});
   const [rows, setRows] = useState([]);
-  // companies list for "save into" dropdown
-  const [companies, setCompanies] = useState([]);
-  const [companyId, setCompanyId] = useState("");
-  // selection
-  const [selected, setSelected] = useState({});
-  // raw response
-  const [showRaw, setShowRaw] = useState(false);
-  const [quality, setQuality] = useState(null);
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [summary, setSummary] = useState(null); // timings, provider, company_guess, quality
 
-  // load status + a small page of companies for the dropdown
-  useEffect(() => {
-    (async () => {
-      try {
-        const s = await fetchJSON("/api/enrich/status");
-        if (s?.ok) setStatus(s.data || {});
-      } catch {}
-      try {
-        const r = await fetchJSON("/api/companies?sort=created_at.desc&limit=50");
-        if (r?.ok && Array.isArray(r.data)) setCompanies(r.data);
-      } catch {}
-    })();
-  }, []);
+  // disambiguation modal state
+  const [fixOpen, setFixOpen] = useState(false);
+  const [fixName, setFixName] = useState("");
+  const [fixDomain, setFixDomain] = useState("");
+  const [fixLinkedIn, setFixLinkedIn] = useState("");
+  const [fixParent, setFixParent] = useState("");
 
-  const anySelected = useMemo(() => Object.values(selected).some(Boolean), [selected]);
+  const companyGuess = summary?.company_guess;
 
-  const runSearch = async () => {
-    const query = q.trim();
-    if (!query) return;
+  const run = async (overrides={}) => {
     setLoading(true);
     setErr("");
-    setRows([]);
-    setSelected({});
     try {
-      const res = await fetchJSON(`/api/enrich/search?q=${encodeURIComponent(query)}`);
-      if (!res?.ok) throw new Error(res?.error || "Search failed");
-      const d = res.data || {};
-      const summ = d.summary || {};
-      setGuess(summ.company_guess || null);
-      setTimings(summ.timings || {});
-      setQuality(summ.quality || null);
-      setRows(Array.isArray(d.results) ? d.results : []);
+      const sp = new URLSearchParams();
+      sp.set("q", q.trim());
+      if (overrides.name) sp.set("name", overrides.name.trim());
+      if (overrides.domain) sp.set("domain", overrides.domain.trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, ""));
+      if (overrides.linkedin_url) sp.set("linkedin_url", overrides.linkedin_url.trim());
+      if (overrides.parent) sp.set("parent", overrides.parent.trim());
+
+      const res = await authFetch(`/api/enrich/search?${sp.toString()}`);
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Search failed");
+      const data = json.data || {};
+      setRows(Array.isArray(data.results) ? data.results : []);
+      setSummary(data.summary || null);
+
+      // seed fix form with what we got
+      const g = data.summary?.company_guess || {};
+      setFixName(g.name || "");
+      setFixDomain(g.domain || "");
+      setFixLinkedIn(g.linkedin_url || "");
+      setFixParent("");
     } catch (e) {
       setErr(e.message || "Search failed");
+      setRows([]);
+      setSummary(null);
     } finally {
       setLoading(false);
     }
   };
 
-  const toggleSelect = (idx) => setSelected((s) => ({ ...s, [idx]: !s[idx] }));
+  const addToHR = async (companyId, selectedIdxs) => {
+    if (!companyId) return;
+    const toSave = selectedIdxs.length
+      ? selectedIdxs.map((i) => rows[i])
+      : null; // backend will auto-pick if null
 
-  const createCompanyFromGuess = async () => {
-    if (!guess?.name) return;
-    try {
-      const payload = {
-        name: guess.name,
-        website_url: guess.website_url || null,
-        linkedin_url: guess.linkedin_url || null,
-        domain: guess.domain || null,
-        locations: [],
-        type: null,
-        status: "New",
-      };
-      const r = await fetchJSON("/api/manual/companies", { method: "POST", body: payload });
-      if (!r?.id && !(r?.data?.id)) throw new Error(r?.error || "Create failed");
-      const id = r.id || r.data.id;
-      setCompanyId(id);
-      // refresh dropdown
-      const list = await fetchJSON("/api/companies?sort=created_at.desc&limit=50");
-      if (list?.ok && Array.isArray(list.data)) setCompanies(list.data);
-    } catch (e) {
-      alert(e.message || "Failed to create company");
-    }
+    const body = toSave
+      ? { company_id: companyId, contacts: toSave }
+      : { company_id: companyId, max_contacts: 3 };
+
+    const res = await authFetch("/api/enrich", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(body),
+    });
+    const json = await res.json();
+    if (!res.ok || !json.ok) throw new Error(json.error || "Save failed");
+    return json;
   };
 
-  const addToHrLeads = async () => {
-    if (!companyId) { alert("Choose a company to save into."); return; }
+  // listen to company selection from sidebar/companies page
+  useEffect(() => {
+    const useNow = (e) => {
+      const c = e?.detail;
+      if (!c) return;
+      // auto-fill domain override and re-run search so emails use the right pattern
+      setFixDomain(c.domain || "");
+      run({ domain: c.domain, name: c.name, linkedin_url: c.linkedin_url });
+    };
+    window.addEventListener("upr:companyUseNow", useNow);
+    return () => window.removeEventListener("upr:companyUseNow", useNow);
+  }, [q]);
 
-    // collect selected rows
-    const picked = rows
-      .map((r, i) => ({ r, i }))
-      .filter(({ i }) => selected[i]);
-
-    // if we have explicit selections, save them directly via manual leads API (exactly what user chose)
-    if (picked.length) {
-      let ok = 0, fail = 0;
-      for (const { r } of picked) {
-        const payload = {
-          company_id: companyId,
-          name: r.name,
-          designation: r.designation || "",
-          email: r.email || null,
-          linkedin_url: r.linkedin_url || "",
-          role_bucket: r.role_bucket || null,
-          seniority: r.seniority || null,
-          source: r.source || "live",
-          confidence: r.confidence ?? null,
-          email_status: r.email_status || "unknown",
-          email_reason: r.email_reason || null,
-        };
-        try {
-          const x = await fetchJSON("/api/manual/hr-leads", { method: "POST", body: payload });
-          if (x?.id || x?.ok) ok++; else fail++;
-        } catch { fail++; }
-      }
-      alert(`Saved ${ok} / ${picked.length} lead(s).`);
-      return;
-    }
-
-    // otherwise let backend do its auto-pick based on provider
-    try {
-      const resp = await fetchJSON("/api/enrich", { method: "POST", body: { company_id: companyId, max_contacts: 3 } });
-      if (resp?.status === "completed" || resp?.ok) {
-        alert("Leads added.");
-      } else {
-        alert(resp?.error || "Failed to add leads");
-      }
-    } catch (e) {
-      alert(e.message || "Failed to add leads");
-    }
-  };
+  const [pickedCompanyId, setPickedCompanyId] = useState("");
+  const [picked, setPicked] = useState({}); // idx -> true
+  const pickedIdxs = useMemo(() => Object.keys(picked).filter(k => picked[k]).map(n => Number(n)), [picked]);
 
   return (
     <div className="p-6">
-      {/* top bar status */}
-      <div className="flex flex-wrap gap-2 justify-end mb-3">
-        <StatusPill label="Data Source" value={status.data_source || "mock"} />
-        <StatusPill label="DB" ok={!!status.db_ok} />
-        <StatusPill label="LLM" ok={!!status.llm_ok} />
+      {/* Header status chips (always on) */}
+      <div className="flex items-center justify-end gap-2 mb-4">
+        <Pill label={`Data Source: ${summary?.provider || "live"}`} ok />
+        <Pill label="DB" ok />
+        <Pill label="LLM" ok />
       </div>
 
-      {/* header */}
-      <h1 className="text-3xl font-semibold tracking-tight text-gray-900 mb-1">Enrichment</h1>
-      <p className="text-sm text-gray-500 mb-4">No company selected — search by company name.</p>
+      <h1 className="mb-1 text-3xl font-semibold tracking-tight text-gray-900">Enrichment</h1>
+      <p className="mb-4 text-sm text-gray-500">No company selected — search by company name.</p>
 
-      <div className="grid grid-cols-1 md:grid-cols-[280px,1fr] gap-6">
-        {/* LEFT: company card */}
-        <CompanyCard
-          guess={guess}
-          onCreate={createCompanyFromGuess}
-          onClear={() => setGuess(null)}
+      {/* Search bar + actions */}
+      <div className="mb-3 flex items-center gap-2">
+        <input
+          className="flex-1 rounded-xl border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-gray-900/10"
+          placeholder="Type company name (e.g., “First Abu Dhabi Bank”)"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
         />
+        <button className="rounded-xl bg-gray-900 px-4 py-2 font-medium text-white disabled:opacity-50" disabled={loading} onClick={() => run()}>
+          {loading ? "Loading…" : "Enrich"}
+        </button>
+      </div>
 
-        {/* RIGHT: main */}
-        <div>
-          {/* input */}
-          <div className="flex gap-2 mb-3">
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") runSearch(); }}
-              placeholder="Type a company name (e.g., “G42 UAE Finance Director”)"
-              className="flex-1 px-3 py-2 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-900/10"
-            />
-            <button
-              onClick={runSearch}
-              disabled={loading}
-              className="px-4 py-2 rounded-xl bg-gray-900 text-white font-medium hover:bg-gray-800 disabled:opacity-50"
-            >
-              {loading ? "Searching…" : "Enrich"}
-            </button>
-          </div>
+      {/* per-run timings */}
+      <div className="mb-3 flex items-center gap-2">
+        <Pill label={`Data Source: ${summary?.provider || "live"}`} ok ms={summary?.timings?.provider_ms} />
+        <Pill label="DB" ok />
+        <Pill label="LLM" ok ms={summary?.timings?.llm_ms} />
+        {companyGuess?.name && (
+          <span className="ml-2 text-sm text-gray-600">
+            Guess: <span className="font-medium">{companyGuess.name}</span>{" "}
+            <button className="ml-2 text-blue-600 underline" onClick={() => setFixOpen(true)}>Not right? Fix</button>
+          </span>
+        )}
+      </div>
 
-          {/* choose where to save + actions */}
-          <div className="flex flex-wrap items-center gap-2 mb-3">
-            <select
-              value={companyId}
-              onChange={(e) => setCompanyId(e.target.value)}
-              className="px-3 py-2 rounded-xl border bg-white"
-            >
-              <option value="">— Choose company —</option>
-              {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-            {guess?.name && (
+      {/* error */}
+      {err && <div className="mb-3 text-red-600">{err}</div>}
+
+      {/* Results */}
+      <div className="overflow-hidden rounded-2xl border">
+        <div className="min-w-full">
+          <div className="flex items-center justify-between px-3 py-2 border-b bg-gray-50">
+            <div className="text-sm text-gray-700">Candidates: {rows.length || 0}</div>
+            <div className="flex items-center gap-2">
+              <select className="rounded-lg border px-3 py-2 text-sm" value={pickedCompanyId} onChange={(e) => setPickedCompanyId(e.target.value)}>
+                <option value="">— Choose company —</option>
+                {/* This is a lightweight list; a full selector can be wired if you prefer */}
+                {companyGuess?.name && <option value="__guess__">Use guessed: {companyGuess.name}</option>}
+              </select>
               <button
-                onClick={createCompanyFromGuess}
-                className="px-3 py-2 rounded-xl border"
+                className="rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                disabled={!pickedCompanyId || (pickedIdxs.length===0 && rows.length===0)}
+                onClick={async () => {
+                  const company_id = pickedCompanyId === "__guess__" ? null : pickedCompanyId;
+                  try {
+                    await addToHR(company_id, pickedIdxs);
+                    setPicked({});
+                    alert("Saved!");
+                  } catch (e) {
+                    alert(e.message || "Save failed");
+                  }
+                }}
               >
-                Create “{truncate(guess.name, 22)}”
+                Add to HR Leads
               </button>
-            )}
-            <button
-              onClick={addToHrLeads}
-              disabled={!companyId && !anySelected}
-              className="px-4 py-2 rounded-xl bg-gray-900 text-white font-medium hover:bg-gray-800 disabled:opacity-50"
-              title={!companyId && !anySelected ? "Pick a company or select rows" : ""}
-            >
-              Add to HR Leads
-            </button>
+            </div>
           </div>
 
-          {/* indicators for this result batch */}
-          {(timings.provider_ms || timings.llm_ms) && (
-            <div className="flex flex-wrap gap-2 mb-2">
-              <StatusPill label="Data Source" value={status.data_source || "live"} ms={timings.provider_ms} solid />
-              <StatusPill label="DB" ok={!!status.db_ok} solid />
-              <StatusPill label="LLM" ok={!!status.llm_ok} ms={timings.llm_ms} solid />
-            </div>
-          )}
-
-          {/* error */}
-          {err && <div className="text-red-600 mb-3">{err}</div>}
-
-          {/* table */}
-          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <Th className="w-10"></Th>
-                  <Th>Name</Th>
-                  <Th>Emirate</Th>
-                  <Th>Title</Th>
-                  <Th>Email</Th>
-                  <Th>LinkedIn</Th>
-                  <Th>Confidence</Th>
-                  <Th>Status</Th>
-                  <Th>Source</Th>
+          <table className="w-full">
+            <thead className="bg-white">
+              <tr className="text-xs uppercase text-gray-500">
+                <th className="px-3 py-2 w-8"></th>
+                <th className="px-3 py-2 text-left">Name</th>
+                <th className="px-3 py-2 text-left">Emirate</th>
+                <th className="px-3 py-2 text-left">Title</th>
+                <th className="px-3 py-2 text-left">Email</th>
+                <th className="px-3 py-2 text-left">LinkedIn</th>
+                <th className="px-3 py-2 text-left">Confidence</th>
+                <th className="px-3 py-2 text-left">Status</th>
+                <th className="px-3 py-2 text-left">Source</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {rows.map((r, i) => (
+                <tr key={i} className="hover:bg-gray-50">
+                  <td className="px-3 py-2">
+                    <input type="checkbox" checked={!!picked[i]} onChange={(e) => setPicked(p => ({...p, [i]: e.target.checked}))} />
+                  </td>
+                  <td className="px-3 py-2">{r.name}</td>
+                  <td className="px-3 py-2">{r.emirate || "—"}</td>
+                  <td className="px-3 py-2">{r.designation || r.title || "—"}</td>
+                  <td className="px-3 py-2">
+                    {r.email ? <a className="underline" href={`mailto:${r.email}`}>{r.email}</a> : "—"}
+                  </td>
+                  <td className="px-3 py-2">
+                    {r.linkedin_url ? <a className="underline" href={r.linkedin_url} target="_blank" rel="noreferrer">LinkedIn</a> : "—"}
+                  </td>
+                  <td className="px-3 py-2">{typeof r.confidence === "number" ? r.confidence.toFixed(2) : "—"}</td>
+                  <td className="px-3 py-2">{r.email_status || "—"}</td>
+                  <td className="px-3 py-2">{r.source || "—"}</td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {loading ? (
-                  <tr><Td colSpan={9} className="text-center text-gray-500 py-6">Loading…</Td></tr>
-                ) : rows.length === 0 ? (
-                  <tr><Td colSpan={9} className="text-center text-gray-500 py-10">No results.</Td></tr>
-                ) : (
-                  rows.map((r, i) => (
-                    <tr key={i} className="hover:bg-gray-50/60">
-                      <Td>
-                        <input
-                          type="checkbox"
-                          checked={!!selected[i]}
-                          onChange={() => toggleSelect(i)}
-                        />
-                      </Td>
-                      <Td>{r.name || "—"}</Td>
-                      <Td>{r.emirate || "—"}</Td>
-                      <Td>{r.designation || "—"}</Td>
-                      <Td>
-                        {r.email ? (
-                          <a className="underline underline-offset-2" href={`mailto:${r.email}`}>{r.email}</a>
-                        ) : (
-                          <span className="text-gray-400">—</span>
-                        )}
-                      </Td>
-                      <Td>
-                        {r.linkedin_url ? (
-                          <a className="underline underline-offset-2" href={r.linkedin_url} target="_blank" rel="noreferrer">LinkedIn</a>
-                        ) : <span className="text-gray-400">—</span>}
-                      </Td>
-                      <Td>{typeof r.confidence === "number" ? r.confidence.toFixed(2) : "—"}</Td>
-                      <Td><Badge>{r.email_status || "unknown"}</Badge></Td>
-                      <Td>{r.source || "—"}</Td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* quality + raw toggle */}
-          <div className="mt-3 flex items-center justify-between">
-            <div>
-              {quality && (
-                <span className="text-sm text-gray-600">
-                  Quality: <b>{(quality.score * 100).toFixed(0)}%</b> — {quality.explanation}
-                </span>
+              ))}
+              {rows.length === 0 && !loading && (
+                <tr><td className="px-3 py-6 text-center text-gray-500" colSpan={9}>No results.</td></tr>
               )}
-            </div>
-            <button className="text-sm underline" onClick={() => setShowRaw((v) => !v)}>
-              {showRaw ? "Hide raw response" : "Show raw response"}
-            </button>
-          </div>
-          {showRaw && (
-            <pre className="mt-2 p-3 rounded-xl bg-gray-50 text-xs overflow-auto">
-{JSON.stringify({ guess, timings, rows }, null, 2)}
-            </pre>
-          )}
+            </tbody>
+          </table>
         </div>
       </div>
-    </div>
-  );
-}
 
-/* ---------- small helpers ---------- */
-function StatusPill({ label, value, ok, ms, solid }) {
-  const green = "bg-emerald-100 text-emerald-800";
-  const gray  = "bg-gray-100 text-gray-700";
-  const red   = "bg-red-100 text-red-700";
-  const tone = typeof ok === "boolean" ? (ok ? green : red) : (value === "live" ? green : gray);
-  return (
-    <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs ${solid ? "" : "border border-gray-200"} ${tone}`}>
-      <span className="inline-block w-2 h-2 rounded-full bg-current opacity-70"></span>
-      <span className="font-medium">{label}:</span>
-      {typeof ok === "boolean" ? <span>{ok ? "OK" : "Down"}</span> : <span>{value}</span>}
-      {typeof ms === "number" && <span>• {ms}ms</span>}
-    </span>
-  );
-}
-
-function CompanyCard({ guess, onCreate, onClear }) {
-  return (
-    <div className="bg-white rounded-2xl border border-gray-200 p-4 h-fit">
-      <div className="text-sm font-semibold text-gray-900 mb-2">Company</div>
-      {!guess ? (
-        <div className="text-sm text-gray-500">No company selected.</div>
-      ) : (
-        <>
-          <div className="font-medium text-gray-900">{guess.name || "—"}</div>
-          <div className="text-xs text-gray-500 mt-2">Domain: <b>{guess.domain || "—"}</b></div>
-          <div className="text-xs text-gray-500">Mode: {guess.mode || "Guess"}</div>
-          <div className="flex gap-2 mt-3">
-            <button className="px-3 py-1.5 rounded-xl border" onClick={onCreate}>Create &amp; use</button>
-            <button className="px-3 py-1.5 rounded-xl border" onClick={onClear}>Clear</button>
-          </div>
-          <div className="mt-3 space-y-1 text-xs">
-            {guess.website_url && <div><a className="underline" href={guess.website_url} target="_blank" rel="noreferrer">{guess.website_url}</a></div>}
-            {guess.linkedin_url && <div><a className="underline" href={guess.linkedin_url} target="_blank" rel="noreferrer">LinkedIn</a></div>}
-            {guess.hq && <div>HQ: {guess.hq}</div>}
-            {guess.industry && <div>Industry: {guess.industry}</div>}
-            {guess.size && <div>Size: {guess.size}</div>}
-          </div>
-        </>
+      {/* Quality note */}
+      {summary?.quality?.score != null && (
+        <div className="mt-2 text-sm text-gray-600">
+          Quality: {(summary.quality.score * 100).toFixed(0)}% — {summary.quality.explanation || "—"}
+        </div>
       )}
+
+      {/* Fix company modal */}
+      {fixOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b px-4 py-3">
+              <div className="text-lg font-semibold">Correct Company</div>
+              <button className="text-gray-500" onClick={() => setFixOpen(false)}>✕</button>
+            </div>
+            <div className="p-4 space-y-3">
+              <Field label="Name"><input className="w-full rounded border px-3 py-2" value={fixName} onChange={(e)=>setFixName(e.target.value)} /></Field>
+              <Field label="Website / Domain"><input className="w-full rounded border px-3 py-2" placeholder="solutionsplus.ae" value={fixDomain} onChange={(e)=>setFixDomain(e.target.value)} /></Field>
+              <Field label="LinkedIn URL"><input className="w-full rounded border px-3 py-2" value={fixLinkedIn} onChange={(e)=>setFixLinkedIn(e.target.value)} /></Field>
+              <Field label="Parent / Group (optional)"><input className="w-full rounded border px-3 py-2" placeholder="Mubadala" value={fixParent} onChange={(e)=>setFixParent(e.target.value)} /></Field>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button className="rounded border px-4 py-2" onClick={()=>setFixOpen(false)}>Cancel</button>
+                <button
+                  className="rounded bg-gray-900 px-4 py-2 font-medium text-white"
+                  onClick={() => { setFixOpen(false); run({ name: fixName, domain: fixDomain, linkedin_url: fixLinkedIn, parent: fixParent }); }}
+                >
+                  Apply &amp; Re-run
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
 
-async function fetchJSON(url, opts = {}) {
-  const o = { ...opts };
-  if (o.body && typeof o.body !== "string") {
-    o.headers = { ...(o.headers || {}), "Content-Type": "application/json" };
-    o.body = JSON.stringify(o.body);
-  }
-  const res = await authFetch(url, o);
-  const json = await res.json().catch(() => ({}));
-  return json;
-}
-
-function Th({ children, className="" }) {
-  return <th className={`px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 ${className}`}>{children}</th>;
-}
-function Td({ children, className="", colSpan }) {
-  return <td className={`px-4 py-2 align-top ${className}`} colSpan={colSpan}>{children}</td>;
-}
-function Badge({ children }) {
-  return <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700">{children}</span>;
-}
-function truncate(s, n) {
-  const t = String(s || "");
-  return t.length > n ? t.slice(0, n - 1) + "…" : t;
+function Field({label, children}) {
+  return (
+    <div>
+      <div className="mb-1 text-sm text-gray-700">{label}</div>
+      {children}
+    </div>
+  );
 }

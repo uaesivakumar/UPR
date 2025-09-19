@@ -1,85 +1,57 @@
-const OPENAI_KEY = process.env.OPENAI_API_KEY || "";
-
-const STOPWORDS = /\b(inc|llc|ltd|limited|international|intl|company|co|corp|corporation|group|holdings?|school|bank|market|solutions?)\b/gi;
-
-export function cleanName(s = "") {
-  return String(s)
-    .replace(STOPWORDS, " ")
-    .replace(/[^a-z0-9\s&-]/gi, " ")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-}
-export function acronymOf(name = "") {
-  const a = name.split(/[\s&-]+/).filter(Boolean).map(w => w[0]?.toUpperCase()).join("");
-  return a || null;
-}
-export function wordsToDomain(name = "") {
-  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "");
-  return base ? `${base}.com` : null;
-}
-
-export async function resolveCompanyRich(q, timings = {}) {
-  const t0 = Date.now();
-  const cleaned = cleanName(q);
-  const acr = acronymOf(cleaned);
-
-  if (!OPENAI_KEY) {
-    const domain = wordsToDomain(cleaned);
-    timings.llm_ms = (timings.llm_ms || 0) + (Date.now() - t0);
-    return {
-      name: cleaned,
-      domain,
-      website_url: domain ? `https://www.${domain}` : null,
-      linkedin_url: null,
-      hq: null,
-      industry: null,
-      size: null,
-      synonyms: [cleaned, acr].filter(Boolean),
-      mode: "Guess",
-    };
-  }
-
-  try {
-    const r = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_KEY}` },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        temperature: 0,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: "Return JSON only with keys: name, domain, website_url, linkedin_url, hq, industry, size, synonyms[]. Domain must be the primary corporate domain (e.g., kbr.com)." },
-          { role: "user", content: cleaned },
-        ],
-      }),
-    });
-    if (r.ok) {
-      const j = await r.json();
-      const txt = j?.choices?.[0]?.message?.content || "{}";
-      const obj = JSON.parse(txt);
-      obj.name ||= cleaned;
-      obj.domain ||= wordsToDomain(obj.name || cleaned);
-      obj.website_url ||= (obj.domain ? `https://www.${obj.domain}` : null);
-      obj.synonyms = Array.isArray(obj.synonyms) ? obj.synonyms : [];
-      if (acr) obj.synonyms.push(acr);
-      obj.mode = "LLM";
-      timings.llm_ms = (timings.llm_ms || 0) + (Date.now() - t0);
-      return obj;
-    }
-  } catch (e) {
-    console.error("LLM resolve failed", e);
-  }
-  const domain = wordsToDomain(cleaned);
-  timings.llm_ms = (timings.llm_ms || 0) + (Date.now() - t0);
-  return {
-    name: cleaned,
-    domain,
-    website_url: domain ? `https://www.${domain}` : null,
+/**
+ * Very lightweight heuristics-based guesser with override support.
+ * If overrides are passed (name/domain/linkedin_url), they win.
+ * Otherwise we infer from the text, preferring .ae domains for UAE context
+ * and recognizing simple "X from Y" subsidiary language.
+ */
+export async function guessCompany(q, overrides = {}) {
+  const out = {
+    name: null,
+    domain: null,
+    website_url: null,
     linkedin_url: null,
-    hq: null,
+    hq: "United Arab Emirates",
     industry: null,
     size: null,
-    synonyms: [cleaned, acr].filter(Boolean),
-    mode: "Guess",
+    synonyms: [],
+    mode: "LLM",
+    confidence: 0.7,
   };
+
+  // 1) Overrides first
+  if (overrides.name) out.name = overrides.name;
+  if (overrides.domain) {
+    const d = overrides.domain.toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+    out.domain = d;
+    out.website_url = `https://${d}`;
+  }
+  if (overrides.linkedin_url) out.linkedin_url = overrides.linkedin_url;
+
+  // 2) If we still need, infer from q
+  const ql = q.toLowerCase();
+  const tokens = ql.split(/\s+/).filter(Boolean);
+
+  // simple patterns for "X from Y" / "X @ Y"
+  const fromIdx = tokens.indexOf("from");
+  if (!out.name && fromIdx > 0) {
+    out.name = tokens.slice(0, fromIdx).join(" ");
+  }
+  if (!out.name) {
+    out.name = q.trim();
+  }
+
+  // prefer .ae if likely UAE
+  if (!out.domain) {
+    // normalize brand → domain-ish
+    const brand = out.name.toLowerCase().replace(/[^a-z0-9]+/g, "");
+    // crude: if query mentions bank → try brand + .com; else prefer .ae
+    const ends = /bank|university|government|gulf|dubai|abu|sharjah/.test(ql) ? [".com", ".ae"] : [".ae", ".com"];
+    out.domain = `${brand}${ends[0]}`;
+    out.website_url = `https://${out.domain}`;
+  }
+
+  // record parent for reference
+  if (overrides.parent) out.synonyms.push(overrides.parent);
+
+  return out;
 }

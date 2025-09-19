@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-19T16:05:11Z",
-  "generated_human": "Fri, 19 Sep 2025 16:05:11 GMT",
+  "generated": "2025-09-19T16:34:40Z",
+  "generated_human": "Fri, 19 Sep 2025 16:34:40 GMT",
   "branch": "main",
-  "commit": "f1461a5",
+  "commit": "256976e",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -131,9 +131,9 @@
     },
     {
       "path": "dashboard/src/pages/EnrichmentPage.jsx",
-      "size": 14856,
-      "mtime": "2025-09-19T15:19:37.919Z",
-      "sha256": "31284274aed44400ce04a3177cc403a238e98bef13e3126278ae7fd350abe6e8",
+      "size": 11584,
+      "mtime": "2025-09-19T16:32:04.538Z",
+      "sha256": "8b905c3f6eaeb510dce3dcfa62ff2cdb114cbd9ac0954a315af767b7fd41d964",
       "imports": [
         "import { useEffect, useMemo, useState } from \"react\";",
         "import { authFetch } from \"../utils/auth\";"
@@ -141,8 +141,8 @@
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "import { useEffect, useMemo, useState } from \"react\";\nimport { authFetch } from \"../utils/auth\";\n\n/**\n * EnrichmentPage\n * - Works with new backend:\n *   GET  /api/enrich/status\n *   GET  /api/enrich/search?q=...\n *   POST /api/enrich { company_id, max_contacts }\n * - UAE focus, Emirate column, status chips (Data Source / DB / LLM with timings)\n * - Left company card (from LLM guess) + \"Create & use\" or clear\n * - Save selected rows to chosen company OR quick-create from card\n */\n\nexport default function EnrichmentPage() {\n  // top status indicators\n  const [status, setStatus] = useState({ data_source: \"mock\", db_ok: false, llm_ok: false });\n  // llm-resolved company guess\n  const [guess, setGuess] = useState(null);\n  // input + results\n  const [q, setQ] = useState(\"\");\n  const [loading, setLoading] = useState(false);\n  const [err, setErr] = useState(\"\");\n  const [timings, setTimings] = useState({});\n  const [rows, setRows] = useState([]);\n  // companies list for \"save into\" dropdown\n  const [companies, setCompanies] = useState([]);\n  const [companyId, setCompanyId] = useState(\"\");\n  // selection\n  const [selected, setSelected] = useState({});\n  // raw response\n  const [showRaw, setShowRaw] = useState(false);\n  const [quality, setQuality] = useState(null);\n\n  // load status + a small page of companies for the dropdown\n  useEffect(() => {\n    (async () => {\n      try {\n        const s = await fetchJSON(\"/api/enrich/status\");\n        if (s?.ok) setStatus(s.data || {});",
-      "tail": "async function fetchJSON(url, opts = {}) {\n  const o = { ...opts };\n  if (o.body && typeof o.body !== \"string\") {\n    o.headers = { ...(o.headers || {}), \"Content-Type\": \"application/json\" };\n    o.body = JSON.stringify(o.body);\n  }\n  const res = await authFetch(url, o);\n  const json = await res.json().catch(() => ({}));\n  return json;\n}\n\nfunction Th({ children, className=\"\" }) {\n  return <th className={`px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 ${className}`}>{children}</th>;\n}\nfunction Td({ children, className=\"\", colSpan }) {\n  return <td className={`px-4 py-2 align-top ${className}`} colSpan={colSpan}>{children}</td>;\n}\nfunction Badge({ children }) {\n  return <span className=\"inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700\">{children}</span>;\n}\nfunction truncate(s, n) {\n  const t = String(s || \"\");\n  return t.length > n ? t.slice(0, n - 1) + \"…\" : t;\n}\n"
+      "head": "import { useEffect, useMemo, useState } from \"react\";\nimport { authFetch } from \"../utils/auth\";\n\nfunction Pill({ ok=true, label, ms }) {\n  return (\n    <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${ok ? \"border-green-200 bg-green-50 text-green-700\" : \"border-gray-200 bg-gray-50 text-gray-600\"}`}>\n      <span className={`h-2 w-2 rounded-full ${ok ? \"bg-green-500\" : \"bg-gray-400\"}`}></span>\n      {label}{typeof ms === \"number\" ? ` • ${ms}ms` : \"\"}\n    </span>\n  );\n}\n\nexport default function EnrichmentPage() {\n  const [q, setQ] = useState(\"\");\n  const [rows, setRows] = useState([]);\n  const [err, setErr] = useState(\"\");\n  const [loading, setLoading] = useState(false);\n  const [summary, setSummary] = useState(null); // timings, provider, company_guess, quality\n\n  // disambiguation modal state\n  const [fixOpen, setFixOpen] = useState(false);\n  const [fixName, setFixName] = useState(\"\");\n  const [fixDomain, setFixDomain] = useState(\"\");\n  const [fixLinkedIn, setFixLinkedIn] = useState(\"\");\n  const [fixParent, setFixParent] = useState(\"\");\n\n  const companyGuess = summary?.company_guess;\n\n  const run = async (overrides={}) => {\n    setLoading(true);\n    setErr(\"\");\n    try {\n      const sp = new URLSearchParams();\n      sp.set(\"q\", q.trim());\n      if (overrides.name) sp.set(\"name\", overrides.name.trim());\n      if (overrides.domain) sp.set(\"domain\", overrides.domain.trim().replace(/^https?:\\/\\//i, \"\").replace(/\\/.*$/, \"\"));\n      if (overrides.linkedin_url) sp.set(\"linkedin_url\", overrides.linkedin_url.trim());\n      if (overrides.parent) sp.set(\"parent\", overrides.parent.trim());\n\n      const res = await authFetch(`/api/enrich/search?${sp.toString()}`);",
+      "tail": "                <button\n                  className=\"rounded bg-gray-900 px-4 py-2 font-medium text-white\"\n                  onClick={() => { setFixOpen(false); run({ name: fixName, domain: fixDomain, linkedin_url: fixLinkedIn, parent: fixParent }); }}\n                >\n                  Apply &amp; Re-run\n                </button>\n              </div>\n            </div>\n          </div>\n        </div>\n      )}\n\n    </div>\n  );\n}\n\nfunction Field({label, children}) {\n  return (\n    <div>\n      <div className=\"mb-1 text-sm text-gray-700\">{label}</div>\n      {children}\n    </div>\n  );\n}\n"
     },
     {
       "path": "dashboard/src/pages/HRLeads.jsx",
@@ -358,17 +358,15 @@
     },
     {
       "path": "routes/enrich/lib/llm.js",
-      "size": 2782,
-      "mtime": "2025-09-19T15:11:20.106Z",
-      "sha256": "7eac0af7142326c34608688fd7552d50e7a687e28fc71ac171357e44e1b5caa5",
+      "size": 1784,
+      "mtime": "2025-09-19T16:33:09.131Z",
+      "sha256": "b7a270af2572825ec4715c38f0383dd460711f3a0e48ada50f660cc7545cbe46",
       "imports": [],
-      "envs": [
-        "OPENAI_API_KEY"
-      ],
+      "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "const OPENAI_KEY = process.env.OPENAI_API_KEY || \"\";\n\nconst STOPWORDS = /\\b(inc|llc|ltd|limited|international|intl|company|co|corp|corporation|group|holdings?|school|bank|market|solutions?)\\b/gi;\n\nexport function cleanName(s = \"\") {\n  return String(s)\n    .replace(STOPWORDS, \" \")\n    .replace(/[^a-z0-9\\s&-]/gi, \" \")\n    .replace(/\\s{2,}/g, \" \")\n    .trim();\n}\nexport function acronymOf(name = \"\") {\n  const a = name.split(/[\\s&-]+/).filter(Boolean).map(w => w[0]?.toUpperCase()).join(\"\");\n  return a || null;\n}\nexport function wordsToDomain(name = \"\") {\n  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, \"\");\n  return base ? `${base}.com` : null;\n}\n\nexport async function resolveCompanyRich(q, timings = {}) {\n  const t0 = Date.now();\n  const cleaned = cleanName(q);\n  const acr = acronymOf(cleaned);\n\n  if (!OPENAI_KEY) {\n    const domain = wordsToDomain(cleaned);\n    timings.llm_ms = (timings.llm_ms || 0) + (Date.now() - t0);\n    return {\n      name: cleaned,\n      domain,\n      website_url: domain ? `https://www.${domain}` : null,\n      linkedin_url: null,\n      hq: null,\n      industry: null,\n      size: null,\n      synonyms: [cleaned, acr].filter(Boolean),\n      mode: \"Guess\",\n    };\n  }",
-      "tail": "      obj.website_url ||= (obj.domain ? `https://www.${obj.domain}` : null);\n      obj.synonyms = Array.isArray(obj.synonyms) ? obj.synonyms : [];\n      if (acr) obj.synonyms.push(acr);\n      obj.mode = \"LLM\";\n      timings.llm_ms = (timings.llm_ms || 0) + (Date.now() - t0);\n      return obj;\n    }\n  } catch (e) {\n    console.error(\"LLM resolve failed\", e);\n  }\n  const domain = wordsToDomain(cleaned);\n  timings.llm_ms = (timings.llm_ms || 0) + (Date.now() - t0);\n  return {\n    name: cleaned,\n    domain,\n    website_url: domain ? `https://www.${domain}` : null,\n    linkedin_url: null,\n    hq: null,\n    industry: null,\n    size: null,\n    synonyms: [cleaned, acr].filter(Boolean),\n    mode: \"Guess\",\n  };\n}\n"
+      "head": "/**\n * Very lightweight heuristics-based guesser with override support.\n * If overrides are passed (name/domain/linkedin_url), they win.\n * Otherwise we infer from the text, preferring .ae domains for UAE context\n * and recognizing simple \"X from Y\" subsidiary language.\n */\nexport async function guessCompany(q, overrides = {}) {\n  const out = {\n    name: null,\n    domain: null,\n    website_url: null,\n    linkedin_url: null,\n    hq: \"United Arab Emirates\",\n    industry: null,\n    size: null,\n    synonyms: [],\n    mode: \"LLM\",\n    confidence: 0.7,\n  };\n\n  // 1) Overrides first\n  if (overrides.name) out.name = overrides.name;\n  if (overrides.domain) {\n    const d = overrides.domain.toLowerCase().replace(/^https?:\\/\\//, \"\").replace(/\\/.*$/, \"\");\n    out.domain = d;\n    out.website_url = `https://${d}`;\n  }\n  if (overrides.linkedin_url) out.linkedin_url = overrides.linkedin_url;\n\n  // 2) If we still need, infer from q\n  const ql = q.toLowerCase();\n  const tokens = ql.split(/\\s+/).filter(Boolean);\n\n  // simple patterns for \"X from Y\" / \"X @ Y\"\n  const fromIdx = tokens.indexOf(\"from\");\n  if (!out.name && fromIdx > 0) {\n    out.name = tokens.slice(0, fromIdx).join(\" \");\n  }\n  if (!out.name) {\n    out.name = q.trim();",
+      "tail": "  // simple patterns for \"X from Y\" / \"X @ Y\"\n  const fromIdx = tokens.indexOf(\"from\");\n  if (!out.name && fromIdx > 0) {\n    out.name = tokens.slice(0, fromIdx).join(\" \");\n  }\n  if (!out.name) {\n    out.name = q.trim();\n  }\n\n  // prefer .ae if likely UAE\n  if (!out.domain) {\n    // normalize brand → domain-ish\n    const brand = out.name.toLowerCase().replace(/[^a-z0-9]+/g, \"\");\n    // crude: if query mentions bank → try brand + .com; else prefer .ae\n    const ends = /bank|university|government|gulf|dubai|abu|sharjah/.test(ql) ? [\".com\", \".ae\"] : [\".ae\", \".com\"];\n    out.domain = `${brand}${ends[0]}`;\n    out.website_url = `https://${out.domain}`;\n  }\n\n  // record parent for reference\n  if (overrides.parent) out.synonyms.push(overrides.parent);\n\n  return out;\n}\n"
     },
     {
       "path": "routes/enrich/lib/quality.js",
@@ -384,25 +382,22 @@
     },
     {
       "path": "routes/enrich/search.js",
-      "size": 6853,
-      "mtime": "2025-09-19T15:11:20.095Z",
-      "sha256": "f13e5f7c4409339d581a3818a7fc9d6e039c0f6170d4eecea1eab7e9e637efcd",
+      "size": 2401,
+      "mtime": "2025-09-19T16:32:49.963Z",
+      "sha256": "a8eb9ce28752ae2ab7172f6d0c4e98961467fd70eb1f92d273b6b779ccd48869",
       "imports": [
         "import express from \"express\";",
-        "import { resolveCompanyRich, cleanName } from \"./lib/llm.js\";",
-        "import { qualityScore, scoreCandidate, roleBucket, bucketSeniority } from \"./lib/quality.js\";",
-        "import { emirateFromLocation, isUAE } from \"./lib/geo.js\";",
-        "import { applyPattern, isProviderPlaceholderEmail, verifyEmail } from \"./lib/email.js\";"
+        "import { guessCompany } from \"./lib/llm.js\";",
+        "import { searchPeopleByCompany } from \"./lib/apollo.js\";",
+        "import { scoreQuality } from \"./lib/quality.js\";",
+        "import { tagEmirate } from \"./lib/geo.js\";",
+        "import { applyEmailPattern } from \"./lib/email.js\";"
       ],
-      "envs": [
-        "APOLLOIO_API_KEY",
-        "APOLLO_API_KEY",
-        "APOLLO_TOKEN"
-      ],
+      "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "import express from \"express\";\nimport { resolveCompanyRich, cleanName } from \"./lib/llm.js\";\nimport {\n  compactApolloKeywords, apolloPeopleByDomain, apolloPeopleByName,\n  detectOrgDomain, deriveLocation\n} from \"./lib/apollo.js\";\nimport { qualityScore, scoreCandidate, roleBucket, bucketSeniority } from \"./lib/quality.js\";\nimport { emirateFromLocation, isUAE } from \"./lib/geo.js\";\nimport { applyPattern, isProviderPlaceholderEmail, verifyEmail } from \"./lib/email.js\";\n\nexport default function buildSearchRouter({ pool }) {\n  const router = express.Router();\n\n  // GET /api/enrich/search?q=...\n  router.get(\"/search\", async (req, res) => {\n    const q = String(req.query.q || \"\").trim();\n    if (!q) return res.status(400).json({ ok: false, error: \"q is required\" });\n\n    const timings = {};\n    try {\n      // 1) Resolve company (LLM or guess)\n      const guess = await resolveCompanyRich(q, timings);\n\n      // 2) Query provider (Apollo) with UAE + role filters\n      const HAS_APOLLO = !!(process.env.APOLLO_API_KEY || process.env.APOLLOIO_API_KEY || process.env.APOLLO_TOKEN);\n      let people = [];\n      if (HAS_APOLLO) {\n        const keywords = compactApolloKeywords();\n        const locs = [\"United Arab Emirates\"];\n\n        if (guess.domain) {\n          people = await apolloPeopleByDomain({ domain: guess.domain, keywords, limit: 25, timings, locations: locs });\n        }\n        if (!people.length) {\n          people = await apolloPeopleByName({ name: guess.name, keywords, limit: 25, timings, locations: locs });\n        }\n        if (!people.length && Array.isArray(guess.synonyms)) {\n          for (const s of guess.synonyms) {\n            // eslint-disable-next-line no-await-in-loop\n            const batch = await apolloPeopleByName({ name: s, keywords, limit: 25, timings, locations: locs });",
-      "tail": "\n      return res.json({\n        ok: true,\n        data: {\n          status: \"completed\",\n          company_id: null,\n          results: normalized,\n          summary: {\n            total_candidates: normalized.length,\n            kept: normalized.length,\n            provider: \"live\",\n            company_guess: { ...guess, domain },\n            timings,\n            quality: qs,\n          },\n        },\n      });\n    } catch (e) {\n      return res.status(500).json({ ok: false, error: \"search_failed\" });\n    }\n  });\n\n  return router;\n}\n"
+      "head": "import express from \"express\";\nimport { guessCompany } from \"./lib/llm.js\";\nimport { searchPeopleByCompany } from \"./lib/apollo.js\";\nimport { scoreQuality } from \"./lib/quality.js\";\nimport { tagEmirate } from \"./lib/geo.js\";\nimport { applyEmailPattern } from \"./lib/email.js\";\n\nconst router = express.Router();\n\n/**\n * GET /api/enrich/search\n * q=free text (required)\n * Optional overrides:\n *   &name=Exact Co Name\n *   &domain=example.com    (or full URL; we normalize to domain)\n *   &linkedin_url=...\n *   &parent=Mubadala\n */\nrouter.get(\"/\", async (req, res) => {\n  const t0 = Date.now();\n  try {\n    const q = String(req.query.q || \"\").trim();\n    if (!q) return res.status(400).json({ ok:false, error:\"missing q\" });\n\n    const overrides = {\n      name: req.query.name ? String(req.query.name) : undefined,\n      domain: req.query.domain ? String(req.query.domain) : undefined,\n      linkedin_url: req.query.linkedin_url ? String(req.query.linkedin_url) : undefined,\n      parent: req.query.parent ? String(req.query.parent) : undefined,\n    };\n\n    // 1) LLM guess (respects overrides)\n    const g0 = Date.now();\n    const guess = await guessCompany(q, overrides);\n    const llm_ms = Date.now() - g0;\n\n    // 2) Provider search (domain preferred)\n    const p0 = Date.now();\n    const providerResults = await searchPeopleByCompany({\n      name: guess.name,",
+      "tail": "    const quality = scoreQuality({ guess, results });\n\n    return res.json({\n      ok: true,\n      data: {\n        status: \"completed\",\n        results,\n        summary: {\n          provider: \"live\",\n          company_guess: guess,\n          timings: { llm_ms, provider_ms, smtp_ms: 0 },\n          quality,\n          total_candidates: results.length,\n          kept: results.length,\n        },\n      },\n    });\n  } catch (e) {\n    console.error(\"enrich search error\", e);\n    res.status(500).json({ ok:false, error:\"search_failed\" });\n  }\n});\n\nexport default router;\n"
     },
     {
       "path": "routes/hrLeads.js",
