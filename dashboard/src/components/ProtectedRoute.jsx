@@ -1,23 +1,27 @@
-import React from "react";
-import { Navigate, Outlet, useLocation } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { Navigate } from "react-router-dom";
 
-/**
- * ProtectedRoute
- * - If no token, redirect to /login (preserving "from")
- * - If children are provided, render them; else render <Outlet />
- */
 export default function ProtectedRoute({ children }) {
-  let token = null;
-  try {
-    token = localStorage.getItem("token");
-  } catch (_) {
-    token = null;
-  }
+  const [state, setState] = useState({ checking: true, ok: false });
 
-  const location = useLocation();
+  useEffect(() => {
+    let gone = false;
+    (async () => {
+      try {
+        const r = await fetch("/api/auth/verify", {
+          credentials: "include",
+          headers: { Accept: "application/json" },
+        });
+        const ok = r.ok && (await r.json().catch(() => ({})))?.ok;
+        if (!gone) setState({ checking: false, ok: !!ok });
+      } catch {
+        if (!gone) setState({ checking: false, ok: false });
+      }
+    })();
+    return () => { gone = true; };
+  }, []);
 
-  if (!token) {
-    return <Navigate to="/login" replace state={{ from: location }} />;
-  }
-  return children ?? <Outlet />;
+  if (state.checking) return <div className="p-6 text-gray-500">Checking session…</div>;
+  if (!state.ok) return <Navigate to="/login" replace />;
+  return children;
 }

@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-19T18:06:32Z",
-  "generated_human": "Fri, 19 Sep 2025 18:06:32 GMT",
+  "generated": "2025-09-19T18:52:01Z",
+  "generated_human": "Fri, 19 Sep 2025 18:52:01 GMT",
   "branch": "main",
-  "commit": "43a86bf",
+  "commit": "846b31c",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -189,19 +189,18 @@
     },
     {
       "path": "dashboard/src/pages/Login.jsx",
-      "size": 2967,
-      "mtime": "2025-09-14T04:31:31.784Z",
-      "sha256": "f9848a0b3f0c7edd6e690ffad5c8783db57cc71113a5f18327ba30720e8d589c",
+      "size": 3989,
+      "mtime": "2025-09-19T18:49:04.587Z",
+      "sha256": "970f016bec38b90458f12fc001caff6e626f861cd481bfb65bd7dcfd80ad8e8a",
       "imports": [
-        "import { useEffect, useState } from \"react\";",
-        "import { useNavigate } from \"react-router-dom\";",
-        "import { loginWithPassword, verifyToken } from \"../utils/auth\";"
+        "import React, { useEffect, useState } from \"react\";",
+        "import { useNavigate } from \"react-router-dom\";"
       ],
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "// dashboard/src/pages/Login.jsx\nimport { useEffect, useState } from \"react\";\nimport { useNavigate } from \"react-router-dom\";\nimport { loginWithPassword, verifyToken } from \"../utils/auth\";\n\nexport default function Login() {\n  const nav = useNavigate();\n  const [checking, setChecking] = useState(true);\n  const [username, setUsername] = useState(\"\");\n  const [password, setPassword] = useState(\"\");\n  const [err, setErr] = useState(\"\");\n\n  // On mount, if token already valid, go straight in\n  useEffect(() => {\n    (async () => {\n      const ok = await verifyToken();\n      if (ok) nav(\"/\");\n      else setChecking(false);\n    })();\n  }, [nav]);\n\n  async function onSubmit(e) {\n    e.preventDefault();\n    setErr(\"\");\n    const { ok, error } = await loginWithPassword(username.trim(), password);\n    if (ok) nav(\"/\");\n    else setErr(error || \"Login failed\");\n  }\n\n  if (checking) {\n    return (\n      <div className=\"min-h-screen flex items-center justify-center text-sm text-gray-500\">\n        Checking session…\n      </div>\n    );\n  }\n\n  return (\n    <div className=\"min-h-screen flex items-center justify-center bg-gray-50 p-4\">\n      <div className=\"w-full max-w-md bg-white rounded-2xl shadow p-6\">",
-      "tail": "            />\n          </div>\n\n          {err && (\n            <div className=\"text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2\">\n              {err}\n            </div>\n          )}\n\n          <button\n            type=\"submit\"\n            className=\"w-full rounded-xl bg-gray-900 text-white px-4 py-2 font-medium hover:bg-gray-800\"\n          >\n            Login\n          </button>\n        </form>\n\n        <p className=\"mt-3 text-center text-[11px] text-gray-400\">\n          Your session is stored only in this browser.\n        </p>\n      </div>\n    </div>\n  );\n}\n"
+      "head": "import React, { useEffect, useState } from \"react\";\nimport { useNavigate } from \"react-router-dom\";\n\nexport default function Login() {\n  const navigate = useNavigate();\n\n  // UI state\n  const [checking, setChecking] = useState(true);\n  const [error, setError] = useState(\"\");\n  const [username, setUsername] = useState(\"\");\n  const [password, setPassword] = useState(\"\");\n\n  // If you ever host the API elsewhere, set VITE_API_BASE; otherwise '' keeps same-origin.\n  const API_BASE = (import.meta?.env?.VITE_API_BASE || \"\").replace(/\\/+$/, \"\");\n\n  // 1) Probe existing session; DO NOT hang the UI on network errors.\n  useEffect(() => {\n    let cancelled = false;\n    (async () => {\n      try {\n        const res = await fetch(`${API_BASE}/api/auth/verify`, {\n          credentials: \"include\",\n          headers: { Accept: \"application/json\" },\n        });\n        if (res.ok) {\n          const j = await res.json().catch(() => ({}));\n          if (!cancelled && j?.ok) {\n            navigate(\"/\", { replace: true });\n            return;\n          }\n        }\n        // Non-OK falls through to show the form\n      } catch (e) {\n        // Network error (what you’re seeing) — just show the form\n        console.warn(\"verify failed:\", e);\n        window.__UPR_LAST_UI_ERROR__ = e;\n      } finally {\n        if (!cancelled) setChecking(false);\n      }\n    })();",
+      "tail": "        <label className=\"block text-sm mb-1\" htmlFor=\"password\">\n          Password\n        </label>\n        <input\n          id=\"password\"\n          type=\"password\"\n          className=\"w-full mb-4 border rounded px-3 py-2\"\n          value={password}\n          onChange={(e) => setPassword(e.target.value)}\n          autoComplete=\"current-password\"\n          required\n        />\n\n        <button className=\"w-full rounded bg-gray-900 text-white py-2\">\n          Sign in\n        </button>\n\n        <p className=\"text-xs text-gray-500 mt-3\">\n          If session check fails due to network, the form appears so you can sign in manually.\n        </p>\n      </form>\n    </div>\n  );\n}\n"
     },
     {
       "path": "dashboard/src/pages/MessagesPage.jsx",

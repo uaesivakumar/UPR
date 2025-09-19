@@ -1,8 +1,8 @@
 # UPR — Project Checkpoint (auto)
 
-**Generated:** 2025-09-19T18:06:32Z  
+**Generated:** 2025-09-19T18:52:01Z  
 **Branch:** main  
-**Commit:** 43a86bf
+**Commit:** 846b31c
 **Package:** upr-dashboard
 
 ---
@@ -17,7 +17,7 @@
 <details><summary>Click to expand</summary>
 
 ```
-# Generated: 2025-09-19T18:06:32Z
+# Generated: 2025-09-19T18:52:01Z
 .DS_Store
 .dockerignore
 .githooks/pre-commit
@@ -39,6 +39,8 @@ dashboard/public/vite.svg
 dashboard/src/App.css
 dashboard/src/App.jsx
 dashboard/src/assets/react.svg
+dashboard/src/components/AppError.jsx
+dashboard/src/components/ErrorBoundary.jsx
 dashboard/src/components/LLMStatus.jsx
 dashboard/src/components/ProtectedRoute.jsx
 dashboard/src/components/Topbar.jsx
