@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-19T12:54:10Z",
-  "generated_human": "Fri, 19 Sep 2025 12:54:10 GMT",
+  "generated": "2025-09-19T13:09:38Z",
+  "generated_human": "Fri, 19 Sep 2025 13:09:38 GMT",
   "branch": "main",
-  "commit": "ba0169c",
+  "commit": "7fac4ac",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -40,9 +40,9 @@
     },
     {
       "path": "dashboard/src/features/enrichment/EnrichmentView.jsx",
-      "size": 17716,
-      "mtime": "2025-09-19T12:53:43.595Z",
-      "sha256": "517ee2100cd9c7b535edae988eefb03f3ee4292492b5199bdc8068cab1b6e6b2",
+      "size": 14267,
+      "mtime": "2025-09-19T13:09:20.817Z",
+      "sha256": "5d532cff63417e73d44fbce907d23e869efae47bc3f1c3dbc22c0deef0cae8de",
       "imports": [
         "import React, { useCallback, useEffect, useMemo, useRef, useState } from \"react\";",
         "import { authFetch } from \"../../utils/auth\";"
@@ -50,8 +50,8 @@
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "// dashboard/src/features/enrichment/EnrichmentView.jsx\nimport React, { useCallback, useEffect, useMemo, useRef, useState } from \"react\";\nimport { authFetch } from \"../../utils/auth\";\n\nexport default function EnrichmentView() {\n  const [text, setText] = useState(\"\");\n  const [err, setErr] = useState(null);\n  const [attempted, setAttempted] = useState(false);\n  const [loading, setLoading] = useState(false);\n\n  const [status, setStatus] = useState({ db_ok: null, llm_ok: null, data_source: null });\n  const [company, setCompany] = useState(null);\n  const [result, setResult] = useState(null);\n\n  const [rowsChecked, setRowsChecked] = useState({});\n  const [companies, setCompanies] = useState([]);\n  const [saveCompanyId, setSaveCompanyId] = useState(\"\");\n  const [saveCompanyMeta, setSaveCompanyMeta] = useState(null);\n\n  const [showRaw, setShowRaw] = useState(false);\n  const inputRef = useRef(null);\n\n  // status polling\n  const loadStatus = useCallback(async () => {\n    try {\n      const r = await authFetch(\"/api/enrich/status\");\n      const j = await r.json();\n      if (j?.data) setStatus(j.data);\n    } catch {\n      setStatus((s) => ({ ...s, db_ok: false }));\n    }\n  }, []);\n  useEffect(() => {\n    loadStatus();\n    const t = setInterval(loadStatus, 20000);\n    return () => clearInterval(t);\n  }, [loadStatus]);\n\n  // selected company broadcast\n  useEffect(() => {",
-      "tail": "    );\n  }\n  return (\n    <div className=\"rounded-xl border p-3 bg-white text-sm\">\n      <div className=\"font-semibold text-gray-900\">{c.name || \"—\"}</div>\n      <div className=\"mt-1 text-gray-600\">Domain: {c.domain || \"—\"}</div>\n      {selected ? (\n        <div className=\"mt-1 text-gray-600\">Mode: Selected</div>\n      ) : (\n        <div className=\"mt-1 text-gray-600\">Mode: Guess</div>\n      )}\n    </div>\n  );\n}\nfunction Th({ children }) {\n  return (\n    <th scope=\"col\" className=\"px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500\">\n      {children}\n    </th>\n  );\n}\nfunction Td({ children, className = \"\" }) {\n  return <td className={`px-3 py-2 ${className}`}>{children}</td>;\n}\n"
+      "head": "// dashboard/src/features/enrichment/EnrichmentView.jsx\nimport React, { useCallback, useEffect, useMemo, useRef, useState } from \"react\";\nimport { authFetch } from \"../../utils/auth\";\n\nexport default function EnrichmentView() {\n  const [text, setText] = useState(\"\");\n  const [err, setErr] = useState(\"\");\n  const [loading, setLoading] = useState(false);\n\n  const [status, setStatus] = useState({ db_ok: null, llm_ok: null, data_source: null });\n  const [company, setCompany] = useState(null);               // selected from Companies page\n  const [guess, setGuess] = useState(null);                  // LLM guess {name,domain}\n  const [result, setResult] = useState(null);                // API result (search or job)\n\n  const [companies, setCompanies] = useState([]);\n  const [saveCompanyId, setSaveCompanyId] = useState(\"\");    // where to save in search mode\n  const [checked, setChecked] = useState({});                // table selections\n  const [showRaw, setShowRaw] = useState(false);\n\n  /* ---------------- status chips ---------------- */\n  const loadStatus = useCallback(async () => {\n    try {\n      const r = await authFetch(\"/api/enrich/status\");\n      const j = await r.json();\n      if (j?.data) setStatus(j.data);\n    } catch {/* ignore */}\n  }, []);\n  useEffect(() => { loadStatus(); const t = setInterval(loadStatus, 20000); return () => clearInterval(t); }, [loadStatus]);\n\n  /* ---------------- listen to Companies page selection ---------------- */\n  useEffect(() => {\n    const h = (e) => {\n      const c = e?.detail || null;\n      setCompany(c);\n      if (c?.name) setText(c.name);\n      setSaveCompanyId(c?.id || \"\");\n    };\n    window.addEventListener(\"upr:companySidebar\", h);\n    return () => window.removeEventListener(\"upr:companySidebar\", h);\n  }, []);",
+      "tail": "    );\n  }\n  return (\n    <div className=\"rounded-2xl border bg-white p-4 text-sm space-y-2\">\n      <div className=\"text-gray-900 font-semibold\">{c.name || \"—\"}</div>\n      <div className=\"text-gray-600\">Domain: {c.domain || \"—\"}</div>\n      <div className=\"text-gray-600\">Mode: {selected ? \"Selected\" : \"Guess\"}</div>\n      <div className=\"pt-2 flex gap-2\">\n        {guess && (\n          <button className=\"rounded border px-2 py-1\" onClick={onCreateGuess}>\n            Create & use\n          </button>\n        )}\n        <button className=\"rounded border px-2 py-1\" onClick={clear}>Clear</button>\n      </div>\n    </div>\n  );\n}\nfunction TH({ className=\"\", children }) {\n  return <th className={`px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 ${className}`}>{children}</th>;\n}\nfunction TD({ className=\"\", children }) {\n  return <td className={`px-3 py-2 ${className}`}>{children}</td>;\n}\n"
     },
     {
       "path": "dashboard/src/features/enrichment/LLMStatus.jsx",
@@ -257,9 +257,9 @@
     },
     {
       "path": "routes/enrich.js",
-      "size": 24015,
-      "mtime": "2025-09-19T12:53:19.873Z",
-      "sha256": "63ff0e2bb6cbc3417ea39b41054aa173497adb641ddb91f4f0a87d089bba665b",
+      "size": 21254,
+      "mtime": "2025-09-19T13:09:09.591Z",
+      "sha256": "df472e1e8fb27e32af666a0b1c8d4e1c9a1536297e2c403b5581f5740a6229bc",
       "imports": [
         "import express from \"express\";",
         "import { nanoid } from \"nanoid\";",
@@ -274,8 +274,8 @@
       ],
       "appUses": [],
       "endpoints": [],
-      "head": "// routes/enrich.js\nimport express from \"express\";\nimport { nanoid } from \"nanoid\";\nimport { pool } from \"../utils/db.js\";\n\nimport {\n  bucketRole,\n  bucketSeniority,\n  isAgencyRecruiter,\n  scoreCandidate,\n} from \"../utils/patternHelpers.js\";\nimport {\n  inferPatternFromSamples,\n  applyPattern,\n  loadPatternFromCache,\n  savePatternToCache,\n} from \"../utils/emailPatterns.js\";\nimport { verifyEmail } from \"../utils/emailVerify.js\";\n\nconst router = express.Router();\n\n/* ------------------------------ ENV & consts ------------------------------ */\nconst APOLLO_API_KEY =\n  process.env.APOLLO_API_KEY || process.env.APOLLOIO_API_KEY || process.env.APOLLO_TOKEN || \"\";\nconst hasApollo = !!APOLLO_API_KEY;\nconst OPENAI_KEY = process.env.OPENAI_API_KEY || \"\";\nconst LLM_OK = !!OPENAI_KEY;\n\nconst HR_KEYWORDS = [\n  \"HR\",\n  \"Human Resources\",\n  \"People\",\n  \"Talent\",\n  \"Recruiting\",\n  \"People Operations\",\n  \"Head of People\",\n  \"HR Manager\",\n  \"HR Director\",\n  \"Compensation\",\n  \"Benefits\",",
-      "tail": "  const org =\n    p.organization ||\n    p.company ||\n    p.employer || {\n      domain: p.organization_domain || p.company_domain || null,\n      website_url: p.organization_website_url || p.company_website_url || null,\n    };\n  const company_linkedin_url =\n    p.organization_linkedin_url || p.company_linkedin_url || p.company_linkedin || null;\n\n  return {\n    source: \"live\",\n    name,\n    first_name: p.first_name || null,\n    last_name: p.last_name || null,\n    title: p.title || p.position || \"\",\n    designation: p.title || p.position || \"\",\n    linkedin_url: p.linkedin_url || p.linkedin || \"\",\n    company_linkedin_url,\n    email: p.email || (p.email_status === \"verified\" ? p.email : null),\n    organization: org,\n    seniority: p.seniority || null,\n  };\n}\n"
+      "head": "// routes/enrich.js\nimport express from \"express\";\nimport { nanoid } from \"nanoid\";\nimport { pool } from \"../utils/db.js\";\n\nimport {\n  bucketRole,\n  bucketSeniority,\n  isAgencyRecruiter,\n  scoreCandidate,\n} from \"../utils/patternHelpers.js\";\nimport {\n  inferPatternFromSamples,\n  applyPattern,\n  loadPatternFromCache,\n  savePatternToCache,\n} from \"../utils/emailPatterns.js\";\nimport { verifyEmail } from \"../utils/emailVerify.js\";\n\nconst router = express.Router();\n\n/* ------------------------------ ENV ------------------------------ */\nconst APOLLO_API_KEY =\n  process.env.APOLLO_API_KEY || process.env.APOLLOIO_API_KEY || process.env.APOLLO_TOKEN || \"\";\nconst OPENAI_KEY = process.env.OPENAI_API_KEY || \"\";\n\nconst HAS_APOLLO = !!APOLLO_API_KEY;\nconst LLM_OK = !!OPENAI_KEY;\n\n/* ------------------------------ Role filters ------------------------------ */\nconst HR_WORDS = [\n  \"HR\",\"Human Resources\",\"People\",\"Talent\",\"Recruiting\",\"People Operations\",\"Head of People\",\"HR Manager\",\"HR Director\",\"Compensation\",\"Benefits\",\"Payroll\"\n];\nconst ADMIN_WORDS = [\"Admin\",\"Administration\",\"Office Manager\",\"Executive Assistant\"];\nconst FIN_WORDS = [\"Finance\",\"Financial Controller\",\"CFO\",\"Accounts\",\"Accounting\",\"Procurement\"];\n\nconst ALLOWED_BUCKETS = new Set([\"hr\",\"admin\",\"finance\"]);\n\n/* ------------------------------ In-memory jobs ------------------------------ */\nconst jobs = new Map();",
+      "tail": "    let json = null; try { json = await res.json(); } catch {}\n    if (!res.ok) log(\"apollo non-200\", res.status, json || \"\");\n    return { ok: res.ok, status: res.status, json };\n  } catch (e) {\n    log(\"apollo fetch error\", e);\n    return { ok: false, status: 0, json: null };\n  }\n}\nfunction mapApollo(p) {\n  return {\n    name: [p.first_name, p.last_name].filter(Boolean).join(\" \").trim() || p.name || \"\",\n    first_name: p.first_name || null,\n    last_name: p.last_name || null,\n    title: p.title || p.position || \"\",\n    designation: p.title || p.position || \"\",\n    linkedin_url: p.linkedin_url || p.linkedin || \"\",\n    email: p.email || null,\n    organization: p.organization || p.company || p.employer || {\n      domain: p.organization_domain || p.company_domain || null,\n      website_url: p.organization_website_url || p.company_website_url || null,\n    },\n    seniority: p.seniority || null,\n  };\n}\n"
     },
     {
       "path": "routes/hrLeads.js",

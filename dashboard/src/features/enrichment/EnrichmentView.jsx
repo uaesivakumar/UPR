@@ -4,289 +4,210 @@ import { authFetch } from "../../utils/auth";
 
 export default function EnrichmentView() {
   const [text, setText] = useState("");
-  const [err, setErr] = useState(null);
-  const [attempted, setAttempted] = useState(false);
+  const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
 
   const [status, setStatus] = useState({ db_ok: null, llm_ok: null, data_source: null });
-  const [company, setCompany] = useState(null);
-  const [result, setResult] = useState(null);
+  const [company, setCompany] = useState(null);               // selected from Companies page
+  const [guess, setGuess] = useState(null);                  // LLM guess {name,domain}
+  const [result, setResult] = useState(null);                // API result (search or job)
 
-  const [rowsChecked, setRowsChecked] = useState({});
   const [companies, setCompanies] = useState([]);
-  const [saveCompanyId, setSaveCompanyId] = useState("");
-  const [saveCompanyMeta, setSaveCompanyMeta] = useState(null);
-
+  const [saveCompanyId, setSaveCompanyId] = useState("");    // where to save in search mode
+  const [checked, setChecked] = useState({});                // table selections
   const [showRaw, setShowRaw] = useState(false);
-  const inputRef = useRef(null);
 
-  // status polling
+  /* ---------------- status chips ---------------- */
   const loadStatus = useCallback(async () => {
     try {
       const r = await authFetch("/api/enrich/status");
       const j = await r.json();
       if (j?.data) setStatus(j.data);
-    } catch {
-      setStatus((s) => ({ ...s, db_ok: false }));
-    }
+    } catch {/* ignore */}
   }, []);
-  useEffect(() => {
-    loadStatus();
-    const t = setInterval(loadStatus, 20000);
-    return () => clearInterval(t);
-  }, [loadStatus]);
+  useEffect(() => { loadStatus(); const t = setInterval(loadStatus, 20000); return () => clearInterval(t); }, [loadStatus]);
 
-  // selected company broadcast
+  /* ---------------- listen to Companies page selection ---------------- */
   useEffect(() => {
-    const onSidebarCompany = (e) => {
-      const detail = e?.detail || null;
-      setCompany(detail);
-      if (detail?.name && !text) setText(detail.name);
-      if (detail?.id) {
-        setSaveCompanyId(detail.id);
-        setSaveCompanyMeta({ id: detail.id, name: detail.name, domain: detail.domain || null });
-      }
+    const h = (e) => {
+      const c = e?.detail || null;
+      setCompany(c);
+      if (c?.name) setText(c.name);
+      setSaveCompanyId(c?.id || "");
     };
-    window.addEventListener("upr:companySidebar", onSidebarCompany);
-    return () => window.removeEventListener("upr:companySidebar", onSidebarCompany);
-  }, [text]);
+    window.addEventListener("upr:companySidebar", h);
+    return () => window.removeEventListener("upr:companySidebar", h);
+  }, []);
 
-  // load company list (for saving into)
+  /* ---------------- load company list to allow saving ---------------- */
   useEffect(() => {
     (async () => {
       try {
-        const r = await authFetch(`/api/companies?sort=name.asc`);
+        const r = await authFetch("/api/companies?sort=name.asc");
         const j = await r.json();
         if (r.ok && j?.ok) setCompanies(j.data || []);
       } catch {}
     })();
   }, []);
 
-  const canSubmit = useMemo(() => Boolean(company?.id) || Boolean(text && text.trim()), [company, text]);
+  const canRun = useMemo(() => Boolean(company?.id) || Boolean(text.trim()), [company, text]);
 
-  const callSearch = useCallback(async (q) => {
-    const res = await authFetch(`/api/enrich/search?q=${encodeURIComponent(q)}`);
-    const raw = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(raw?.error || "Search failed");
-    return raw?.data || raw;
-  }, []);
-
-  const callReal = useCallback(async (company_id) => {
-    const res = await authFetch(`/api/enrich`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ company_id, max_contacts: 3 }),
-    });
-    const raw = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(raw?.error || "Enrich failed");
-    return raw;
-  }, []);
-
-  const createCompany = useCallback(async (guess) => {
-    const payload = {
-      name: guess.name || (guess.domain ? guess.domain.replace(/\.[a-z]+$/, "") : "Company"),
-      website_url: guess.domain ? `https://${guess.domain}` : null,
-      type: null,
-      status: "New",
-      locations: [],
-    };
-    const r = await authFetch("/api/manual/companies", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const j = await r.json();
-    if (r.ok && j?.id) return { id: j.id, name: payload.name, domain: guess.domain || null };
-    throw new Error(j?.error || "Failed to create company");
-  }, []);
-
-  const handleEnrich = useCallback(async () => {
-    setAttempted(true);
-    if (!canSubmit) return;
-    setLoading(true);
-    setErr(null);
-    setResult(null);
-    setRowsChecked({});
+  const run = useCallback(async () => {
+    if (!canRun || loading) return;
+    setLoading(true); setErr(""); setResult(null); setGuess(null); setChecked({});
     try {
-      let data;
       if (company?.id) {
-        data = await callReal(company.id);
-        window.dispatchEvent(new CustomEvent("upr:companySidebar", { detail: company }));
+        // real enrichment (selected company)
+        const r = await authFetch("/api/enrich", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ company_id: company.id, max_contacts: 3 }),
+        });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j?.error || "Enrich failed");
+        setResult(j);
       } else {
-        data = await callSearch(text.trim());
-        const guess = data?.summary?.company_guess || null;
-        if (guess && (!saveCompanyId || !saveCompanyMeta)) {
-          try {
-            const ensured = await createCompany(guess);
-            setSaveCompanyId(ensured.id);
-            setSaveCompanyMeta(ensured);
-          } catch {}
-        }
-        window.dispatchEvent(new CustomEvent("upr:companySidebar", { detail: null }));
+        // name search
+        const r = await authFetch(`/api/enrich/search?q=${encodeURIComponent(text.trim())}`);
+        const j = await r.json();
+        if (!r.ok) throw new Error(j?.error || "Search failed");
+        setResult(j?.data || j);
+        setGuess(j?.data?.summary?.company_guess || null);
       }
-      setResult(data || null);
     } catch (e) {
-      setErr(e?.message || "Enrichment failed");
+      setErr(e?.message || "Failed");
     } finally {
       setLoading(false);
     }
-  }, [canSubmit, company, text, callSearch, callReal, saveCompanyId, saveCompanyMeta, createCompany]);
-
-  const toggleRow = (idx) => setRowsChecked((m) => ({ ...m, [idx]: !m[idx] }));
-  const selectedCount = useMemo(
-    () => Object.values(rowsChecked).filter(Boolean).length,
-    [rowsChecked]
-  );
+  }, [canRun, loading, company, text]);
 
   const contacts = result?.results || [];
-  const summary = result?.summary || {};
-  const resultsProvider = summary?.provider || null;
-  const timings = summary?.timings || {};
+  const summary  = result?.summary || {};
+  const timings  = summary?.timings || {};
 
-  const targetCompanyName = company?.name || saveCompanyMeta?.name || "";
+  const selectedCount = useMemo(() => Object.values(checked).filter(Boolean).length, [checked]);
+  const toggle = (i) => setChecked((m) => ({ ...m, [i]: !m[i] }));
 
-  const addSelectedToLeads = useCallback(async () => {
-    const targetCompanyId = company?.id || saveCompanyId || saveCompanyMeta?.id;
-    if (!targetCompanyId) {
-      setErr("Choose or create a company to save leads into.");
-      return;
+  const onAddLeads = useCallback(async () => {
+    const targetId = company?.id || saveCompanyId;
+    if (!targetId) { setErr("Choose a company to save into."); return; }
+    const picks = contacts.filter((_, i) => checked[i]);
+    if (!picks.length) { setErr("Select at least one contact."); return; }
+
+    setErr("");
+    for (const c of picks) {
+      // eslint-disable-next-line no-await-in-loop
+      await authFetch("/api/manual/hr-leads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          company_id: targetId,
+          name: c.name,
+          designation: c.designation || null,
+          email: c.email || null,
+          linkedin_url: c.linkedin_url || null,
+        }),
+      }).catch(()=>{});
     }
-    if (selectedCount === 0) {
-      setErr("Select at least one contact.");
-      return;
+    alert("Added to HR Leads");
+  }, [company, saveCompanyId, contacts, checked]);
+
+  const createAndUseGuess = useCallback(async () => {
+    if (!guess?.name) return;
+    try {
+      const payload = {
+        name: guess.name,
+        website_url: guess.domain ? `https://${guess.domain}` : null,
+        status: "New",
+        locations: [],
+      };
+      const r = await authFetch("/api/manual/companies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const j = await r.json();
+      if (!r.ok || !j?.id) throw new Error(j?.error || "Create failed");
+      setSaveCompanyId(j.id);
+      setCompany({ id: j.id, name: guess.name, domain: guess.domain || null });
+      window.dispatchEvent(new CustomEvent("upr:companySidebar", { detail: { id: j.id, name: guess.name, domain: guess.domain || null }}));
+    } catch (e) {
+      setErr(e?.message || "Failed to create");
     }
-    setErr(null);
-    for (let i = 0; i < contacts.length; i++) {
-      if (!rowsChecked[i]) continue;
-      const r = contacts[i];
-      try {
-        await authFetch("/api/manual/hr-leads", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            company_id: targetCompanyId,
-            name: r.name,
-            designation: r.designation || null,
-            email: r.email || null,
-            linkedin_url: r.linkedin_url || null,
-          }),
-        });
-      } catch {}
-    }
-    alert("Saved selected contacts to HR Leads.");
-  }, [company, saveCompanyId, saveCompanyMeta, selectedCount, contacts, rowsChecked]);
+  }, [guess]);
 
   return (
     <div className="p-6 space-y-6">
-      {/* page-level capability chips */}
-      <div className="flex items-center justify-end">
+      {/* top status chips */}
+      <div className="flex items-center justify-end gap-2">
         <Chip ok={status.data_source === "live"} label={`Data Source: ${status.data_source === "live" ? "Live" : "Mock"}`} />
         <Chip ok={!!status.db_ok} label="DB" />
         <Chip ok={!!status.llm_ok} label="LLM" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-        {/* Left company card */}
+        {/* sidebar company card */}
         <aside className="lg:col-span-1">
-          <CompanyCard selected={company} guess={summary?.company_guess} />
+          <CompanyCard
+            selected={company}
+            guess={guess}
+            onCreateGuess={createAndUseGuess}
+            clear={() => { setCompany(null); setSaveCompanyId(""); setGuess(null); }}
+          />
         </aside>
 
-        {/* Main */}
+        {/* main */}
         <main className="lg:col-span-4 space-y-4">
           <div className="flex items-start justify-between gap-3">
             <div>
               <h1 className="text-2xl font-semibold">Enrichment</h1>
               <p className="text-sm text-gray-500 mt-1">
-                {company?.id
-                  ? "Company selected — using real enrichment (POST /api/enrich)."
-                  : "No company selected — search by name (GET /api/enrich/search?q=...)."}
+                {company?.id ? "Company selected — using real enrichment." : "No company selected — search by company name."}
               </p>
             </div>
-
-            {company?.name && (
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-sm font-medium text-gray-700">
-                  <span className="mr-1 opacity-70">Selected:</span> {company.name}
-                </span>
-                <button
-                  onClick={() => {
-                    setCompany(null);
-                    setSaveCompanyId("");
-                    setSaveCompanyMeta(null);
-                    window.dispatchEvent(new CustomEvent("upr:companySidebar", { detail: null }));
-                  }}
-                  className="text-sm underline text-gray-700 hover:text-gray-900"
-                  title="Clear selection"
-                >
-                  clear
-                </button>
-              </div>
-            )}
           </div>
 
           {/* input */}
-          <div>
-            <div className="flex items-stretch gap-2">
-              <input
-                ref={inputRef}
-                className="w-full rounded-md border px-3 py-2 focus:outline-none focus:ring"
-                placeholder="Enter company name (e.g., KBR / Revolut) — or pick a company on the Companies page"
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && (company?.id || text.trim()) && !loading) handleEnrich();
-                }}
-                disabled={!!company?.id}
-              />
-              <button
-                className="rounded-md bg-gray-900 text-white px-4 py-2 disabled:opacity-50"
-                onClick={handleEnrich}
-                disabled={!((company?.id) || text.trim()) || loading}
-              >
-                {loading ? "Enriching..." : "Enrich"}
-              </button>
-            </div>
-            {attempted && !(company?.id || text.trim()) && (
-              <div className="mt-2 text-sm text-red-600 text-center">
-                Please select a company or enter a name to search.
-              </div>
-            )}
-            {err && <div className="mt-2 text-sm text-red-600 text-center">{err}</div>}
+          <div className="flex items-stretch gap-2">
+            <input
+              className="w-full rounded-xl border px-3 py-2 focus:outline-none focus:ring disabled:bg-gray-50"
+              placeholder="Enter company name (e.g., KBR, Vision Bank) — or pick a company on the Companies page"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e)=>{ if (e.key === "Enter") run(); }}
+              disabled={!!company?.id}
+            />
+            <button
+              className="rounded-xl bg-gray-900 text-white px-4 py-2 disabled:opacity-50"
+              onClick={run}
+              disabled={!((company?.id) || text.trim()) || loading}
+            >
+              {loading ? "Enriching…" : "Enrich"}
+            </button>
           </div>
+          {err && <div className="text-red-600 text-sm">{err}</div>}
 
-          {/* results header */}
+          {/* results header & actions */}
           {result && (
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mt-2">
               <div className="text-sm text-gray-600">
-                {targetCompanyName ? (
-                  <>Saving into: <b>{targetCompanyName}</b></>
-                ) : (
-                  "Choose a company to save into"
-                )}
+                {company?.name ? <>Saving into: <b>{company.name}</b></> : "Choose a company to save into"}
               </div>
-
               <div className="flex items-center gap-2">
-                {/* allow choosing company if none selected/created */}
-                {!company?.id && !saveCompanyMeta?.id && (
+                {!company?.id && (
                   <select
                     className="rounded border px-2 py-1 text-sm"
                     value={saveCompanyId}
                     onChange={(e) => setSaveCompanyId(e.target.value)}
                   >
-                    <option value="">— Choose company to save into —</option>
-                    {companies.map((c) => (
-                      <option value={c.id} key={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
+                    <option value="">— Choose company —</option>
+                    {companies.map((c)=> <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                 )}
-
                 <button
                   className="rounded bg-gray-900 text-white px-3 py-1.5 text-sm disabled:opacity-50"
-                  onClick={addSelectedToLeads}
-                  disabled={selectedCount === 0 || (!company?.id && !saveCompanyId && !saveCompanyMeta?.id)}
-                  title="Add selected contacts to HR Leads"
+                  onClick={onAddLeads}
+                  disabled={selectedCount === 0 || (!company?.id && !saveCompanyId)}
                 >
                   Add to HR Leads
                 </button>
@@ -294,97 +215,59 @@ export default function EnrichmentView() {
             </div>
           )}
 
-          {/* results table */}
+          {/* results block */}
           {result && (
-            <div className="rounded-xl border p-4 bg-white">
-              <div className="flex items-center justify-between">
+            <div className="rounded-2xl border bg-white">
+              <div className="flex items-center justify-between px-4 py-3 border-b">
                 <div className="text-sm text-gray-500">
-                  {summary?.total_candidates != null
-                    ? `Candidates: ${summary.total_candidates}`
-                    : summary?.kept != null && summary?.found != null
-                    ? `Kept ${summary.kept} of ${summary.found}`
-                    : null}
+                  {summary?.total_candidates != null ? `Candidates: ${summary.total_candidates}` :
+                   summary?.kept != null && summary?.found != null ? `Kept ${summary.kept} of ${summary.found}` : null}
                 </div>
                 <div className="flex items-center gap-2">
-                  <Chip ok={resultsProvider === "live"} label={
-                    resultsProvider === "live"
-                      ? `Data Source: Live${timings.provider_ms ? ` • ${timings.provider_ms}ms` : ""}`
-                      : resultsProvider === "mock"
-                      ? "Data Source: Mock"
-                      : resultsProvider === "mock_fallback"
-                      ? "Data Source: Mock (fallback)"
-                      : resultsProvider === "error_fallback"
-                      ? "Data Source: Mock (error)"
-                      : "Data Source"
-                  } />
-                  <Chip ok={!!status.db_ok} label={`DB${timings.db_ms ? ` • ${timings.db_ms}ms` : ""}`} />
-                  <Chip ok={!!status.llm_ok} label={`LLM${timings.llm_ms ? ` • ${timings.llm_ms}ms` : ""}`} />
+                  <Chip ok={summary?.provider === "live"} label={`Data Source: ${summary?.provider || "—"}${timings?.provider_ms ? ` • ${timings.provider_ms}ms` : ""}`} />
+                  <Chip ok={!!status.db_ok} label={`DB${timings?.db_ms ? ` • ${timings.db_ms}ms` : ""}`} />
+                  <Chip ok={!!status.llm_ok} label={`LLM${timings?.llm_ms ? ` • ${timings.llm_ms}ms` : ""}`} />
                 </div>
               </div>
 
-              <div className="mt-4 overflow-x-auto">
-                <table className="min-w-full text-sm">
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm table-fixed">
                   <thead className="bg-gray-50 text-left">
                     <tr>
-                      <Th />
-                      <Th>Name</Th>
-                      <Th>Title</Th>
-                      <Th>Email</Th>
-                      <Th>LinkedIn</Th>
-                      <Th>Confidence</Th>
-                      <Th>Status</Th>
-                      <Th>Source</Th>
+                      <TH className="w-10" />
+                      <TH className="w-48">Name</TH>
+                      <TH className="w-64">Title</TH>
+                      <TH className="w-64">Email</TH>
+                      <TH className="w-40">LinkedIn</TH>
+                      <TH className="w-24">Confidence</TH>
+                      <TH className="w-28">Status</TH>
+                      <TH className="w-24">Source</TH>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
                     {contacts.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} className="py-6 text-center text-gray-500">
-                          No contacts found.
-                        </td>
+                      <tr><td colSpan={8} className="py-6 text-center text-gray-500">No contacts found.</td></tr>
+                    ) : contacts.map((c, i) => (
+                      <tr key={i} className="align-top">
+                        <TD><input type="checkbox" checked={!!checked[i]} onChange={()=>toggle(i)} /></TD>
+                        <TD className="font-medium">{c.name || "—"}</TD>
+                        <TD className="">{c.designation || "—"}</TD>
+                        <TD className="whitespace-nowrap">
+                          {c.email ? <a className="underline" href={`mailto:${c.email}`}>{c.email}</a> : <span className="text-gray-400">—</span>}
+                        </TD>
+                        <TD className="truncate">
+                          {c.linkedin_url ? <a className="underline" href={c.linkedin_url} target="_blank" rel="noreferrer">LinkedIn</a> : <span className="text-gray-400">—</span>}
+                        </TD>
+                        <TD>{c.confidence != null ? Number(c.confidence).toFixed(2) : "—"}</TD>
+                        <TD>{c.email_status || "—"}</TD>
+                        <TD className="text-gray-500">{c.source || summary?.provider || "—"}</TD>
                       </tr>
-                    ) : (
-                      contacts.map((c, idx) => (
-                        <tr key={idx} className="align-top">
-                          <Td className="w-10">
-                            <input type="checkbox" checked={!!rowsChecked[idx]} onChange={() => toggleRow(idx)} />
-                          </Td>
-                          <Td className="font-medium">{c.name || "—"}</Td>
-                          <Td>{c.designation || "—"}</Td>
-                          <Td className="break-all">
-                            {c.email ? (
-                              <a href={`mailto:${c.email}`} className="underline">
-                                {c.email}
-                              </a>
-                            ) : (
-                              <span className="text-gray-400">—</span>
-                            )}
-                          </Td>
-                          <Td>
-                            {c.linkedin_url ? (
-                              <a
-                                href={c.linkedin_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="underline break-all"
-                              >
-                                LinkedIn
-                              </a>
-                            ) : (
-                              <span className="text-gray-400">—</span>
-                            )}
-                          </Td>
-                          <Td>{c.confidence != null ? Number(c.confidence).toFixed(2) : "—"}</Td>
-                          <Td>{c.email_status || "—"}</Td>
-                          <Td className="text-gray-500">{c.source || resultsProvider || "—"}</Td>
-                        </tr>
-                      ))
-                    )}
+                    ))}
                   </tbody>
                 </table>
               </div>
 
-              <div className="mt-4 text-xs text-gray-500">
+              <div className="px-4 py-3 text-xs text-gray-500 border-t">
                 {company?.id
                   ? "Company mode: verified contacts are saved automatically."
                   : "Search mode: results are not saved. Select rows and click “Add to HR Leads” to store them."}
@@ -392,17 +275,13 @@ export default function EnrichmentView() {
             </div>
           )}
 
-          {/* raw json (collapsible) */}
           {result && (
-            <div className="mt-3">
-              <button
-                className="text-sm underline"
-                onClick={() => setShowRaw((v) => !v)}
-              >
+            <div className="pt-2">
+              <button className="text-sm underline" onClick={()=>setShowRaw(v=>!v)}>
                 {showRaw ? "Hide raw response" : "Show raw response"}
               </button>
               {showRaw && (
-                <div className="mt-2 rounded-xl border p-3 bg-gray-50">
+                <div className="mt-2 rounded-xl border bg-gray-50 p-3">
                   <pre className="text-xs whitespace-pre-wrap text-gray-800">
                     {JSON.stringify(result, null, 2)}
                   </pre>
@@ -416,43 +295,43 @@ export default function EnrichmentView() {
   );
 }
 
-/* ------------------------------ UI bits ------------------------------ */
+/* ---------------- small UI bits ---------------- */
 function Chip({ ok, label }) {
   return (
     <span className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm">
-      <span className={`inline-block h-2 w-2 rounded-full ${ok ? "bg-green-500" : "bg-yellow-500"}`} />
+      <span className={`h-2 w-2 rounded-full ${ok ? "bg-green-500" : "bg-yellow-500"}`} />
       {label}
     </span>
   );
 }
-function CompanyCard({ selected, guess }) {
+function CompanyCard({ selected, guess, onCreateGuess, clear }) {
   const c = selected || guess;
   if (!c) {
     return (
-      <div className="rounded-xl border p-3 bg-white text-sm text-gray-500">
+      <div className="rounded-2xl border bg-white p-4 text-sm text-gray-500">
         No company selected.
       </div>
     );
   }
   return (
-    <div className="rounded-xl border p-3 bg-white text-sm">
-      <div className="font-semibold text-gray-900">{c.name || "—"}</div>
-      <div className="mt-1 text-gray-600">Domain: {c.domain || "—"}</div>
-      {selected ? (
-        <div className="mt-1 text-gray-600">Mode: Selected</div>
-      ) : (
-        <div className="mt-1 text-gray-600">Mode: Guess</div>
-      )}
+    <div className="rounded-2xl border bg-white p-4 text-sm space-y-2">
+      <div className="text-gray-900 font-semibold">{c.name || "—"}</div>
+      <div className="text-gray-600">Domain: {c.domain || "—"}</div>
+      <div className="text-gray-600">Mode: {selected ? "Selected" : "Guess"}</div>
+      <div className="pt-2 flex gap-2">
+        {guess && (
+          <button className="rounded border px-2 py-1" onClick={onCreateGuess}>
+            Create & use
+          </button>
+        )}
+        <button className="rounded border px-2 py-1" onClick={clear}>Clear</button>
+      </div>
     </div>
   );
 }
-function Th({ children }) {
-  return (
-    <th scope="col" className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-      {children}
-    </th>
-  );
+function TH({ className="", children }) {
+  return <th className={`px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 ${className}`}>{children}</th>;
 }
-function Td({ children, className = "" }) {
+function TD({ className="", children }) {
   return <td className={`px-3 py-2 ${className}`}>{children}</td>;
 }
