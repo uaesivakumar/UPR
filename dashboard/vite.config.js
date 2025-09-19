@@ -3,10 +3,7 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
-  server: { port: 5173 },
   build: {
-    sourcemap: false,
-    outDir: "dist",
-    emptyOutDir: true
-  }
+    sourcemap: true, // <— show real file/line in prod stacktraces
+  },
 });
