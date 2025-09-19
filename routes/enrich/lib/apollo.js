@@ -5,6 +5,7 @@
  *   - apolloPeopleByDomain(domain | {domain, ...opts})
  *   - apolloPeopleByName(name | {name, ...opts})
  *   - searchPeopleByCompany({ name, domain, linkedin_url, ...opts })
+ *   - deriveLocation(personLike)
  *
  * Requires: APOLLO_API_KEY
  */
@@ -27,13 +28,18 @@ function seniorityFromTitle(title = "") {
   const t = String(title).toLowerCase();
   if (/(chief|cxo|cfo|coo|chro|chief human|chief people|chief talent)/.test(t)) return "cxo";
   if (/(vp|vice president)/.test(t)) return "vp";
-  if (/(director|head)/.test(t)) return "head";
+  if (/(director)/.test(t)) return "director";
+  if (/(head)/.test(t)) return "head";
   if (/(manager|lead)/.test(t)) return "manager";
   return "staff";
 }
 function mkLocation(p = {}) {
   const parts = [p.city, p.state, p.country].filter(Boolean);
   return parts.join(", ");
+}
+/** Public helper expected by enrichCompany.js */
+export function deriveLocation(p = {}) {
+  return mkLocation(p) || p.location || p.city || p.state || p.country || "";
 }
 
 /** Deduplicate + keep salient tokens for org names */
@@ -63,7 +69,7 @@ async function callApollo(body) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-Api-Key": key,
+      "X-Api-Key": key,               // IMPORTANT: Apollo requires X-Api-Key header
     },
     body: JSON.stringify(body),
   });
@@ -86,7 +92,7 @@ function normalizeResults(arr = []) {
     const title = p.title || p.label || p.headline || "";
     const email = p.email || p.primary_email || p.personal_emails?.[0] || p.work_email || null;
     const email_status = p.email_status || (email ? "provider" : "unknown");
-    const location = mkLocation(p) || p.location || p.city || "";
+    const location = deriveLocation(p);
     const confidence = typeof p.confidence === "number" ? p.confidence : (email ? 0.9 : 0.85);
 
     return {
@@ -103,7 +109,7 @@ function normalizeResults(arr = []) {
       location,
       pattern_hint: p.email_pattern || p.pattern || null,
     };
-  }).filter(r => ["hr","admin","finance"].includes(r.role_bucket));
+  }).filter(r => ["hr","admin","finance"].includes((r.role_bucket||"").toLowerCase()));
 }
 
 /* ---------------- outward API ---------------- */
@@ -195,4 +201,5 @@ export default {
   apolloPeopleByDomain,
   apolloPeopleByName,
   searchPeopleByCompany,
+  deriveLocation,
 };

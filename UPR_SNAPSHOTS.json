@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-19T17:13:20Z",
-  "generated_human": "Fri, 19 Sep 2025 17:13:20 GMT",
+  "generated": "2025-09-19T17:17:48Z",
+  "generated_human": "Fri, 19 Sep 2025 17:17:48 GMT",
   "branch": "main",
-  "commit": "8fb9337",
+  "commit": "5901fd2",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -315,17 +315,17 @@
     },
     {
       "path": "routes/enrich/lib/apollo.js",
-      "size": 6278,
-      "mtime": "2025-09-19T17:07:23.546Z",
-      "sha256": "516a06cfad3342c0549fa28a65d878104d6faf1cf95affc5ce8cefeb43746a0f",
+      "size": 6594,
+      "mtime": "2025-09-19T17:17:48.306Z",
+      "sha256": "5e86cb7d8bde303bde68e73c06e31b8778050cb87fbfc2cc0d5e97d0e5c3796e",
       "imports": [],
       "envs": [
         "APOLLO_API_KEY"
       ],
       "appUses": [],
       "endpoints": [],
-      "head": "/**\n * Apollo provider wrapper\n * Exports:\n *   - compactApolloKeywords(text, limit?)\n *   - apolloPeopleByDomain(domain | {domain, ...opts})\n *   - apolloPeopleByName(name | {name, ...opts})\n *   - searchPeopleByCompany({ name, domain, linkedin_url, ...opts })\n *\n * Requires: APOLLO_API_KEY\n */\n\nconst API = \"https://api.apollo.io/v1/people/search\";\n\n/* ---------------- helpers ---------------- */\n\nfunction clean(s = \"\", n = 80) {\n  return String(s).trim().replace(/\\s+/g, \" \").slice(0, n);\n}\nfunction pickRoleBucket(title = \"\") {\n  const t = String(title).toLowerCase();\n  if (/(hr|people|talent|recruit|human resources)/.test(t)) return \"hr\";\n  if (/(admin|administrator|office|operations)/.test(t)) return \"admin\";\n  if (/(finance|account|payroll|treasury)/.test(t)) return \"finance\";\n  return \"other\";\n}\nfunction seniorityFromTitle(title = \"\") {\n  const t = String(title).toLowerCase();\n  if (/(chief|cxo|cfo|coo|chro|chief human|chief people|chief talent)/.test(t)) return \"cxo\";\n  if (/(vp|vice president)/.test(t)) return \"vp\";\n  if (/(director|head)/.test(t)) return \"head\";\n  if (/(manager|lead)/.test(t)) return \"manager\";\n  return \"staff\";\n}\nfunction mkLocation(p = {}) {\n  const parts = [p.city, p.state, p.country].filter(Boolean);\n  return parts.join(\", \");\n}\n\n/** Deduplicate + keep salient tokens for org names */\nexport function compactApolloKeywords(text = \"\", limit = 6) {",
-      "tail": "\n/**\n * searchPeopleByCompany — convenience chooser used by search.js\n */\nexport async function searchPeopleByCompany({ name, domain, linkedin_url } = {}) {\n  if (domain) {\n    return apolloPeopleByDomain({ domain });\n  }\n  if (name) {\n    return apolloPeopleByName({ name });\n  }\n  // last resort: try compacted keywords from linkedin_url/company name mash\n  const kw = clean((linkedin_url || name || \"\"), 80);\n  const tokens = compactApolloKeywords(kw, 4).join(\" \");\n  if (tokens) return apolloPeopleByName(tokens);\n  return [];\n}\n\nexport default {\n  compactApolloKeywords,\n  apolloPeopleByDomain,\n  apolloPeopleByName,\n  searchPeopleByCompany,\n};\n"
+      "head": "/**\n * Apollo provider wrapper\n * Exports:\n *   - compactApolloKeywords(text, limit?)\n *   - apolloPeopleByDomain(domain | {domain, ...opts})\n *   - apolloPeopleByName(name | {name, ...opts})\n *   - searchPeopleByCompany({ name, domain, linkedin_url, ...opts })\n *   - deriveLocation(personLike)\n *\n * Requires: APOLLO_API_KEY\n */\n\nconst API = \"https://api.apollo.io/v1/people/search\";\n\n/* ---------------- helpers ---------------- */\n\nfunction clean(s = \"\", n = 80) {\n  return String(s).trim().replace(/\\s+/g, \" \").slice(0, n);\n}\nfunction pickRoleBucket(title = \"\") {\n  const t = String(title).toLowerCase();\n  if (/(hr|people|talent|recruit|human resources)/.test(t)) return \"hr\";\n  if (/(admin|administrator|office|operations)/.test(t)) return \"admin\";\n  if (/(finance|account|payroll|treasury)/.test(t)) return \"finance\";\n  return \"other\";\n}\nfunction seniorityFromTitle(title = \"\") {\n  const t = String(title).toLowerCase();\n  if (/(chief|cxo|cfo|coo|chro|chief human|chief people|chief talent)/.test(t)) return \"cxo\";\n  if (/(vp|vice president)/.test(t)) return \"vp\";\n  if (/(director)/.test(t)) return \"director\";\n  if (/(head)/.test(t)) return \"head\";\n  if (/(manager|lead)/.test(t)) return \"manager\";\n  return \"staff\";\n}\nfunction mkLocation(p = {}) {\n  const parts = [p.city, p.state, p.country].filter(Boolean);\n  return parts.join(\", \");\n}\n/** Public helper expected by enrichCompany.js */",
+      "tail": "/**\n * searchPeopleByCompany — convenience chooser used by search.js\n */\nexport async function searchPeopleByCompany({ name, domain, linkedin_url } = {}) {\n  if (domain) {\n    return apolloPeopleByDomain({ domain });\n  }\n  if (name) {\n    return apolloPeopleByName({ name });\n  }\n  // last resort: try compacted keywords from linkedin_url/company name mash\n  const kw = clean((linkedin_url || name || \"\"), 80);\n  const tokens = compactApolloKeywords(kw, 4).join(\" \");\n  if (tokens) return apolloPeopleByName(tokens);\n  return [];\n}\n\nexport default {\n  compactApolloKeywords,\n  apolloPeopleByDomain,\n  apolloPeopleByName,\n  searchPeopleByCompany,\n  deriveLocation,\n};\n"
     },
     {
       "path": "routes/enrich/lib/email.js",
@@ -465,9 +465,9 @@
     },
     {
       "path": "server.js",
-      "size": 5986,
-      "mtime": "2025-09-19T16:05:10.761Z",
-      "sha256": "daaaced3657b81ad060a702a2d5d165efee67679ff055064735051db84a0b2d1",
+      "size": 7583,
+      "mtime": "2025-09-19T17:15:56.209Z",
+      "sha256": "73b379e8e7ef640cda518b2e0641d7aeaa0464755b36fc1a0672cef0d208c246",
       "imports": [
         "import express from \"express\";",
         "import path from \"path\";",
@@ -481,6 +481,7 @@
         "import enrichRouter from \"./routes/enrich.js\";",
         "import diagRouter from \"./routes/diag.js\";",
         "import { signJwt } from \"./utils/jwt.js\";",
+        "import os from \"os\";",
         "import os from \"os\";"
       ],
       "envs": [

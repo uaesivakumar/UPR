@@ -184,6 +184,69 @@ app.get("/__diag_full", async (_req, res) => {
     env,
   });
 });
+/**
+ * Rich diagnostics endpoint. Doesn't replace /__diag; it's available at /__diag_full
+ * so we don't rely on where the minimal /__diag was registered.
+ */
+import os from "os";
+function listRoutes(app) {
+  try {
+    const out = [];
+    for (const layer of (app?._router?.stack || [])) {
+      if (layer?.route) {
+        const methods = Object.keys(layer.route.methods || {})
+          .filter(Boolean).map(m => m.toUpperCase()).join(",");
+        out.push(`${methods} ${layer.route.path}`);
+      } else if (layer?.name === "router" && layer?.handle?.stack) {
+        for (const r of layer.handle.stack) {
+          if (r?.route) {
+            const methods = Object.keys(r.route.methods || {})
+              .filter(Boolean).map(m => m.toUpperCase()).join(",");
+            out.push(`${methods} ${r.route.path}`);
+          }
+        }
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+app.get("/__diag_full", async (_req, res) => {
+  let db_ok = false;
+  let db_error = null;
+  try {
+    await pool.query("SELECT 1");
+    db_ok = true;
+  } catch (e) {
+    db_ok = false;
+    db_error = String(e?.message || e);
+  }
+
+  const envKeys = [
+    "DATABASE_URL",
+    "UPR_ADMIN_USER",
+    "UPR_ADMIN_PASS",
+    "JWT_SECRET",
+    "APOLLO_API_KEY",
+    "OPENAI_API_KEY",
+    "NEVERBOUNCE_API_KEY",
+    "ZEROBOUNCE_API_KEY",
+  ];
+  const env = {};
+  for (const k of envKeys) env[k] = !!process.env[k];
+
+  res.json({
+    ok: true,
+    db_ok,
+    db_error,
+    node: process.version,
+    platform: `${os.platform()} ${os.release()}`,
+    routesMounted: listRoutes(app),
+    env,
+  });
+});
 app.listen(PORT, () => {
   console.log(`UPR backend listening on ${PORT}`);
 });
