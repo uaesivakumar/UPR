@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-19T17:23:19Z",
-  "generated_human": "Fri, 19 Sep 2025 17:23:19 GMT",
+  "generated": "2025-09-19T17:29:37Z",
+  "generated_human": "Fri, 19 Sep 2025 17:29:37 GMT",
   "branch": "main",
-  "commit": "77dbc64",
+  "commit": "6a6e465",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -312,6 +312,22 @@
       "endpoints": [],
       "head": "import express from \"express\";\nimport { nanoid } from \"nanoid\";\nimport {\n  compactApolloKeywords, apolloPeopleByDomain,\n  deriveLocation\n} from \"./lib/apollo.js\";\nimport { qualityScore, scoreCandidate, roleBucket, bucketSeniority } from \"./lib/quality.js\";\nimport { emirateFromLocation, isUAE } from \"./lib/geo.js\";\nimport {\n  inferPatternFromSamples, applyPattern, isProviderPlaceholderEmail,\n  loadPatternFromCache, savePatternToCache, verifyEmail\n} from \"./lib/email.js\";\n\nexport default function buildEnrichCompanyRouter({ pool }) {\n  const router = express.Router();\n  const jobs = new Map();\n\n  // POST /api/enrich  { company_id, max_contacts? }\n  router.post(\"/\", async (req, res) => {\n    const { company_id, max_contacts = 3 } = req.body || {};\n    if (!company_id) return res.status(400).json({ status: \"error\", error: \"company_id_required\" });\n\n    const job_id = `enrich_${Date.now()}_${nanoid(6)}`;\n    jobs.set(job_id, { status: \"queued\", company_id, results: [], summary: {} });\n\n    try {\n      const company = await getCompany(pool, company_id);\n      if (!company) {\n        const payload = { job_id, status: \"error\", error: \"company_not_found\" };\n        jobs.set(job_id, payload);\n        return res.status(404).json(payload);\n      }\n\n      if (!company.domain && company.website_url) {\n        try {\n          const u = new URL(company.website_url.startsWith(\"http\") ? company.website_url : `https://${company.website_url}`);\n          company.domain = u.hostname.replace(/^www\\./, \"\");\n        } catch {}\n      }\n",
       "tail": "      email_status=EXCLUDED.email_status,\n      source=EXCLUDED.source,\n      confidence=EXCLUDED.confidence,\n      role_bucket=EXCLUDED.role_bucket,\n      seniority=EXCLUDED.seniority,\n      email_reason=EXCLUDED.email_reason\n    RETURNING id, company_id, email, confidence\n  `;\n  const vals = [\n    company_id,\n    c.name || \"\",\n    c.designation || \"\",\n    c.linkedin_url || \"\",\n    c.email || null,\n    c.email_status || \"unknown\",\n    c.source || \"live\",\n    c.confidence ?? null,\n    c.role_bucket || null,\n    c.seniority || null,\n    c.email_reason || null,\n  ];\n  const { rows } = await pool.query(q, vals);\n  return rows[0];\n}\n"
+    },
+    {
+      "path": "routes/enrich/index.js",
+      "size": 744,
+      "mtime": "2025-09-19T17:29:37.473Z",
+      "sha256": "5b4348ad4888c227b972cd0bc3ae9c00e5ee7f3711a2ae2cac79ec0fbde35ad6",
+      "imports": [
+        "import express from \"express\";",
+        "import searchRouter from \"./search.js\";",
+        "import enrichCompanyRouter from \"./enrichCompany.js\";"
+      ],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "import express from \"express\";\nimport searchRouter from \"./search.js\";\nimport enrichCompanyRouter from \"./enrichCompany.js\";\n\n/**\n * /api/enrich router\n *   - POST /             -> enrichCompanyRouter (create enrichment from company_id)\n *   - GET  /status       -> enrichCompanyRouter (optional status endpoint, if present)\n *   - GET  /search       -> searchRouter (LLM + Apollo live search by query)\n */\nconst router = express.Router();\n\n// Mount the sub-routers as-is. They each define their own paths:\n// - enrichCompanyRouter should expose POST \"/\" (and maybe GET \"/status\")\n// - searchRouter should expose GET \"/\" which becomes \"/search\"\nrouter.use(\"/\", enrichCompanyRouter);\nrouter.use(\"/search\", searchRouter);\n\nexport default router;\n",
+      "tail": "import express from \"express\";\nimport searchRouter from \"./search.js\";\nimport enrichCompanyRouter from \"./enrichCompany.js\";\n\n/**\n * /api/enrich router\n *   - POST /             -> enrichCompanyRouter (create enrichment from company_id)\n *   - GET  /status       -> enrichCompanyRouter (optional status endpoint, if present)\n *   - GET  /search       -> searchRouter (LLM + Apollo live search by query)\n */\nconst router = express.Router();\n\n// Mount the sub-routers as-is. They each define their own paths:\n// - enrichCompanyRouter should expose POST \"/\" (and maybe GET \"/status\")\n// - searchRouter should expose GET \"/\" which becomes \"/search\"\nrouter.use(\"/\", enrichCompanyRouter);\nrouter.use(\"/search\", searchRouter);\n\nexport default router;\n"
     },
     {
       "path": "routes/enrich/lib/apollo.js",

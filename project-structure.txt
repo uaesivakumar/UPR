@@ -1,4 +1,4 @@
-# Generated: 2025-09-19T17:23:19Z
+# Generated: 2025-09-19T17:29:37Z
 .DS_Store
 .dockerignore
 .githooks/pre-commit
@@ -54,6 +54,7 @@ routes/diag.js
 routes/email.js
 routes/enrich.js
 routes/enrich/enrichCompany.js
+routes/enrich/index.js
 routes/enrich/lib/apollo.js
 routes/enrich/lib/email.js
 routes/enrich/lib/geo.js
