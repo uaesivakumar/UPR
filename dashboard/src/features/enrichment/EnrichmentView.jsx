@@ -27,7 +27,6 @@ export default function EnrichmentView() {
     return Boolean(company?.id) || Boolean(text && text.trim());
   }, [company, text]);
 
-  // Prefer provider-backed free-text search (Apollo via /api/enrich/search)
   const callSearch = useCallback(async (q) => {
     const res = await authFetch(`/api/enrich/search?q=${encodeURIComponent(q)}`);
     if (!res.ok) {
@@ -37,7 +36,6 @@ export default function EnrichmentView() {
     return res.json();
   }, []);
 
-  // Real company-selected enrichment
   const callReal = useCallback(async (company_id) => {
     const res = await authFetch(`/api/enrich`, {
       method: "POST",
@@ -70,7 +68,7 @@ export default function EnrichmentView() {
         window.dispatchEvent(new CustomEvent("upr:companySidebar", { detail: company }));
       } else {
         const resp = await callSearch(text.trim());
-        data = resp?.data || resp; // { ok, data } or raw
+        data = resp?.data || resp;
         window.dispatchEvent(new CustomEvent("upr:companySidebar", { detail: null }));
       }
       setResult(data || null);
@@ -84,7 +82,9 @@ export default function EnrichmentView() {
 
   const contacts = result?.results || [];
   const summary = result?.summary || {};
-  const isMock = !company?.id && (summary?.provider === "mock" || summary?.provider === "apollo_fallback_to_mock");
+  const isMock =
+    !company?.id &&
+    (summary?.provider === "mock" || summary?.provider === "apollo_fallback_to_mock");
 
   return (
     <div className="p-6 space-y-6">
@@ -147,7 +147,6 @@ export default function EnrichmentView() {
           </button>
         </div>
 
-        {/* Show validation only AFTER an attempt */}
         {attempted && !canSubmit && (
           <div className="mt-2 text-sm text-red-600 text-center">
             Please select a company or enter a name to search.

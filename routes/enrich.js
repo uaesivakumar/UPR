@@ -42,7 +42,7 @@ const HR_TITLES = [
 // In-memory job store (MVP)
 const jobs = new Map();
 
-// ---- Small helpers ----------------------------------------------------------
+// ---- small helpers ----------------------------------------------------------
 function makeMockFromText(q) {
   const domain = q.toLowerCase().replace(/\s+/g, "") + ".com";
   const results = [
@@ -71,7 +71,6 @@ function makeMockFromText(q) {
       confidence: 0.88,
     },
   ];
-
   return {
     status: "completed",
     company_id: null,
@@ -81,6 +80,7 @@ function makeMockFromText(q) {
       kept: results.length,
       pattern_used: `first.last@${domain}`,
       verification_provider: "mock",
+      provider: "mock",
     },
   };
 }
@@ -92,7 +92,6 @@ function makeMockFromText(q) {
 /**
  * GET /api/enrich/mock?q=Company+Name
  * Dev-only fallback for free text testing.
- * (Kept for local/dev; never used if Apollo returns results.)
  */
 router.get("/mock", async (req, res) => {
   const q = (req.query.q || "").toString().trim();
@@ -102,50 +101,51 @@ router.get("/mock", async (req, res) => {
 
 /**
  * GET /api/enrich/search?q=...
- * Free-text enrichment using Apollo (when configured).
- * Falls back to mock ONLY if provider unavailable or returns 0 results.
+ * Free-text enrichment using Apollo when configured.
+ * **Never throws** → falls back to mock if provider fails or returns 0.
  */
 router.get("/search", async (req, res) => {
   const q = (req.query.q || "").toString().trim();
   if (!q) return res.status(400).json({ error: "q is required" });
 
-  try {
-    let candidates = [];
-    if (hasApollo) {
+  let candidates = [];
+  if (hasApollo) {
+    try {
       candidates = await queryApolloByText({ q, limit: 5, geo: "uae" });
+    } catch (e) {
+      console.error("apollo free-text search failed:", e);
+      candidates = [];
     }
-
-    if (!Array.isArray(candidates) || candidates.length === 0) {
-      // graceful fallback so UI remains functional in dev
-      return res.json({ ok: true, data: makeMockFromText(q), provider: hasApollo ? "apollo_fallback_to_mock" : "mock_only" });
-    }
-
-    const results = candidates.map((p) => ({
-      name: p.name,
-      designation: p.title,
-      linkedin_url: p.linkedin_url,
-      email: p.email ?? null,
-      email_status: p.email ? "provider" : "unknown",
-      email_reason: p.email ? "provider_supplied" : undefined,
-      role_bucket: "hr",
-      seniority: p.seniority || null,
-      source: "apollo",
-      confidence: 0.85, // base; verify/score below in POST flow
-    }));
-
-    return res.json({
-      ok: true,
-      data: {
-        status: "completed",
-        company_id: null,
-        results,
-        summary: { total_candidates: results.length, kept: results.length, provider: "apollo" },
-      },
-    });
-  } catch (e) {
-    console.error("search (apollo) error:", e);
-    return res.status(500).json({ error: "search_failed" });
   }
+
+  if (!Array.isArray(candidates) || candidates.length === 0) {
+    // graceful fallback so UI remains functional in dev/prod
+    const mock = makeMockFromText(q);
+    return res.json({ ok: true, data: mock, provider: hasApollo ? "apollo_fallback_to_mock" : "mock_only" });
+  }
+
+  const results = candidates.map((p) => ({
+    name: p.name,
+    designation: p.title,
+    linkedin_url: p.linkedin_url,
+    email: p.email ?? null,
+    email_status: p.email ? "provider" : "unknown",
+    email_reason: p.email ? "provider_supplied" : undefined,
+    role_bucket: "hr",
+    seniority: p.seniority || null,
+    source: "apollo",
+    confidence: 0.85,
+  }));
+
+  return res.json({
+    ok: true,
+    data: {
+      status: "completed",
+      company_id: null,
+      results,
+      summary: { total_candidates: results.length, kept: results.length, provider: "apollo" },
+    },
+  });
 });
 
 /**
@@ -282,7 +282,6 @@ router.post("/", async (req, res) => {
         const row = await upsertHrLead(company_id, c);
         saved.push(row);
       } catch (e) {
-        // 42P01 = relation does not exist (table missing) → ignore silently
         if (String(e?.code) !== "42P01") console.error("hr_leads upsert error:", e);
       }
     }
@@ -408,64 +407,80 @@ async function upsertHrLead(company_id, c) {
 // ---------------- Provider integrations (Apollo) -----------------------------
 async function queryPrimaryProvider({ company, role, geo, limit }) {
   if (hasApollo && company?.domain) {
-    try {
-      return await queryApolloByDomain({
-        domain: company.domain,
-        limit,
-        geo,
-      });
-    } catch (e) {
-      console.error("apollo domain search failed:", e);
-    }
+    const byDomain = await queryApolloByDomain({
+      domain: company.domain,
+      limit,
+      geo,
+    });
+    return byDomain;
   }
-  // Fallback empty; upstream can still pattern/verify if emails known elsewhere.
   return [];
 }
 
 /**
  * Apollo free-text people search
- * NOTE: Apollo API variants differ between accounts; this targets the common v1 endpoint.
+ * Returns [] on any error or non-200.
  */
 async function queryApolloByText({ q, limit = 5, geo = "uae" }) {
-  const endpoint = "https://api.apollo.io/v1/people/search";
-  const body = {
-    api_key: APOLLO_API_KEY,
-    q_keywords: HR_TITLES.join(" OR "),
-    q_organization_name: q,
-    page: 1,
-    per_page: Math.min(Math.max(limit, 1), 25),
-    person_locations: geo ? ["United Arab Emirates"] : undefined,
-  };
-  const r = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!r.ok) throw new Error(`apollo text search ${r.status}`);
-  const json = await r.json();
-  const people = json?.people || json?.matches || [];
-  return people.map(mapApolloPerson);
+  try {
+    const endpoint = "https://api.apollo.io/v1/people/search";
+    const body = {
+      api_key: APOLLO_API_KEY,
+      q_keywords: HR_TITLES.join(" OR "),
+      q_organization_name: q,
+      page: 1,
+      per_page: Math.min(Math.max(limit, 1), 25),
+      person_locations: geo ? ["United Arab Emirates"] : undefined,
+    };
+    const r = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      console.warn("apollo text search non-200:", r.status);
+      return [];
+    }
+    const json = await r.json();
+    const people = json?.people || json?.matches || [];
+    return people.map(mapApolloPerson);
+  } catch (e) {
+    console.error("apollo text search error:", e);
+    return [];
+  }
 }
 
+/**
+ * Apollo domain people search
+ * Returns [] on any error or non-200.
+ */
 async function queryApolloByDomain({ domain, limit = 5, geo = "uae" }) {
-  const endpoint = "https://api.apollo.io/v1/people/search";
-  const body = {
-    api_key: APOLLO_API_KEY,
-    q_keywords: HR_TITLES.join(" OR "),
-    q_organization_domains: [domain],
-    page: 1,
-    per_page: Math.min(Math.max(limit, 1), 25),
-    person_locations: geo ? ["United Arab Emirates"] : undefined,
-  };
-  const r = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!r.ok) throw new Error(`apollo domain search ${r.status}`);
-  const json = await r.json();
-  const people = json?.people || json?.matches || [];
-  return people.map(mapApolloPerson);
+  try {
+    const endpoint = "https://api.apollo.io/v1/people/search";
+    const body = {
+      api_key: APOLLO_API_KEY,
+      q_keywords: HR_TITLES.join(" OR "),
+      q_organization_domains: [domain],
+      page: 1,
+      per_page: Math.min(Math.max(limit, 1), 25),
+      person_locations: geo ? ["United Arab Emirates"] : undefined,
+    };
+    const r = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      console.warn("apollo domain search non-200:", r.status);
+      return [];
+    }
+    const json = await r.json();
+    const people = json?.people || json?.matches || [];
+    return people.map(mapApolloPerson);
+  } catch (e) {
+    console.error("apollo domain search error:", e);
+    return [];
+  }
 }
 
 function mapApolloPerson(p) {
