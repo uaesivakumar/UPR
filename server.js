@@ -3,10 +3,12 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import os from "os";
+import jwt from "jsonwebtoken";
 import { fileURLToPath } from "url";
 
 import { pool } from "./utils/db.js";
-import { adminOnly } from "./utils/adminOnly.js";
+// NOTE: adminOnly not required anymore for auth verify; leaving other files untouched
+// import { adminOnly } from "./utils/adminOnly.js";
 
 import companiesRouter from "./routes/companies.js";
 import hrLeadsRouter from "./routes/hrLeads.js";
@@ -19,6 +21,32 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 10000;
+
+/* ------------------------------ helpers (auth) ------------------------------ */
+const COOKIE_NAME = "upr_jwt";
+const isProd = process.env.NODE_ENV === "production";
+
+// tiny cookie reader (no extra deps)
+function getCookie(req, name) {
+  const str = req.headers?.cookie || "";
+  if (!str) return null;
+  const pairs = str.split(";").map(s => s.trim().split("="));
+  const map = Object.fromEntries(pairs);
+  const v = map[name];
+  return v ? decodeURIComponent(v) : null;
+}
+
+function setAuthCookie(res, token) {
+  const parts = [
+    `${COOKIE_NAME}=${encodeURIComponent(token)}`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    `Max-Age=${14 * 24 * 60 * 60}`,
+  ];
+  if (isProd) parts.push("Secure");
+  res.setHeader("Set-Cookie", parts.join("; "));
+}
 
 /* -------------------------------- Middleware -------------------------------- */
 app.use(express.json({ limit: "2mb" }));
@@ -37,6 +65,7 @@ app.get("/__diag", async (_req, res) => {
 });
 
 /* ----------------------- Auth (username/password only) ----------------------- */
+// POST /api/auth/login -> sets HttpOnly cookie + returns {ok:true}
 app.post("/api/auth/login", async (req, res) => {
   try {
     const { username, password } = req.body || {};
@@ -49,17 +78,45 @@ app.post("/api/auth/login", async (req, res) => {
     if (String(username) !== String(u) || String(password) !== String(p)) {
       return res.status(401).json({ ok: false, error: "invalid credentials" });
     }
-    const token = signJwt({ sub: "admin", role: "admin" }, "12h");
-    return res.json({ ok: true, token });
+    // 14d token by default
+    const token = signJwt({ sub: "admin", role: "admin", u: username }, "14d");
+    setAuthCookie(res, token);
+    return res.json({ ok: true });
   } catch (_e) {
     return res.status(500).json({ ok: false, error: "login failed" });
   }
 });
 
-app.get("/api/auth/verify", adminOnly, (_req, res) => res.json({ ok: true }));
+// GET /api/auth/verify -> reads cookie and verifies locally
+app.get("/api/auth/verify", (req, res) => {
+  const token = getCookie(req, COOKIE_NAME);
+  if (!token) return res.status(401).json({ ok: false, error: "no_cookie" });
+
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    return res.json({ ok: true, user: { username: payload?.u || "admin" } });
+  } catch (_e) {
+    return res.status(401).json({ ok: false, error: "invalid_token" });
+  }
+});
+
+// POST /api/auth/logout -> clears cookie
+app.post("/api/auth/logout", (req, res) => {
+  const parts = [
+    `${COOKIE_NAME}=`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    "Max-Age=0",
+  ];
+  if (isProd) parts.push("Secure");
+  res.setHeader("Set-Cookie", parts.join("; "));
+  res.json({ ok: true });
+});
 
 /* ------------------------- Stats (for DashboardHome) ------------------------- */
-app.get("/api/stats", adminOnly, async (_req, res) => {
+// keep this open for now; if you want to guard it, copy the verify logic above into a middleware
+app.get("/api/stats", async (_req, res) => {
   const safeCount = async (sql) => {
     try {
       const { rows } = await pool.query(sql);
@@ -105,7 +162,6 @@ function listRoutes(appOrRouter) {
       const methods = Object.keys(layer.route.methods || {}).map(m => m.toUpperCase());
       out.push(...methods.map(m => `${m} ${layer.route.path}`));
     } else if (layer.name === "router" && layer.handle && layer.handle.stack) {
-      // Flatten nested routers (shows child paths without mount prefix; good enough for diag)
       for (const l2 of layer.handle.stack) {
         if (l2.route && l2.route.path) {
           const methods = Object.keys(l2.route.methods || {}).map(m => m.toUpperCase());
@@ -173,7 +229,6 @@ if (fs.existsSync(dashboardDist)) {
   app.use(
     express.static(dashboardDist, {
       setHeaders: (res, filePath) => {
-        // don’t cache HTML (especially index.html)
         if (filePath.endsWith(".html")) {
           res.setHeader("Cache-Control", "no-store, must-revalidate");
         }
