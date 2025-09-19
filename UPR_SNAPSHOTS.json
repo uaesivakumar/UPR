@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-19T17:10:10Z",
-  "generated_human": "Fri, 19 Sep 2025 17:10:10 GMT",
+  "generated": "2025-09-19T17:13:20Z",
+  "generated_human": "Fri, 19 Sep 2025 17:13:20 GMT",
   "branch": "main",
-  "commit": "d2efb65",
+  "commit": "8fb9337",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -368,15 +368,15 @@
     },
     {
       "path": "routes/enrich/lib/quality.js",
-      "size": 2199,
-      "mtime": "2025-09-19T16:51:41.528Z",
-      "sha256": "459794af427e39ef4f04de38251bb45d3313f577569f42023888c0008550ee07",
+      "size": 4336,
+      "mtime": "2025-09-19T17:13:19.867Z",
+      "sha256": "bf2024f233104c9efaa8b67621dd7bd3415be354dacb6428a15a9d6e48ef4e4f",
       "imports": [],
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "/**\n * Quality scoring for an enrichment result set.\n *   company: { domain, linkedin_url, hq, industry, size }\n *   results: [{ role_bucket, email_status, location, emirate, source, confidence }]\n * Returns: { score: 0..1, explanation: string }\n */\nfunction inUAE(hq = \"\") {\n  const s = String(hq).toLowerCase();\n  const emirates = [\"abu dhabi\",\"dubai\",\"sharjah\",\"ajman\",\"fujairah\",\"ras al khaimah\",\"umm al quwain\",\"united arab emirates\"];\n  return emirates.some(e => s.includes(e));\n}\n\nexport function scoreQuality(company = {}, results = []) {\n  let score = 0;\n  const notes = [];\n\n  if (company.domain)       { score += 0.30; notes.push(\"has primary domain\"); }\n  if (company.linkedin_url) { score += 0.10; notes.push(\"LinkedIn page found\"); }\n  if (company.hq && inUAE(company.hq)) { score += 0.10; notes.push(\"HQ in UAE\"); }\n  if (company.industry)     { score += 0.05; }\n  if (company.size)         { score += 0.05; }\n\n  // Prefer UAE + HR/Admin/Finance contacts\n  const buckets = new Set([\"hr\",\"admin\",\"finance\"]);\n  const isUAE = (loc=\"\") => {\n    const s = String(loc).toLowerCase();\n    return [\"abu dhabi\",\"dubai\",\"sharjah\",\"ajman\",\"fujairah\",\"ras al khaimah\",\"umm al quwain\",\"united arab emirates\"].some(x => s.includes(x));\n  };\n  const useful = results.filter(r => buckets.has(String(r.role_bucket||\"\").toLowerCase()) &&\n    (isUAE(r.emirate) || isUAE(r.location)));\n  if (useful.length) {\n    const boost = Math.min(0.30, useful.length * 0.05); // up to +0.30\n    score += boost;\n    notes.push(`${useful.length} UAE HR/admin/finance contacts`);\n  }\n\n  // Email status quality (up to +0.20)\n  const st = results.map(r => String(r.email_status||\"unknown\").toLowerCase());\n  const valid = st.filter(s => s===\"valid\").length;\n  const acceptAll = st.filter(s => s===\"accept_all\").length;",
-      "tail": "    return [\"abu dhabi\",\"dubai\",\"sharjah\",\"ajman\",\"fujairah\",\"ras al khaimah\",\"umm al quwain\",\"united arab emirates\"].some(x => s.includes(x));\n  };\n  const useful = results.filter(r => buckets.has(String(r.role_bucket||\"\").toLowerCase()) &&\n    (isUAE(r.emirate) || isUAE(r.location)));\n  if (useful.length) {\n    const boost = Math.min(0.30, useful.length * 0.05); // up to +0.30\n    score += boost;\n    notes.push(`${useful.length} UAE HR/admin/finance contacts`);\n  }\n\n  // Email status quality (up to +0.20)\n  const st = results.map(r => String(r.email_status||\"unknown\").toLowerCase());\n  const valid = st.filter(s => s===\"valid\").length;\n  const acceptAll = st.filter(s => s===\"accept_all\").length;\n  const patterned = st.filter(s => s===\"patterned\").length;\n  const denom = results.length || 1;\n  const ratio = (valid + 0.6*acceptAll + 0.8*patterned) / denom;\n  score += Math.min(0.20, ratio * 0.20);\n  notes.push(`email pattern≈${Math.round(ratio*100)}%`);\n\n  return { score: Math.max(0, Math.min(1, score)), explanation: notes.join(\"; \") || \"no signals\" };\n}\n\nexport default { scoreQuality };\n"
+      "head": "/**\n * Quality & classification helpers for enrichment.\n *\n * Exports:\n *  - roleBucket(title)\n *  - bucketSeniority(title)\n *  - scoreCandidate(candidate)\n *  - scoreQuality(company, results)       // main set-level scorer\n *  - qualityScore(company, results)       // alias used by enrichCompany.js\n */\n\nfunction lc(s = \"\") { return String(s).toLowerCase(); }\nfunction inUAEText(s = \"\") {\n  const x = lc(s);\n  return [\n    \"abu dhabi\",\"dubai\",\"sharjah\",\"ajman\",\"fujairah\",\n    \"ras al khaimah\",\"umm al quwain\",\"united arab emirates\",\"uae\"\n  ].some(k => x.includes(k));\n}\n\nexport function roleBucket(title = \"\") {\n  const t = lc(title);\n  if (/(hr|people|talent|recruit|human resources)/.test(t)) return \"hr\";\n  if (/(admin|administrator|office|operations)/.test(t))   return \"admin\";\n  if (/(finance|account|payroll|treasury)/.test(t))        return \"finance\";\n  return \"other\";\n}\n\nexport function bucketSeniority(title = \"\") {\n  const t = lc(title);\n  if (/(chief|cxo|cfo|coo|chro|chief human|chief people|chief talent)/.test(t)) return \"cxo\";\n  if (/(vp|vice president)/.test(t))                                             return \"vp\";\n  if (/(director)/.test(t))                                                      return \"director\";\n  if (/(head)/.test(t))                                                          return \"head\";\n  if (/(manager|lead)/.test(t))                                                  return \"manager\";\n  return \"staff\";\n}\n\n/**\n * scoreCandidate: 0..1",
+      "tail": "  const acceptAll = st.filter(x => x === \"accept_all\").length;\n  const patterned = st.filter(x => x === \"patterned\").length;\n  const denom = results.length || 1;\n  const ratio = (valid + 0.6*acceptAll + 0.8*patterned) / denom;\n  score += Math.min(0.20, ratio * 0.20);\n  notes.push(`email pattern≈${Math.round(ratio*100)}%`);\n\n  // Clamp and explain\n  if (score < 0) score = 0;\n  if (score > 1) score = 1;\n\n  return { score, explanation: notes.join(\"; \") || \"no signals\" };\n}\n\n/** alias kept for compatibility with enrichCompany.js */\nexport const qualityScore = scoreQuality;\n\nexport default {\n  roleBucket,\n  bucketSeniority,\n  scoreCandidate,\n  scoreQuality,\n  qualityScore,\n};\n"
     },
     {
       "path": "routes/enrich/search.js",
