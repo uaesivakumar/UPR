@@ -1,13 +1,13 @@
 // routes/enrich.js
 import express from "express";
 import { nanoid } from "nanoid";
-
 import { pool } from "../utils/db.js";
+
 import {
-  scoreCandidate,
   bucketRole,
   bucketSeniority,
   isAgencyRecruiter,
+  scoreCandidate,
 } from "../utils/patternHelpers.js";
 import {
   inferPatternFromSamples,
@@ -21,13 +21,10 @@ const router = express.Router();
 
 /* ------------------------------ ENV & consts ------------------------------ */
 const APOLLO_API_KEY =
-  process.env.APOLLO_API_KEY ||
-  process.env.APOLLOIO_API_KEY ||
-  process.env.APOLLO_TOKEN ||
-  "";
+  process.env.APOLLO_API_KEY || process.env.APOLLOIO_API_KEY || process.env.APOLLO_TOKEN || "";
 const hasApollo = !!APOLLO_API_KEY;
-
-const LLM_OK = !!process.env.OPENAI_API_KEY;
+const LLM_KEY = process.env.OPENAI_API_KEY || "";
+const LLM_OK = !!LLM_KEY;
 
 const HR_KEYWORDS = [
   "HR",
@@ -43,17 +40,8 @@ const HR_KEYWORDS = [
   "Benefits",
   "Payroll",
 ];
-
 const ADMIN_KEYWORDS = ["Admin", "Administration", "Office Manager", "Executive Assistant"];
-const FINANCE_KEYWORDS = [
-  "Finance",
-  "Financial Controller",
-  "CFO",
-  "Accounts",
-  "Accounting",
-  "Procurement",
-];
-
+const FINANCE_KEYWORDS = ["Finance", "Financial Controller", "CFO", "Accounts", "Accounting", "Procurement"];
 const ALLOWED_BUCKETS = new Set(["hr", "admin", "finance"]);
 
 /* ------------------------------ In-memory jobs ---------------------------- */
@@ -99,6 +87,7 @@ function makeMockFromText(q) {
       pattern_used: `first.last@${domain}`,
       verification_provider: "mock",
       provider: "mock",
+      company_guess: { name: q, domain },
     },
   };
 }
@@ -112,10 +101,25 @@ function guessLast(name = "") {
   return parts.length > 1 ? parts[parts.length - 1] : "";
 }
 
+function cleanCompanyName(name = "") {
+  return String(name)
+    .replace(/\b(inc|llc|ltd|limited|international|intl|co|company|corp|corporation|group|holdings?)\b/gi, "")
+    .replace(/[^a-z0-9\s&-]/gi, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function makeAcronym(name = "") {
+  const letters = name
+    .split(/[\s&-]+/)
+    .filter(Boolean)
+    .map((w) => w[0]?.toUpperCase())
+    .join("");
+  return letters || null;
+}
+
 function detectDomainFromCandidate(p) {
-  // email domain (even from email_not_unlocked@domain.com)
   if (p?.email && p.email.includes("@")) return p.email.split("@").pop().trim().toLowerCase();
-  // common Apollo shapes
   const org = p.organization || p.company || p.employer || {};
   const d =
     org.domain ||
@@ -132,7 +136,6 @@ function detectDomainFromCandidate(p) {
         })()
       : null);
   if (d) return String(d).toLowerCase();
-  // linkedin company page → extract hostname style tail (best-effort)
   if (p.company_linkedin_url) {
     const m = /linkedin\.com\/company\/([^/]+)/i.exec(p.company_linkedin_url);
     if (m) return `${m[1].toLowerCase()}.com`;
@@ -150,19 +153,71 @@ function roleBucketFromTitle(title = "") {
   return "other";
 }
 
-/* Ensure we never crash the UI: wrap any provider call, return [] on error. */
-async function safeCall(fn, ...args) {
-  try {
-    const out = await fn(...args);
-    return Array.isArray(out) ? out : [];
-  } catch (e) {
-    console.error("provider error:", e);
-    return [];
+/* --------------------------------- LLM ----------------------------------- */
+// Best-effort resolver: turn free-text company string into {name, domain, synonyms[]}
+async function resolveCompanyFromQuery(q) {
+  const cleaned = cleanCompanyName(q);
+  const acronym = makeAcronym(cleaned);
+  // some curated synonyms for high-value cases
+  const curated = [
+    { match: /kellogg\s*brown\s*and\s*root/i, name: "KBR", domain: "kbr.com", synonyms: ["KBR", "Kellogg Brown & Root"] },
+  ];
+  for (const c of curated) {
+    if (c.match.test(q)) return { name: c.name, domain: c.domain, synonyms: c.synonyms };
   }
+
+  // LLM route (optional)
+  if (LLM_OK) {
+    try {
+      const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${LLM_KEY}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          temperature: 0,
+          response_format: { type: "json_object" },
+          messages: [
+            {
+              role: "system",
+              content:
+                "You convert noisy company names to a JSON {name, domain, synonyms} where domain is the primary public website domain (e.g., 'kbr.com'). Only output valid JSON.",
+            },
+            {
+              role: "user",
+              content: `Company: "${q}"`,
+            },
+          ],
+        }),
+      });
+      if (resp.ok) {
+        const json = await resp.json();
+        const text = json?.choices?.[0]?.message?.content || "{}";
+        const obj = JSON.parse(text);
+        if (obj?.domain) {
+          obj.name = obj.name || cleaned;
+          obj.synonyms = Array.isArray(obj.synonyms) ? obj.synonyms : [];
+          if (acronym) obj.synonyms.push(acronym);
+          return obj;
+        }
+      }
+    } catch {
+      // ignore — fall through to heuristics
+    }
+  }
+
+  // Heuristic fallback
+  const guess = {
+    name: cleaned,
+    domain: null,
+    synonyms: [cleaned, acronym].filter(Boolean),
+  };
+  return guess;
 }
 
-/* ----------------------------- STATUS ENDPOINT ---------------------------- */
-/** Always-on chip data for the UI. */
+/* -------------------------------- Status --------------------------------- */
 router.get("/status", async (_req, res) => {
   let db_ok = false;
   try {
@@ -191,29 +246,70 @@ router.get("/mock", async (req, res) => {
 /* ----------------------- Free-text provider SEARCH ------------------------ */
 /**
  * GET /api/enrich/search?q=...
- * Uses Apollo when configured. **Never** returns 500 — falls back to mock.
- * Filters to HR/Admin/Finance. Pattern-guesses if provider locks email.
+ * Strategy:
+ *  1) Apollo search by name with HR/Admin/Finance keywords
+ *  2) If empty, LLM/heuristics => resolve domain & synonyms; try domain search
+ *  3) If still empty, loosen keywords and retry by name + synonyms
+ *  4) If still empty → mock
+ * Also returns summary.company_guess to help the UI pick a save target.
  */
 router.get("/search", async (req, res) => {
   const q = (req.query.q || "").toString().trim();
   if (!q) return res.status(400).json({ error: "q is required" });
 
+  const allKeywords = [...HR_KEYWORDS, ...ADMIN_KEYWORDS, ...FINANCE_KEYWORDS].join(" OR ");
   let people = [];
+  let companyGuess = null;
+
   if (hasApollo) {
+    // try by name (filtered)
     people = await safeCall(apolloPeopleSearchByText, {
       q,
-      limit: 12,
+      limit: 20,
       geo: "United Arab Emirates",
-      keywords: [...HR_KEYWORDS, ...ADMIN_KEYWORDS, ...FINANCE_KEYWORDS].join(" OR "),
+      keywords: allKeywords,
     });
+
+    // If nothing, resolve company & try domain
+    if (!people.length) {
+      companyGuess = await resolveCompanyFromQuery(q);
+      if (companyGuess?.domain) {
+        people = await safeCall(apolloPeopleSearchByDomain, {
+          domain: companyGuess.domain,
+          limit: 20,
+          geo: "United Arab Emirates",
+          keywords: allKeywords,
+        });
+      }
+    }
+
+    // Still nothing? Loosen search by trying synonyms & no keywords
+    if (!people.length) {
+      const synonyms = (companyGuess?.synonyms || []).slice(0, 3);
+      const namesToTry = [q, cleanCompanyName(q), ...synonyms].filter(Boolean);
+      for (const name of namesToTry) {
+        const batch = await safeCall(apolloPeopleSearchByText, {
+          q: name,
+          limit: 20,
+          geo: "United Arab Emirates",
+          keywords: undefined, // loosen
+        });
+        if (batch.length) {
+          people = batch;
+          break;
+        }
+      }
+    }
   }
 
   if (!people.length) {
     const mock = makeMockFromText(q);
+    // include whatever guess we had so UI can still preselect a save target
+    if (companyGuess) mock.summary.company_guess = companyGuess;
     return res.json({
       ok: true,
       data: mock,
-      provider: hasApollo ? "apollo_fallback_to_mock" : "mock_only",
+      provider: hasApollo ? "live_fallback_to_mock" : "mock_only",
     });
   }
 
@@ -223,7 +319,7 @@ router.get("/search", async (req, res) => {
       .map(detectDomainFromCandidate)
       .filter(Boolean)
       .map((s) => s.replace(/^www\./, ""))
-      .find(Boolean) || null;
+      .find(Boolean) || companyGuess?.domain || null;
 
   const results = [];
   for (const p of people) {
@@ -235,14 +331,12 @@ router.get("/search", async (req, res) => {
     let email_status = p.email ? "provider" : "unknown";
     let email_reason;
 
-    // Apollo often returns "email_not_unlocked@domain.com"
     if (email && /^email_not_unlocked@/i.test(email)) {
       email = null;
       email_status = "unknown";
       email_reason = "provider_locked_email";
     }
 
-    // If locked/missing, try pattern guess when we know a domain
     const first = p.first_name || guessFirst(p.name || "");
     const last = p.last_name || guessLast(p.name || "");
     if (!email && domain && first && last) {
@@ -274,7 +368,8 @@ router.get("/search", async (req, res) => {
       summary: {
         total_candidates: results.length,
         kept: results.length,
-        provider: "live", // not exposing vendor name
+        provider: "live", // this run actually used the live provider
+        company_guess: companyGuess || (domain ? { name: cleanCompanyName(q), domain } : null),
       },
     },
   });
@@ -282,7 +377,7 @@ router.get("/search", async (req, res) => {
 
 /* ------------------------ Company-selected ENRICH ------------------------- */
 router.post("/", async (req, res) => {
-  const { company_id, max_contacts = 3, role = "hr", geo = "uae" } = req.body || {};
+  const { company_id, max_contacts = 3 } = req.body || {};
   if (!company_id) return res.status(400).json({ error: "company_id is required" });
 
   const job_id = `enrich_${Date.now()}_${nanoid(6)}`;
@@ -305,7 +400,6 @@ router.post("/", async (req, res) => {
       } catch {}
     }
 
-    // 1) Provider by domain
     let providerUsed = "none";
     let providerCandidates = [];
     if (hasApollo && company.domain) {
@@ -318,7 +412,6 @@ router.post("/", async (req, res) => {
       providerUsed = providerCandidates.length ? "live" : "none";
     }
 
-    // 2) Learn pattern from any known emails
     let learnedPattern = null;
     const samples = providerCandidates
       .filter((c) => c.email && c.first_name && c.last_name)
@@ -337,20 +430,15 @@ router.post("/", async (req, res) => {
       }
     }
 
-    // 3) Load cached/known pattern
     let pattern = null;
     if (company.email_pattern && (company.pattern_confidence ?? 0) >= 0.7) {
-      pattern = {
-        pattern: company.email_pattern,
-        confidence: Number(company.pattern_confidence) || 0,
-      };
+      pattern = { pattern: company.email_pattern, confidence: Number(company.pattern_confidence) || 0 };
     } else if (company.domain) {
       const cached = await loadPatternFromCache(pool, company.domain);
       if (cached) pattern = cached;
     }
     if (!pattern && learnedPattern) pattern = learnedPattern;
 
-    // 4) Normalize + role filter + exclude agencies
     let candidates = (providerCandidates || []).map((p) => ({
       source: "live",
       name: [p.first_name, p.last_name].filter(Boolean).join(" ").trim() || p.name || "",
@@ -373,7 +461,6 @@ router.post("/", async (req, res) => {
       }))
       .filter((c) => ALLOWED_BUCKETS.has(c.role_bucket) && !isAgencyRecruiter(c));
 
-    // 5) Pattern emails if missing
     if (company.domain && pattern?.pattern) {
       candidates = candidates.map((c) => {
         if (!c.email && c.first_name && c.last_name) {
@@ -385,7 +472,6 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // 6) Verify
     for (const c of candidates) {
       if (!c.email) continue;
       const v = await verifyEmail(c.email);
@@ -393,7 +479,6 @@ router.post("/", async (req, res) => {
       c.email_reason = v.reason || c.email_reason;
     }
 
-    // 7) Score + dedupe + top N
     candidates = candidates.map((c) => ({
       ...c,
       confidence: scoreCandidate({
@@ -416,7 +501,6 @@ router.post("/", async (req, res) => {
       }
     }
 
-    // 8) Best-effort upsert
     const saved = [];
     for (const c of kept) {
       try {
@@ -524,10 +608,6 @@ async function upsertHrLead(company_id, c) {
 }
 
 /* ---------------------- Apollo helper implementations --------------------- */
-/**
- * Tries multiple auth styles that Apollo accounts commonly use.
- * Returns [] on any error or non-200.
- */
 async function apolloPeopleSearchByText({ q, limit = 5, geo, keywords }) {
   const base = "https://api.apollo.io/v1/people/search";
   const payload = {
@@ -607,10 +687,8 @@ async function extractPeopleArray(resp) {
   const j = resp.json || {};
   return j.people || j.matches || j.results || [];
 }
-
 function mapApolloPerson(p) {
   const name = [p.first_name, p.last_name].filter(Boolean).join(" ").trim() || p.name || "";
-  // try to include organization info for domain inference
   const org =
     p.organization ||
     p.company ||

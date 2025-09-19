@@ -2,32 +2,30 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { authFetch } from "../../utils/auth";
 
-/**
- * Enrichment page:
- * - Always-on status chips (LLM / Data Source / DB)
- * - Company info side card (listens to 'upr:companySidebar')
- * - Free-text search calls /api/enrich/search (HR/Admin/Finance only)
- * - Company-selected enrich calls POST /api/enrich
- * - Select rows + "Add to HR Leads" (choose company in search mode)
- */
 export default function EnrichmentView() {
   const [text, setText] = useState("");
   const [err, setErr] = useState(null);
   const [attempted, setAttempted] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  // Global capability chips
   const [status, setStatus] = useState({ db_ok: null, llm_ok: null, data_source: null });
 
+  // Selected company broadcast from Companies page
   const [company, setCompany] = useState(null); // { id, name, domain, website_url }
+
+  // Free-text search results
   const [result, setResult] = useState(null);
 
+  // Results -> selection -> save
   const [rowsChecked, setRowsChecked] = useState({});
-  const [companies, setCompanies] = useState([]);
-  const [saveCompanyId, setSaveCompanyId] = useState("");
+  const [companies, setCompanies] = useState([]); // for dropdown fallback
+  const [saveCompanyId, setSaveCompanyId] = useState(""); // auto-set when we detect company
+  const [saveCompanyMeta, setSaveCompanyMeta] = useState(null); // {id,name,domain}
 
   const inputRef = useRef(null);
 
-  /* ------------------------- status chips polling ------------------------- */
+  /* ------------------------- global status chips -------------------------- */
   const loadStatus = useCallback(async () => {
     try {
       const r = await authFetch("/api/enrich/status");
@@ -37,7 +35,6 @@ export default function EnrichmentView() {
       setStatus((s) => ({ ...s, db_ok: false }));
     }
   }, []);
-
   useEffect(() => {
     loadStatus();
     const t = setInterval(loadStatus, 20000);
@@ -50,14 +47,16 @@ export default function EnrichmentView() {
       const detail = e?.detail || null;
       setCompany(detail);
       if (detail?.name && !text) setText(detail.name);
-      // when explicit selection exists, it will be the save target
-      if (detail?.id) setSaveCompanyId(detail.id);
+      if (detail?.id) {
+        setSaveCompanyId(detail.id);
+        setSaveCompanyMeta({ id: detail.id, name: detail.name, domain: detail.domain || null });
+      }
     };
     window.addEventListener("upr:companySidebar", onSidebarCompany);
     return () => window.removeEventListener("upr:companySidebar", onSidebarCompany);
   }, [text]);
 
-  /* -------------------------- companies for save ------------------------- */
+  /* ------------------------- companies for fallback ----------------------- */
   useEffect(() => {
     (async () => {
       try {
@@ -68,40 +67,9 @@ export default function EnrichmentView() {
     })();
   }, []);
 
-  const canSubmit = useMemo(() => {
-    return Boolean(company?.id) || Boolean(text && text.trim());
-  }, [company, text]);
+  const canSubmit = useMemo(() => Boolean(company?.id) || Boolean(text && text.trim()), [company, text]);
 
-  const callStatusProviderName = useMemo(() => {
-    if (status.data_source === "live") return { text: "Data Source: Live", dot: "bg-green-500" };
-    if (status.data_source === "mock") return { text: "Data Source: Mock", dot: "bg-yellow-500" };
-    return null;
-  }, [status]);
-
-  const chip = (ok, on, label) => {
-    if (ok == null) return null;
-    return (
-      <span className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm">
-        <span className={`inline-block h-2 w-2 rounded-full ${on ? "bg-green-500" : "bg-red-500"}`} />
-        {label}
-      </span>
-    );
-  };
-
-  const headerChips = (
-    <div className="flex items-center gap-3">
-      {callStatusProviderName && (
-        <span className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm">
-          <span className={`inline-block h-2 w-2 rounded-full ${callStatusProviderName.dot}`} />
-          {callStatusProviderName.text}
-        </span>
-      )}
-      {chip(status.db_ok, status.db_ok, "DB")}
-      {chip(status.llm_ok, status.llm_ok, "LLM")}
-    </div>
-  );
-
-  /* --------------------------- API helpers ------------------------------- */
+  /* ----------------------------- API helpers ------------------------------ */
   const callSearch = useCallback(async (q) => {
     const res = await authFetch(`/api/enrich/search?q=${encodeURIComponent(q)}`);
     const raw = await res.json().catch(() => ({}));
@@ -113,14 +81,54 @@ export default function EnrichmentView() {
     const res = await authFetch(`/api/enrich`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ company_id, max_contacts: 3, role: "hr", geo: "uae" }),
+      body: JSON.stringify({ company_id, max_contacts: 3 }),
     });
     const raw = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(raw?.error || "Enrich failed");
     return raw;
   }, []);
 
-  /* ----------------------------- actions --------------------------------- */
+  const findOrCreateCompany = useCallback(
+    async (guess) => {
+      if (!guess?.name && !guess?.domain) return null;
+      // 1) Try to find an existing match
+      try {
+        const term = encodeURIComponent(guess.domain || guess.name);
+        const r = await authFetch(`/api/companies?search=${term}&sort=name.asc`);
+        const j = await r.json();
+        if (r.ok && j?.ok && Array.isArray(j.data)) {
+          const hit =
+            j.data.find((c) => c.domain && guess.domain && c.domain.toLowerCase() === guess.domain.toLowerCase()) ||
+            j.data.find((c) => c.name && guess.name && c.name.toLowerCase() === guess.name.toLowerCase()) ||
+            null;
+          if (hit) return { id: hit.id, name: hit.name, domain: hit.domain || null };
+        }
+      } catch {}
+      // 2) Create one (manual companies endpoint)
+      try {
+        const payload = {
+          name: guess.name || (guess.domain ? guess.domain.replace(/\.[a-z]+$/, "") : "Company"),
+          website_url: guess.domain ? `https://${guess.domain}` : null,
+          type: null,
+          status: "New",
+          locations: [],
+        };
+        const r = await authFetch("/api/manual/companies", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const j = await r.json();
+        if (r.ok && j?.id) return { id: j.id, name: payload.name, domain: guess.domain || null };
+      } catch (e) {
+        console.error("create company failed", e);
+      }
+      return null;
+    },
+    []
+  );
+
+  /* ------------------------------- actions -------------------------------- */
   const handleEnrich = useCallback(async () => {
     setAttempted(true);
     if (!canSubmit) return;
@@ -128,6 +136,7 @@ export default function EnrichmentView() {
     setErr(null);
     setResult(null);
     setRowsChecked({});
+    setSaveCompanyMeta(company?.id ? { id: company.id, name: company.name, domain: company.domain || null } : null);
     try {
       let data;
       if (company?.id) {
@@ -135,6 +144,15 @@ export default function EnrichmentView() {
         window.dispatchEvent(new CustomEvent("upr:companySidebar", { detail: company }));
       } else {
         data = await callSearch(text.trim());
+        // If API guessed the company (e.g., kbr.com), auto-resolve save target
+        const guess = data?.summary?.company_guess || null;
+        if (guess && (!saveCompanyId || !saveCompanyMeta)) {
+          const ensured = await findOrCreateCompany(guess);
+          if (ensured) {
+            setSaveCompanyId(ensured.id);
+            setSaveCompanyMeta(ensured);
+          }
+        }
         window.dispatchEvent(new CustomEvent("upr:companySidebar", { detail: null }));
       }
       setResult(data || null);
@@ -143,11 +161,9 @@ export default function EnrichmentView() {
     } finally {
       setLoading(false);
     }
-  }, [canSubmit, company, text, callSearch, callReal]);
+  }, [canSubmit, company, text, callSearch, callReal, saveCompanyId, saveCompanyMeta, findOrCreateCompany]);
 
-  const toggleRow = (idx) => {
-    setRowsChecked((m) => ({ ...m, [idx]: !m[idx] }));
-  };
+  const toggleRow = (idx) => setRowsChecked((m) => ({ ...m, [idx]: !m[idx] }));
 
   const selectedRows = useMemo(() => {
     const out = [];
@@ -160,7 +176,7 @@ export default function EnrichmentView() {
   const addSelectedToLeads = useCallback(async () => {
     const targetCompanyId = company?.id || saveCompanyId;
     if (!targetCompanyId) {
-      setErr("Choose a company to save leads into.");
+      setErr("Choose or create a company to save leads into.");
       return;
     }
     if (selectedRows.length === 0) {
@@ -182,48 +198,50 @@ export default function EnrichmentView() {
           }),
         });
       } catch (e) {
-        // keep going; best-effort
         console.error("save lead failed", e);
       }
     }
-    // Optional: simple toast
     alert("Saved selected contacts to HR Leads.");
   }, [selectedRows, company, saveCompanyId]);
 
-  /* -------------------------------- UI ----------------------------------- */
+  /* --------------------------------- UI ----------------------------------- */
   const contacts = result?.results || [];
   const summary = result?.summary || {};
+  const resultsProvider = summary?.provider || null; // 'live' | 'mock' | 'live_fallback_to_mock' | 'none'
 
-  // side company card
-  const CompanyCard = company ? (
-    <div className="hidden xl:block fixed left-4 top-48 w-64 rounded-2xl border bg-white p-4 shadow-sm">
-      <div className="text-sm font-semibold mb-2">Company</div>
-      <div className="text-sm">
-        <div className="font-medium">{company.name || "—"}</div>
-        <div className="text-gray-500 truncate">{company.website_url || company.domain || "—"}</div>
-        <div className="mt-2">
-          <button
-            onClick={() => {
-              setCompany(null);
-              setSaveCompanyId("");
-              window.dispatchEvent(new CustomEvent("upr:companySidebar", { detail: null }));
-            }}
-            className="text-xs underline text-gray-700 hover:text-gray-900"
-          >
-            clear
-          </button>
-        </div>
-      </div>
+  const CapabilityChips = () => (
+    <div className="flex items-center gap-3">
+      <StatusDot ok={status.data_source === "live"} label={`Data Source: ${status.data_source === "live" ? "Live" : "Mock"}`} />
+      <StatusDot ok={!!status.db_ok} label="DB" />
+      <StatusDot ok={!!status.llm_ok} label="LLM" />
     </div>
-  ) : null;
+  );
+
+  const ResultsChips = () => {
+    const map = {
+      live: { ok: true, label: "Data Source: Live" },
+      mock: { ok: false, label: "Data Source: Mock" },
+      live_fallback_to_mock: { ok: false, label: "Data Source: Mock (fallback)" },
+      none: { ok: false, label: "Data Source: None" },
+    };
+    const v = map[resultsProvider] || null;
+    return (
+      <div className="flex items-center gap-3">
+        {v && <StatusDot ok={v.ok} label={v.label} />}
+        <StatusDot ok={!!status.db_ok} label="DB" />
+        <StatusDot ok={!!status.llm_ok} label="LLM" />
+      </div>
+    );
+  };
+
+  const showCreateCompany = !company?.id && !saveCompanyId && summary?.company_guess;
 
   return (
     <div className="p-6 space-y-6">
-      {/* Always-visible chips */}
-      <div className="flex items-center justify-end">{headerChips}</div>
-
-      {/* Company quick card on the left */}
-      {CompanyCard}
+      {/* Always-visible capability chips */}
+      <div className="flex items-center justify-end">
+        <CapabilityChips />
+      </div>
 
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -244,6 +262,7 @@ export default function EnrichmentView() {
               onClick={() => {
                 setCompany(null);
                 setSaveCompanyId("");
+                setSaveCompanyMeta(null);
                 window.dispatchEvent(new CustomEvent("upr:companySidebar", { detail: null }));
               }}
               className="text-sm underline text-gray-700 hover:text-gray-900"
@@ -260,7 +279,7 @@ export default function EnrichmentView() {
           <input
             ref={inputRef}
             className="w-full rounded-md border px-3 py-2 focus:outline-none focus:ring"
-            placeholder="Enter company name (e.g., Revolut) — or pick a company on the Companies page"
+            placeholder="Enter company name (e.g., KBR / Revolut) — or pick a company on the Companies page"
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
@@ -268,21 +287,12 @@ export default function EnrichmentView() {
             }}
             disabled={!!company?.id}
           />
-          <button
-            className="rounded-md bg-gray-900 text-white px-4 py-2 disabled:opacity-50"
-            onClick={handleEnrich}
-            disabled={!canSubmit || loading}
-          >
+          <button className="rounded-md bg-gray-900 text-white px-4 py-2 disabled:opacity-50" onClick={handleEnrich} disabled={!canSubmit || loading}>
             {loading ? "Enriching..." : "Enrich"}
           </button>
         </div>
 
-        {/* show validation only AFTER an attempt */}
-        {attempted && !canSubmit && (
-          <div className="mt-2 text-sm text-red-600 text-center">
-            Please select a company or enter a name to search.
-          </div>
-        )}
+        {attempted && !canSubmit && <div className="mt-2 text-sm text-red-600 text-center">Please select a company or enter a name to search.</div>}
         {err && <div className="mt-2 text-sm text-red-600 text-center">{err}</div>}
       </div>
 
@@ -292,24 +302,42 @@ export default function EnrichmentView() {
           <div className="flex items-center justify-between mb-2">
             <div className="font-medium">Results</div>
             <div className="flex items-center gap-2">
-              {!company?.id && (
-                <select
-                  className="rounded border px-2 py-1 text-sm"
-                  value={saveCompanyId}
-                  onChange={(e) => setSaveCompanyId(e.target.value)}
-                >
-                  <option value="">— Choose company to save into —</option>
-                  {companies.map((c) => (
-                    <option value={c.id} key={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
+              {company?.id ? (
+                <span className="text-sm text-gray-600">Saving into: <b>{company.name}</b></span>
+              ) : saveCompanyMeta ? (
+                <span className="text-sm text-gray-600">Saving into: <b>{saveCompanyMeta.name}</b></span>
+              ) : (
+                <>
+                  <select className="rounded border px-2 py-1 text-sm" value={saveCompanyId} onChange={(e) => setSaveCompanyId(e.target.value)}>
+                    <option value="">— Choose company to save into —</option>
+                    {companies.map((c) => (
+                      <option value={c.id} key={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </>
               )}
+
+              {showCreateCompany && (
+                <button
+                  className="rounded border px-2 py-1 text-sm"
+                onClick={async () => {
+                    const ensured = await findOrCreateCompany(summary.company_guess);
+                    if (ensured) {
+                      setSaveCompanyId(ensured.id);
+                      setSaveCompanyMeta(ensured);
+                    }
+                  }}
+                >
+                  Create “{summary.company_guess?.name || "Company"}”
+                </button>
+              )}
+
               <button
                 className="rounded bg-gray-900 text-white px-3 py-1.5 text-sm disabled:opacity-50"
                 onClick={addSelectedToLeads}
-                disabled={selectedRows.length === 0 || (!company?.id && !saveCompanyId)}
+                disabled={selectedRows.length === 0 || (!company?.id && !saveCompanyId && !saveCompanyMeta?.id)}
                 title="Add selected contacts to HR Leads"
               >
                 Add to HR Leads
@@ -326,10 +354,7 @@ export default function EnrichmentView() {
                   ? `Kept ${summary.kept} of ${summary.found}`
                   : null}
               </div>
-              <div className="flex items-center gap-3">
-                {/* mirror chips near results as well */}
-                {headerChips}
-              </div>
+              <ResultsChips />
             </div>
 
             <div className="mt-4 overflow-x-auto">
@@ -357,11 +382,7 @@ export default function EnrichmentView() {
                     contacts.map((c, idx) => (
                       <tr key={idx} className="align-top">
                         <Td className="w-10">
-                          <input
-                            type="checkbox"
-                            checked={!!rowsChecked[idx]}
-                            onChange={() => toggleRow(idx)}
-                          />
+                          <input type="checkbox" checked={!!rowsChecked[idx]} onChange={() => toggleRow(idx)} />
                         </Td>
                         <Td className="font-medium">{c.name || "—"}</Td>
                         <Td>{c.designation || "—"}</Td>
@@ -376,12 +397,7 @@ export default function EnrichmentView() {
                         </Td>
                         <Td>
                           {c.linkedin_url ? (
-                            <a
-                              href={c.linkedin_url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="underline break-all"
-                            >
+                            <a href={c.linkedin_url} target="_blank" rel="noreferrer" className="underline break-all">
                               LinkedIn
                             </a>
                           ) : (
@@ -390,7 +406,7 @@ export default function EnrichmentView() {
                         </Td>
                         <Td>{c.confidence != null ? Number(c.confidence).toFixed(2) : "—"}</Td>
                         <Td>{c.email_status || "—"}</Td>
-                        <Td className="text-gray-500">{c.source || "live"}</Td>
+                        <Td className="text-gray-500">{c.source || (resultsProvider || "—")}</Td>
                       </tr>
                     ))
                   )}
@@ -407,13 +423,20 @@ export default function EnrichmentView() {
 
           <div className="mt-4 rounded-xl border p-3 bg-gray-50">
             <div className="text-xs font-semibold mb-2 text-gray-600">Raw response</div>
-            <pre className="text-xs whitespace-pre-wrap text-gray-800">
-              {JSON.stringify(result, null, 2)}
-            </pre>
+            <pre className="text-xs whitespace-pre-wrap text-gray-800">{JSON.stringify(result, null, 2)}</pre>
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+function StatusDot({ ok, label }) {
+  return (
+    <span className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm">
+      <span className={`inline-block h-2 w-2 rounded-full ${ok ? "bg-green-500" : "bg-yellow-500"}`} />
+      {label}
+    </span>
   );
 }
 
@@ -424,7 +447,6 @@ function Th({ children }) {
     </th>
   );
 }
-
 function Td({ children, className = "" }) {
   return <td className={`px-3 py-2 ${className}`}>{children}</td>;
 }
