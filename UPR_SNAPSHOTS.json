@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-16T17:09:10Z",
-  "generated_human": "Tue, 16 Sep 2025 17:09:10 GMT",
+  "generated": "2025-09-19T09:44:19Z",
+  "generated_human": "Fri, 19 Sep 2025 09:44:19 GMT",
   "branch": "main",
-  "commit": "852abfe",
+  "commit": "0c090f7",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -19,7 +19,9 @@
   "package_scripts": {
     "dev": "vite",
     "build": "vite build --logLevel debug",
-    "preview": "vite preview --port 5173"
+    "preview": "vite preview --port 5173",
+    "checkpoint": "node scripts/generate_checkpoint.mjs",
+    "snapshot:bundle": "node scripts/bundle_snapshot.mjs"
   },
   "files": [
     {
@@ -256,9 +258,9 @@
     },
     {
       "path": "routes/enrich.js",
-      "size": 8617,
-      "mtime": "2025-09-15T17:57:12.549Z",
-      "sha256": "6f5a8a1a51fedb1673846a0508b1207dd5dc5a0c9930e65a7527a8dd1ffe55a2",
+      "size": 9923,
+      "mtime": "2025-09-19T09:43:21.125Z",
+      "sha256": "b2fd1a0c01ab9149d7c94f16dddffd013894550a8920f48582f9ebf71d5931a6",
       "imports": [
         "import express from \"express\";",
         "import { nanoid } from \"nanoid\";",
@@ -339,9 +341,9 @@
     },
     {
       "path": "server.js",
-      "size": 4159,
-      "mtime": "2025-09-14T05:22:54.398Z",
-      "sha256": "d9745a910a7e456aab990d934f36a4a0e0b39b523b01fc1b3adf12bf8f2b3c32",
+      "size": 4563,
+      "mtime": "2025-09-16T17:31:05.285Z",
+      "sha256": "054a3b89986006857c40734f00cbb3c19bd3f8bb54ed580252ca130e29d8edcf",
       "imports": [
         "import express from \"express\";",
         "import path from \"path\";",
@@ -373,7 +375,7 @@
         "app.get(\"/api/auth/verify\", adminOnly, (_req, res) => res.json({ ok: true }));"
       ],
       "head": "// server.js\nimport express from \"express\";\nimport path from \"path\";\nimport fs from \"fs\";\nimport { fileURLToPath } from \"url\";\n\nimport { pool } from \"./utils/db.js\";\nimport { adminOnly } from \"./utils/adminOnly.js\";\n\nimport companiesRouter from \"./routes/companies.js\";\nimport hrLeadsRouter from \"./routes/hrLeads.js\";\nimport newsRouter from \"./routes/news.js\";\nimport enrichRouter from \"./routes/enrich.js\";\nimport { signJwt } from \"./utils/jwt.js\"; // username/password login\n\nconst __filename = fileURLToPath(import.meta.url);\nconst __dirname = path.dirname(__filename);\n\nconst app = express();\nconst PORT = process.env.PORT || 10000;\n\n// ---------- Middleware ----------\napp.use(express.json({ limit: \"2mb\" }));\napp.use(express.urlencoded({ extended: true }));\n\n// ---------- Health ----------\napp.get(\"/health\", (_req, res) => res.json({ ok: true }));\napp.get(\"/__diag\", async (_req, res) => {\n  try {\n    await pool.query(\"SELECT 1\");\n    res.json({ ok: true, db_ok: true });\n  } catch (err) {\n    res.status(500).json({ ok: false, db_ok: false, error: String(err?.message || err) });\n  }\n});\n\n// ---------- Auth (username/password only) ----------\napp.post(\"/api/auth/login\", async (req, res) => {\n  try {\n    const { username, password } = req.body || {};",
-      "tail": "if (fs.existsSync(dashboardDist)) {\n  app.use(\n    express.static(dashboardDist, {\n      setHeaders: (res, filePath) => {\n        // don’t cache HTML (especially index.html)\n        if (filePath.endsWith(\".html\")) {\n          res.setHeader(\"Cache-Control\", \"no-store, must-revalidate\");\n        }\n      },\n    })\n  );\n\n  const indexFile = path.join(dashboardDist, \"index.html\");\n\n  // SPA fallback: anything not under /api/* returns index.html with no-store\n  app.get(/^(?!\\/api\\/).*/, (_req, res) => {\n    res.setHeader(\"Cache-Control\", \"no-store, must-revalidate\");\n    res.sendFile(indexFile);\n  });\n}\n\napp.listen(PORT, () => {\n  console.log(`UPR backend listening on ${PORT}`);\n});\n"
+      "tail": "  );\n\n  const indexFile = path.join(dashboardDist, \"index.html\");\n\n  // SPA fallback: anything not under /api/* returns index.html with no-store\n  app.get(/^(?!\\/api\\/).*/, (_req, res) => {\n    res.setHeader(\"Cache-Control\", \"no-store, must-revalidate\");\n    res.sendFile(indexFile);\n  });\n}\n\napp.listen(PORT, () => {\n  console.log(`UPR backend listening on ${PORT}`);\n});\napp.get(\"/__diag\", (req, res) => {\n  res.json({\n    ok: true,\n    env: [\n      \"DATABASE_URL\",\"NEVERBOUNCE_API_KEY\",\"ZEROBOUNCE_API_KEY\",\n      \"UPR_ADMIN_USER\",\"UPR_ADMIN_PASS\",\"JWT_SECRET\"\n    ].filter(Boolean).reduce((o,k)=> (o[k] = !!process.env[k], o), {}),\n    routesMounted: (app._router?.stack || []).filter(l => l?.route).map(l => Object.keys(l.route.methods)[0] + \" \" + l.route.path)\n  });\n});\n"
     },
     {
       "path": "utils/adminOnly.js",

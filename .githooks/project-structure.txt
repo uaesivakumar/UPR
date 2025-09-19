@@ -1,0 +1,3 @@
+.
+./project-structure.txt
+./pre-commit

@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -e
+
+# Only run when watched paths change
+CHANGED=$(git diff --cached --name-only || true)
+WATCH_RE='^(server\.js|routes/|utils/|dashboard/src/pages/|dashboard/src/features/)'
+
+if ! echo "$CHANGED" | grep -E "$WATCH_RE" >/dev/null; then
+  # still refresh project-structure header for traceability
+  STAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  { echo "# Generated: $STAMP"; git ls-files; } > project-structure.txt
+  git add project-structure.txt
+  exit 0
+fi
+
+# Timestamped project structure
+STAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+{ echo "# Generated: $STAMP"; git ls-files; } > project-structure.txt
+
+# Generate checkpoint & snapshots
+if npm run -s checkpoint >/dev/null 2>&1; then :; else node scripts/generate_checkpoint.mjs; fi
+
+# Stage files
+git add UPR_CHECKPOINT.md UPR_SNAPSHOTS.json project-structure.txt

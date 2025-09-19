@@ -1,0 +1,33 @@
+openapi: 3.0.3
+info:
+  title: UPR API
+  version: 0.1.0
+paths:
+  /api/enrich:
+    post:
+      summary: Start enrichment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                company_id: { type: string }
+                max_contacts: { type: integer, default: 3 }
+                role: { type: string, default: hr }
+                geo: { type: string, default: uae }
+              required: [company_id]
+      responses:
+        '202':
+          description: Accepted; job started (may include immediate results)
+  /api/enrich/{job_id}:
+    get:
+      summary: Enrichment job status
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: OK }

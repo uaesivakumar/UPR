@@ -1,0 +1,32 @@
+{
+  "name": "upr-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build --logLevel debug",
+    "preview": "vite preview --port 5173",
+    "checkpoint": "node scripts/generate_checkpoint.mjs",
+    "snapshot:bundle": "node -e \"const cp=require('child_process');cp.execSync('node scripts/generate_checkpoint.mjs',{stdio:'inherit'});try{cp.execSync('zip -q -r snapshot_bundle.zip UPR_CHECKPOINT.md UPR_SNAPSHOTS.json project-structure.txt',{stdio:'inherit'});console.log('Wrote snapshot_bundle.zip');}catch(e){cp.execSync('tar -czf snapshot_bundle.tgz UPR_CHECKPOINT.md UPR_SNAPSHOTS.json project-structure.txt',{stdio:'inherit'});console.log('Wrote snapshot_bundle.tgz');}\""
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.16.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.8.2"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.4.8"
+  }
+}
+,
+"scripts": {
+  "checkpoint": "node scripts/generate_checkpoint.mjs",
+  "snapshot:bundle": "node -e \"const fs=require('fs'),cp=require('child_process');cp.execSync('node scripts/generate_checkpoint.mjs',{stdio:'inherit'});cp.execSync('zip -q -r snapshot_bundle.zip UPR_CHECKPOINT.md UPR_SNAPSHOTS.json project-structure.txt',{stdio:'inherit'}); console.log('Wrote snapshot_bundle.zip');\""
+}

@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build --logLevel debug",
-    "preview": "vite preview --port 5173"
+    "preview": "vite preview --port 5173",
+    "checkpoint": "node scripts/generate_checkpoint.mjs",
+    "snapshot:bundle": "node scripts/bundle_snapshot.mjs"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",

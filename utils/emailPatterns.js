@@ -1,51 +1,89 @@
 // utils/emailPatterns.js
-import { normalizeDomain } from "./normalize.js";
+import { pool } from "./db.js";
 
-const COMMON_PATTERNS = [
-  "first.last",
-  "f.last",
-  "first.l",
-  "first",
-  "last",
-  "firstlast",
-  "flast",
+const DEFAULT_PATTERNS = [
+  "{first}.{last}@{domain}",
+  "{f}{last}@{domain}",
+  "{first}{l}@{domain}",
+  "{first}@{domain}",
+  "{first}_{last}@{domain}",
+  "{last}{f}@{domain}",
+  "{first}-{last}@{domain}",
 ];
 
-export function detectPattern(seedEmails = [], person = { first: "", last: "" }) {
-  // trivial detector; prefer explicit seed emails you store later
-  // returns a string pattern name or null
-  return seedEmails.length ? "first.last" : null;
+export function applyPattern(first, last, pattern, domain) {
+  const f = (first || "").toLowerCase().replace(/[^a-z]/g, "");
+  const l = (last || "").toLowerCase().replace(/[^a-z]/g, "");
+  return pattern
+    .replace("{first}", f)
+    .replace("{last}", l)
+    .replace("{f}", f.slice(0, 1))
+    .replace("{l}", l.slice(0, 1))
+    .replace("{domain}", domain);
 }
 
-export function generateEmail({ first, last, domain, pattern }) {
-  if (!first || !last || !domain) return null;
-  const d = normalizeDomain(domain);
-  const f = String(first).toLowerCase().replace(/[^a-z]/g, "");
-  const l = String(last).toLowerCase().replace(/[^a-z]/g, "");
-  const map = {
-    "first.last": `${f}.${l}`,
-    "f.last": `${f[0] ?? ""}.${l}`,
-    "first.l": `${f}.${l[0] ?? ""}`,
-    "first": f,
-    "last": l,
-    "firstlast": `${f}${l}`,
-    "flast": `${(f[0] ?? "")}${l}`,
-  };
-  const local = map[pattern] ?? map["first.last"];
-  return local && d ? `${local}@${d}` : null;
-}
-
-export function generateCandidates({ first, last, domain, max = 4 }) {
-  const d = normalizeDomain(domain);
-  const seen = new Set();
-  const out = [];
-  for (const p of COMMON_PATTERNS) {
-    const e = generateEmail({ first, last, domain: d, pattern: p });
-    if (e && !seen.has(e)) {
-      seen.add(e);
-      out.push({ email: e, pattern: p });
-      if (out.length >= max) break;
+/**
+ * Given sample emails (name+email) of the same domain, infer the most likely pattern.
+ * @param {Array<{name:string,email:string}>} samples
+ * @param {string} domain
+ * @returns {{pattern:string, confidence:number}|null}
+ */
+export function inferPatternFromSamples(samples, domain) {
+  const counts = new Map();
+  for (const s of samples) {
+    const [first, last] = splitName(s.name);
+    if (!first) continue;
+    for (const p of DEFAULT_PATTERNS) {
+      const guess = applyPattern(first, last, p, domain);
+      if (eqEmail(guess, s.email)) counts.set(p, (counts.get(p) || 0) + 1);
     }
   }
-  return out;
+  if (counts.size === 0) return null;
+  const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  const [bestPattern, hits] = sorted[0];
+  const confidence = Math.min(1, hits / Math.max(2, samples.length));
+  return { pattern: bestPattern, confidence };
+}
+
+function splitName(name = "") {
+  const parts = name.trim().split(/\s+/);
+  if (!parts.length) return ["", ""];
+  const first = parts[0];
+  const last = parts.length > 1 ? parts[parts.length - 1] : "";
+  return [first, last];
+}
+function eqEmail(a = "", b = "") {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+export async function loadPatternFromCache(dbOrPool, domain) {
+  const db = dbOrPool?.query ? dbOrPool : pool;
+  const q = `SELECT pattern, sample_email, confidence FROM email_pattern_cache WHERE domain = $1`;
+  try {
+    const { rows } = await db.query(q, [domain]);
+    if (!rows[0]) return null;
+    return { pattern: rows[0].pattern, confidence: Number(rows[0].confidence) || 0.0 };
+  } catch (e) {
+    if (String(e?.code) === "42P01") return null; // table missing
+    throw e;
+  }
+}
+
+export async function savePatternToCache(dbOrPool, domain, pattern, sample_email, confidence = 0.7) {
+  const db = dbOrPool?.query ? dbOrPool : pool;
+  const q = `
+    INSERT INTO email_pattern_cache (domain, pattern, sample_email, confidence, updated_at)
+    VALUES ($1,$2,$3,$4, now())
+    ON CONFLICT (domain) DO UPDATE SET
+      pattern = EXCLUDED.pattern,
+      sample_email = EXCLUDED.sample_email,
+      confidence = EXCLUDED.confidence,
+      updated_at = now()
+  `;
+  try {
+    await db.query(q, [domain, pattern, sample_email || null, confidence]);
+  } catch (e) {
+    if (String(e?.code) === "42P01") return; // table not present yet: skip
+    throw e;
+  }
 }

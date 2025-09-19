@@ -126,3 +126,13 @@ if (fs.existsSync(dashboardDist)) {
 app.listen(PORT, () => {
   console.log(`UPR backend listening on ${PORT}`);
 });
+app.get("/__diag", (req, res) => {
+  res.json({
+    ok: true,
+    env: [
+      "DATABASE_URL","NEVERBOUNCE_API_KEY","ZEROBOUNCE_API_KEY",
+      "UPR_ADMIN_USER","UPR_ADMIN_PASS","JWT_SECRET"
+    ].filter(Boolean).reduce((o,k)=> (o[k] = !!process.env[k], o), {}),
+    routesMounted: (app._router?.stack || []).filter(l => l?.route).map(l => Object.keys(l.route.methods)[0] + " " + l.route.path)
+  });
+});

@@ -1,197 +1,333 @@
 // routes/enrich.js
 import express from "express";
-import { aiEnrichFromInput } from "../utils/ai.js";
-import { normalizeDomain, includesNormalized } from "../utils/normalize.js";
-import { apolloMixedPeopleSearch } from "../utils/apollo.js";
-import { detectPattern, generateCandidates } from "../utils/emailPatterns.js";
-import { getDomainPattern, setDomainPattern } from "../utils/patternCache.js";
+import { nanoid } from "nanoid";
+
+import { pool } from "../utils/db.js";
+import {
+  scoreCandidate,
+  bucketRole,
+  bucketSeniority,
+  isAgencyRecruiter,
+} from "../utils/patternHelpers.js";
+import {
+  inferPatternFromSamples,
+  applyPattern,
+  loadPatternFromCache,
+  savePatternToCache,
+} from "../utils/emailPatterns.js";
 import { verifyEmail } from "../utils/emailVerify.js";
 
 const router = express.Router();
 
-/**
- * Helpers
- */
-function pickCompanyMeta(ai) {
-  const c = ai?.company || {};
-  const website = c.website || c.website_url || null;
-  const domain = normalizeDomain(website || c.domain || null);
-  const name = c.name || ai?.companyName || null;
-  return {
-    name,
-    website,
-    domain,
-    linkedin: c.linkedin || c.linkedin_url || null,
-    hq: c.hq || c.location || null,
-    industry: c.industry || null,
-    size: c.size || null,
-    notes: c.notes || null,
-  };
-}
-
-function currentAtOrg(person, { domain, name }) {
-  // 1) Prefer exact current employment history flag
-  const eh = Array.isArray(person.employment_history) ? person.employment_history : [];
-  const curr = eh.find((e) => e?.current) || null;
-
-  // If Apollo attaches top-level "organization" for current employment:
-  const org = person.organization || {};
-
-  const domainMatch =
-    (org?.primary_domain && domain && org.primary_domain.toLowerCase() === domain.toLowerCase()) ||
-    false;
-
-  const nameMatch =
-    (org?.name && name && includesNormalized(org.name, name)) ||
-    (curr?.organization_name && name && includesNormalized(curr.organization_name, name)) ||
-    false;
-
-  return Boolean(curr && (domain ? domainMatch : nameMatch));
-}
-
-function cleanEmailStatus(raw) {
-  const v = (raw || "").toLowerCase();
-  // Apollo often returns "verified" while email is locked; treat as unknown until truly verified by us
-  if (v === "verified" || v === "valid") return "unlocked_required";
-  return v || "unknown";
-}
-
-function qualityExplain(company, contacts) {
-  const items = [];
-  const scoreParts = [];
-
-  if (company.hq && includesNormalized(company.hq, "uae")) {
-    items.push({ label: "UAE HQ/Presence", delta: +10, detail: company.hq });
-    scoreParts.push(10);
-  }
-  if (company.industry) {
-    items.push({ label: "Industry fit", delta: +4, detail: company.industry });
-    scoreParts.push(4);
-  }
-  if (contacts.length > 0) {
-    items.push({ label: "Decision makers found", delta: +6, detail: `${contacts.length} contacts` });
-    scoreParts.push(6);
-  }
-  const score = scoreParts.reduce((a, b) => a + b, 0);
-  return { items, score };
-}
+// In-memory job store (MVP)
+const jobs = new Map();
 
 /**
  * POST /api/enrich
- * body: { input: string }
+ * body: { company_id: string, max_contacts?: number, role?: "hr", geo?: "uae" }
  */
 router.post("/", async (req, res) => {
-  const t0 = Date.now();
+  const { company_id, max_contacts = 3, role = "hr", geo = "uae" } = req.body || {};
+  if (!company_id) return res.status(400).json({ error: "company_id is required" });
+
+  const job_id = `enrich_${Date.now()}_${nanoid(6)}`;
+  jobs.set(job_id, { status: "queued", company_id, results: [], summary: {} });
+
   try {
-    const input = String(req.body?.input || "").trim();
-    if (!input) return res.status(400).json({ ok: false, error: "input required" });
+    const company = await getCompany(company_id);
+    if (!company) {
+      const payload = { job_id, status: "error", error: "company_not_found" };
+      jobs.set(job_id, payload);
+      return res.status(404).json(payload);
+    }
 
-    // 1) LLM shaping
-    const ai = await aiEnrichFromInput(input);
-    const company = pickCompanyMeta(ai);
+    // Ensure domain
+    if (!company.domain && company.website_url) {
+      try {
+        const u = new URL(
+          company.website_url.startsWith("http")
+            ? company.website_url
+            : `https://${company.website_url}`
+        );
+        company.domain = u.hostname.replace(/^www\./, "");
+      } catch {}
+    }
 
-    // 2) Apollo — strictly bind to this company (domain preferred)
-    const titles = [
-      "human resources", "hr", "talent acquisition", "recruiter",
-      "payroll", "finance", "office admin", "admin manager", "onboarding",
-      "people operations",
-    ];
-    const people = await apolloMixedPeopleSearch({
-      domain: company.domain,
-      orgName: company.name,
-      locations: ["United Arab Emirates", "UAE", "Abu Dhabi", "Dubai", "Sharjah"],
-      titles,
-      page: 1,
-      perPage: 25,
+    // 1) Query provider (placeholder → returns [])
+    const providerCandidates = await queryPrimaryProvider({
+      company,
+      role,
+      geo,
+      limit: max_contacts,
     });
 
-    // 3) Post-filter: must be CURRENTLY at the org
-    const filtered = people.filter((p) => currentAtOrg(p, { domain: company.domain, name: company.name }));
+    // 2) Learn pattern from provider samples (if possible)
+    let learnedPattern = null;
+    const samples = providerCandidates
+      .filter((c) => c.email && c.first_name && c.last_name)
+      .map((c) => ({ name: `${c.first_name} ${c.last_name}`, email: c.email }));
 
-    // 4) Map → contacts
-    const contacts = [];
-    for (const p of filtered) {
-      const first = p.first_name || "";
-      const last = p.last_name || "";
-      const full = `${first} ${last}`.trim();
-      const linkedIn = p.linkedin_url || null;
-
-      // Apollo often masks emails; we only trust our own checks
-      let email = null;
-      let email_status = cleanEmailStatus(p.email_status); // "unlocked_required" or "unknown"
-      let accuracy = 0.7;
-
-      // If you’ve collected patterns per-domain, reuse them
-      const cachedPattern = await getDomainPattern(company.domain);
-      let email_guess = null;
-
-      if (!email) {
-        // create candidates
-        const candidates = generateCandidates({ first, last, domain: company.domain, max: 3 });
-        if (cachedPattern) {
-          const best = candidates.find((c) => c.pattern === cachedPattern) || candidates[0];
-          email_guess = best?.email || null;
-        } else {
-          email_guess = candidates[0]?.email || null;
-        }
-        email_status = email_guess ? "patterned" : email_status;
+    if (samples.length >= 2 && company.domain) {
+      learnedPattern = inferPatternFromSamples(samples, company.domain);
+      if (learnedPattern?.pattern && learnedPattern.confidence >= 0.7) {
+        await savePatternToCache(
+          pool,
+          company.domain,
+          learnedPattern.pattern,
+          samples[0]?.email,
+          learnedPattern.confidence
+        );
       }
+    }
 
-      // Optional SMTP verification (respect your env flags/rate limits)
-      let smtp_status = null;
-      if (process.env.SMTP_VERIFY_ENABLED === "true" && email_guess) {
-        try {
-          const vr = await verifyEmail(email_guess);
-          smtp_status = vr?.status || null; // e.g., "valid" | "invalid" | "catch_all" | "unknown"
-          if (vr?.pattern && !cachedPattern) await setDomainPattern(company.domain, vr.pattern);
-          if (vr?.ok) {
-            email = email_guess;
-            email_status = "validated";
-            accuracy = 0.9;
-          } else if (vr?.status === "invalid") {
-            email_status = "bounced";
-          }
-        } catch {
-          // ignore verifier failures
+    // 3) Load known/cached pattern
+    let pattern = null;
+    if (company.email_pattern && (company.pattern_confidence ?? 0) >= 0.7) {
+      pattern = {
+        pattern: company.email_pattern,
+        confidence: Number(company.pattern_confidence) || 0,
+      };
+    } else if (company.domain) {
+      const cached = await loadPatternFromCache(pool, company.domain);
+      if (cached) pattern = cached;
+    }
+    if (!pattern && learnedPattern) pattern = learnedPattern;
+
+    // 4) Normalize candidates
+    let candidates = normalizeCandidates(providerCandidates, company);
+
+    // 5) Role + seniority + exclude agencies
+    candidates = candidates
+      .map((c) => ({
+        ...c,
+        role_bucket: bucketRole(c.designation || ""),
+        seniority: bucketSeniority(c.designation || ""),
+      }))
+      .filter((c) => c.role_bucket === "hr" && !isAgencyRecruiter(c));
+
+    // 6) Pattern-guess emails if missing
+    if (company.domain && pattern?.pattern) {
+      candidates = candidates.map((c) => {
+        if (!c.email && c.first_name && c.last_name) {
+          c.email = applyPattern(c.first_name, c.last_name, pattern.pattern, company.domain);
+          c.email_status = "patterned";
+          c.email_reason = "pattern_guess";
         }
-      }
-
-      contacts.push({
-        id: p.id,
-        name: full || null,
-        title: p.title || null,
-        dept: (p.departments?.[0] || "").replace(/^master_/, "") || null,
-        linkedin: linkedIn,
-        confidence: accuracy,
-        email,
-        email_guess,
-        email_status,
-        why: {
-          matched_domain: p.organization?.primary_domain || null,
-          matched_name: p.organization?.name || null,
-          current: true,
-          source: "apollo",
-        },
+        return c;
       });
     }
 
-    // 5) Quality & meta
-    const q = qualityExplain(company, contacts);
-    const duration_ms = Date.now() - t0;
+    // 7) Verify emails
+    for (const c of candidates) {
+      if (!c.email) continue;
+      const v = await verifyEmail(c.email);
+      c.email_status = v.status; // 'valid'|'accept_all'|'unknown'|'invalid'|'bounced'
+      c.email_reason = v.reason || c.email_reason;
+    }
 
-    return res.json({
-      ok: true,
-      data: {
-        company,
-        contacts,
-        score: q.score,
-        explanation: q.items,
-        meta: { used: true, llm: "openai", model: ai?.meta?.model || "gpt-4o-mini", duration_ms },
-      },
-    });
+    // 8) Score and pick top N (unique emails)
+    candidates = candidates.map((c) => ({
+      ...c,
+      confidence: scoreCandidate({
+        role_bucket: c.role_bucket,
+        seniority: c.seniority,
+        geo_fit: c.geo_fit ?? 1.0,
+        email_status: c.email_status,
+        company_match: 1.0,
+      }),
+    }));
+    candidates.sort((a, b) => b.confidence - a.confidence);
+
+    const seen = new Set();
+    const kept = [];
+    for (const c of candidates) {
+      if (!c.email || seen.has(c.email)) continue;
+      if (kept.length < max_contacts && c.confidence >= 0.6) {
+        kept.push(c);
+        seen.add(c.email);
+      }
+    }
+
+    // 9) Persist to hr_leads if table exists (best-effort)
+    const saved = [];
+    for (const c of kept) {
+      try {
+        const row = await upsertHrLead(company_id, c);
+        saved.push(row);
+      } catch (e) {
+        if (String(e?.code) !== "42P01") console.error("hr_leads upsert error:", e);
+      }
+    }
+    const primary = saved[0]?.id || null;
+
+    const result = {
+      status: "completed",
+      company_id,
+      results: kept.map((c) => ({
+        name: c.name,
+        designation: c.designation,
+        linkedin_url: c.linkedin_url,
+        email: c.email,
+        email_status: c.email_status,
+        confidence: c.confidence,
+        role_bucket: c.role_bucket,
+        seniority: c.seniority,
+        source: c.source || "provider_or_pattern",
+        email_reason: c.email_reason,
+      })),
+      summary: { found: candidates.length, kept: kept.length, primary_contact_id: primary },
+    };
+
+    jobs.set(job_id, result);
+    return res.status(202).json({ job_id, ...result });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: err.message || "enrichment failed" });
+    console.error("enrich job error:", err);
+    const payload = { job_id, status: "error", error: "exception" };
+    jobs.set(job_id, payload);
+    return res.status(500).json(payload);
   }
 });
 
+/**
+ * GET /api/enrich/:job_id
+ */
+router.get("/:job_id", (req, res) => {
+  const job = jobs.get(req.params.job_id);
+  if (!job) return res.status(404).json({ error: "job_not_found" });
+  return res.json(job);
+});
+
+/**
+ * GET /api/enrich/mock?q=Company+Name
+ * Lightweight mock enrichment to test the UI without needing a company_id.
+ */
+router.get("/mock", async (req, res) => {
+  const q = (req.query.q || "").toString().trim();
+  if (!q) return res.status(400).json({ error: "q is required" });
+  const domain = q.toLowerCase().replace(/\s+/g, "") + ".com";
+
+  const results = [
+    {
+      name: "Jane Doe",
+      designation: "HR Manager",
+      linkedin_url: `https://www.linkedin.com/in/jane-doe-hr-${Math.floor(Math.random()*9000+1000)}/`,
+      email: `jane.doe@${domain}`,
+      email_status: "valid",
+      email_reason: "mock",
+      role_bucket: "hr",
+      seniority: "manager",
+      source: "mock",
+      confidence: 0.92
+    },
+    {
+      name: "John Smith",
+      designation: "Head of People",
+      linkedin_url: `https://www.linkedin.com/in/john-smith-people-${Math.floor(Math.random()*9000+1000)}/`,
+      email: `john.smith@${domain}`,
+      email_status: "accept_all",
+      email_reason: "mock",
+      role_bucket: "hr",
+      seniority: "head",
+      source: "mock",
+      confidence: 0.88
+    }
+  ];
+
+  return res.json({
+    status: "completed",
+    company_id: null,
+    results,
+    summary: {
+      total_candidates: results.length,
+      kept: results.length,
+      pattern_used: "first.last@" + domain,
+      verification_provider: "mock"
+    }
+  });
+});
+
 export default router;
+
+// ---------- helpers ----------
+
+async function getCompany(company_id) {
+  const q = `
+    SELECT id, name, website_url, domain, email_pattern, pattern_confidence
+    FROM targeted_companies
+    WHERE id = $1
+    LIMIT 1
+  `;
+  try {
+    const { rows } = await pool.query(q, [company_id]);
+    return rows[0];
+  } catch (e) {
+    if (String(e?.code) === "42P01") return null;
+    throw e;
+  }
+}
+
+function normalizeCandidates(providerCandidates, company) {
+  return (providerCandidates || []).map((p) => ({
+    source: p.source || "provider",
+    name: [p.first_name, p.last_name].filter(Boolean).join(" ").trim() || p.name || "",
+    first_name: p.first_name || guessFirst(p.name),
+    last_name: p.last_name || guessLast(p.name),
+    designation: p.title || p.designation || "",
+    linkedin_url: p.linkedin || p.linkedin_url || "",
+    email: p.email || null,
+    email_status: p.email ? "provider" : "unknown",
+    email_reason: p.email ? "provider_supplied" : undefined,
+    company_name: company?.name,
+    geo_fit: 1.0,
+  }));
+}
+
+function guessFirst(name = "") {
+  const parts = name.trim().split(/\s+/);
+  return parts[0] || "";
+}
+function guessLast(name = "") {
+  const parts = name.trim().split(/\s+/);
+  return parts.length > 1 ? parts[parts.length - 1] : "";
+}
+
+async function upsertHrLead(company_id, c) {
+  const q = `
+    INSERT INTO hr_leads
+      (company_id, name, designation, linkedin_url, email, email_status, lead_status,
+       source, confidence, role_bucket, seniority, email_reason)
+    VALUES
+      ($1,$2,$3,$4,$5,$6,'New',$7,$8,$9,$10,$11)
+    ON CONFLICT (company_id, email)
+    DO UPDATE SET
+      designation = EXCLUDED.designation,
+      linkedin_url = EXCLUDED.linkedin_url,
+      email_status = EXCLUDED.email_status,
+      source = EXCLUDED.source,
+      confidence = EXCLUDED.confidence,
+      role_bucket = EXCLUDED.role_bucket,
+      seniority = EXCLUDED.seniority,
+      email_reason = EXCLUDED.email_reason
+    RETURNING id, company_id, email, confidence
+  `;
+  const vals = [
+    company_id,
+    c.name || "",
+    c.designation || "",
+    c.linkedin_url || "",
+    c.email || null,
+    c.email_status || "unknown",
+    c.source || "provider_or_pattern",
+    c.confidence ?? null,
+    c.role_bucket || null,
+    c.seniority || null,
+    c.email_reason || null,
+  ];
+  const { rows } = await pool.query(q, vals);
+  return rows[0];
+}
+
+// TODO: Wire Apollo/Clearbit/PDL here
+async function queryPrimaryProvider() {
+  return [];
+}
