@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-19T15:42:17Z",
-  "generated_human": "Fri, 19 Sep 2025 15:42:17 GMT",
+  "generated": "2025-09-19T15:44:30Z",
+  "generated_human": "Fri, 19 Sep 2025 15:44:30 GMT",
   "branch": "main",
-  "commit": "a1c63d3",
+  "commit": "c2df452",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -456,9 +456,9 @@
     },
     {
       "path": "server.js",
-      "size": 4305,
-      "mtime": "2025-09-19T15:19:37.915Z",
-      "sha256": "3bf991376a88f0941412b2028778ff80a66a5d4505bf91e8659f522ace3698f1",
+      "size": 5902,
+      "mtime": "2025-09-19T15:44:30.560Z",
+      "sha256": "6442b685dc69b4ca13376344323ec650f1a27d8be8f9e54d027ae256d5cfa615",
       "imports": [
         "import express from \"express\";",
         "import path from \"path\";",
@@ -470,7 +470,8 @@
         "import hrLeadsRouter from \"./routes/hrLeads.js\";",
         "import newsRouter from \"./routes/news.js\";",
         "import enrichRouter from \"./routes/enrich.js\";",
-        "import { signJwt } from \"./utils/jwt.js\";"
+        "import { signJwt } from \"./utils/jwt.js\";",
+        "import os from \"os\";"
       ],
       "envs": [
         "ADMIN_PASSWORD",
@@ -492,7 +493,7 @@
         "app.get(\"/api/auth/verify\", adminOnly, (_req, res) => res.json({ ok: true }));"
       ],
       "head": "import express from \"express\";\nimport path from \"path\";\nimport fs from \"fs\";\nimport { fileURLToPath } from \"url\";\n\nimport { pool } from \"./utils/db.js\";\nimport { adminOnly } from \"./utils/adminOnly.js\";\n\nimport companiesRouter from \"./routes/companies.js\";\nimport hrLeadsRouter from \"./routes/hrLeads.js\";\nimport newsRouter from \"./routes/news.js\";\nimport enrichRouter from \"./routes/enrich.js\"; // <-- refactored aggregator\nimport { signJwt } from \"./utils/jwt.js\"; // username/password login\n\nconst __filename = fileURLToPath(import.meta.url);\nconst __dirname = path.dirname(__filename);\n\nconst app = express();\nconst PORT = process.env.PORT || 10000;\n\n// ---------- Middleware ----------\napp.use(express.json({ limit: \"2mb\" }));\napp.use(express.urlencoded({ extended: true }));\n\n// ---------- Health / Diagnostics ----------\napp.get(\"/health\", (_req, res) => res.json({ ok: true }));\napp.get(\"/__diag\", async (_req, res) => {\n  let db_ok = false;\n  try { await pool.query(\"SELECT 1\"); db_ok = true; } catch {}\n  const env = [\n    \"DATABASE_URL\",\"NEVERBOUNCE_API_KEY\",\"ZEROBOUNCE_API_KEY\",\n    \"ADMIN_USERNAME\",\"ADMIN_PASSWORD\",\"JWT_SECRET\",\n    \"OPENAI_API_KEY\",\"APOLLO_API_KEY\",\"APOLLOIO_API_KEY\",\"APOLLO_TOKEN\"\n  ].reduce((o,k)=> (o[k] = !!process.env[k], o), {});\n  const routesMounted =\n    (app._router?.stack || [])\n      .filter(l => l?.route)\n      .map(l => (Object.keys(l.route.methods)[0] || \"GET\") + \" \" + l.route.path);\n  res.json({ ok: true, db_ok, env, routesMounted });\n});",
-      "tail": "// ---------- Static (dashboard SPA) ----------\nconst dashboardDist = path.join(__dirname, \"dashboard\", \"dist\");\n\nif (fs.existsSync(dashboardDist)) {\n  app.use(\n    express.static(dashboardDist, {\n      setHeaders: (res, filePath) => {\n        if (filePath.endsWith(\".html\")) {\n          res.setHeader(\"Cache-Control\", \"no-store, must-revalidate\");\n        }\n      },\n    })\n  );\n\n  const indexFile = path.join(dashboardDist, \"index.html\");\n  app.get(/^(?!\\/api\\/).*/, (_req, res) => {\n    res.setHeader(\"Cache-Control\", \"no-store, must-revalidate\");\n    res.sendFile(indexFile);\n  });\n}\n\napp.listen(PORT, () => {\n  console.log(`UPR backend listening on ${PORT}`);\n});\n"
+      "tail": "    \"UPR_ADMIN_USER\",\n    \"UPR_ADMIN_PASS\",\n    \"JWT_SECRET\",\n    \"APOLLO_API_KEY\",\n    \"OPENAI_API_KEY\",\n    \"NEVERBOUNCE_API_KEY\",\n    \"ZEROBOUNCE_API_KEY\",\n  ];\n  const env = {};\n  for (const k of envKeys) env[k] = !!process.env[k];\n\n  res.json({\n    ok: true,\n    db_ok,\n    db_error,\n    node: process.version,\n    platform: `${os.platform()} ${os.release()}`,\n    routesMounted: listRoutes(app),\n    env,\n  });\n});\napp.listen(PORT, () => {\n  console.log(`UPR backend listening on ${PORT}`);\n});\n"
     },
     {
       "path": "utils/adminOnly.js",
