@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-19T10:44:46Z",
-  "generated_human": "Fri, 19 Sep 2025 10:44:46 GMT",
+  "generated": "2025-09-19T10:58:20Z",
+  "generated_human": "Fri, 19 Sep 2025 10:58:20 GMT",
   "branch": "main",
-  "commit": "b815182",
+  "commit": "893013c",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -40,9 +40,9 @@
     },
     {
       "path": "dashboard/src/features/enrichment/EnrichmentView.jsx",
-      "size": 10616,
-      "mtime": "2025-09-19T10:44:35.539Z",
-      "sha256": "10cf4617ea450f3bb030403aa703ebe449eac427da59d620e5e41e39b0104f02",
+      "size": 15883,
+      "mtime": "2025-09-19T10:57:39.004Z",
+      "sha256": "9e69cdec88de51cac86b9386f92668b8a9d2ad9e447a408a84cb958387c608cc",
       "imports": [
         "import React, { useCallback, useEffect, useMemo, useRef, useState } from \"react\";",
         "import { authFetch } from \"../../utils/auth\";"
@@ -50,7 +50,7 @@
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "// dashboard/src/features/enrichment/EnrichmentView.jsx\nimport React, { useCallback, useEffect, useMemo, useRef, useState } from \"react\";\nimport { authFetch } from \"../../utils/auth\";\n\nexport default function EnrichmentView() {\n  const [text, setText] = useState(\"\");\n  const [err, setErr] = useState(null);\n  const [attempted, setAttempted] = useState(false);\n  const [loading, setLoading] = useState(false);\n  const [provider, setProvider] = useState(null); // 'apollo' | 'mock' | 'apollo_fallback_to_mock' | 'none' | 'error'\n  const [company, setCompany] = useState(null); // { id, name, domain, website_url }\n  const [result, setResult] = useState(null);\n\n  const inputRef = useRef(null);\n\n  useEffect(() => {\n    const onSidebarCompany = (e) => {\n      const detail = e?.detail || null;\n      setCompany(detail);\n      if (detail?.name && !text) setText(detail.name);\n    };\n    window.addEventListener(\"upr:companySidebar\", onSidebarCompany);\n    return () => window.removeEventListener(\"upr:companySidebar\", onSidebarCompany);\n  }, [text]);\n\n  const canSubmit = useMemo(() => {\n    return Boolean(company?.id) || Boolean(text && text.trim());\n  }, [company, text]);\n\n  // Free-text search (uses Apollo on server, falls back to mock)\n  const callSearch = useCallback(async (q) => {\n    const res = await authFetch(`/api/enrich/search?q=${encodeURIComponent(q)}`);\n    const raw = await res.json().catch(() => ({}));\n    if (!res.ok) throw new Error(raw?.error || \"Search failed\");\n    // server may return { ok, data, provider }\n    setProvider(raw?.data?.summary?.provider || raw?.provider || null);\n    return raw?.data || raw;\n  }, []);\n\n  // Company-selected enrichment (POST)",
+      "head": "// dashboard/src/features/enrichment/EnrichmentView.jsx\nimport React, { useCallback, useEffect, useMemo, useRef, useState } from \"react\";\nimport { authFetch } from \"../../utils/auth\";\n\n/**\n * Enrichment page:\n * - Always-on status chips (LLM / Data Source / DB)\n * - Company info side card (listens to 'upr:companySidebar')\n * - Free-text search calls /api/enrich/search (HR/Admin/Finance only)\n * - Company-selected enrich calls POST /api/enrich\n * - Select rows + \"Add to HR Leads\" (choose company in search mode)\n */\nexport default function EnrichmentView() {\n  const [text, setText] = useState(\"\");\n  const [err, setErr] = useState(null);\n  const [attempted, setAttempted] = useState(false);\n  const [loading, setLoading] = useState(false);\n\n  const [status, setStatus] = useState({ db_ok: null, llm_ok: null, data_source: null });\n\n  const [company, setCompany] = useState(null); // { id, name, domain, website_url }\n  const [result, setResult] = useState(null);\n\n  const [rowsChecked, setRowsChecked] = useState({});\n  const [companies, setCompanies] = useState([]);\n  const [saveCompanyId, setSaveCompanyId] = useState(\"\");\n\n  const inputRef = useRef(null);\n\n  /* ------------------------- status chips polling ------------------------- */\n  const loadStatus = useCallback(async () => {\n    try {\n      const r = await authFetch(\"/api/enrich/status\");\n      const j = await r.json();\n      if (j?.data) setStatus(j.data);\n    } catch {\n      setStatus((s) => ({ ...s, db_ok: false }));\n    }\n  }, []);\n",
       "tail": "\n          <div className=\"mt-4 rounded-xl border p-3 bg-gray-50\">\n            <div className=\"text-xs font-semibold mb-2 text-gray-600\">Raw response</div>\n            <pre className=\"text-xs whitespace-pre-wrap text-gray-800\">\n              {JSON.stringify(result, null, 2)}\n            </pre>\n          </div>\n        </div>\n      )}\n    </div>\n  );\n}\n\nfunction Th({ children }) {\n  return (\n    <th scope=\"col\" className=\"px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500\">\n      {children}\n    </th>\n  );\n}\n\nfunction Td({ children, className = \"\" }) {\n  return <td className={`px-3 py-2 ${className}`}>{children}</td>;\n}\n"
     },
     {
@@ -257,9 +257,9 @@
     },
     {
       "path": "routes/enrich.js",
-      "size": 16352,
-      "mtime": "2025-09-19T10:44:26.108Z",
-      "sha256": "02ebb7b909f27d2357a9437c9c0295b7e3927a3970b1b91d508aa08babe4d884",
+      "size": 19246,
+      "mtime": "2025-09-19T10:55:36.506Z",
+      "sha256": "ecb4cee0bb56251f9d9d58d0eb2405c56830427a5a52adac154a4a4be9e16c41",
       "imports": [
         "import express from \"express\";",
         "import { nanoid } from \"nanoid\";",
@@ -269,12 +269,13 @@
       "envs": [
         "APOLLOIO_API_KEY",
         "APOLLO_API_KEY",
-        "APOLLO_TOKEN"
+        "APOLLO_TOKEN",
+        "OPENAI_API_KEY"
       ],
       "appUses": [],
       "endpoints": [],
-      "head": "// routes/enrich.js\nimport express from \"express\";\nimport { nanoid } from \"nanoid\";\n\nimport { pool } from \"../utils/db.js\";\nimport {\n  scoreCandidate,\n  bucketRole,\n  bucketSeniority,\n  isAgencyRecruiter,\n} from \"../utils/patternHelpers.js\";\nimport {\n  inferPatternFromSamples,\n  applyPattern,\n  loadPatternFromCache,\n  savePatternToCache,\n} from \"../utils/emailPatterns.js\";\nimport { verifyEmail } from \"../utils/emailVerify.js\";\n\nconst router = express.Router();\n\n/* ------------------------------ ENV & consts ------------------------------ */\nconst APOLLO_API_KEY =\n  process.env.APOLLO_API_KEY ||\n  process.env.APOLLOIO_API_KEY ||\n  process.env.APOLLO_TOKEN ||\n  \"\";\nconst hasApollo = !!APOLLO_API_KEY;\n\nconst HR_TITLES = [\n  \"HR\",\n  \"Human Resources\",\n  \"People\",\n  \"Talent\",\n  \"Recruiting\",\n  \"People Operations\",\n  \"Head of People\",\n  \"HR Manager\",\n  \"HR Director\",\n];",
-      "tail": "}\n\nfunction mapWith(mappers, p) {\n  for (const m of mappers) {\n    const r = m(p);\n    if (r) return r;\n  }\n  return null;\n}\n\nfunction mapApolloPerson(p) {\n  const name = [p.first_name, p.last_name].filter(Boolean).join(\" \").trim() || p.name || \"\";\n  return {\n    source: \"apollo\",\n    name,\n    first_name: p.first_name || null,\n    last_name: p.last_name || null,\n    title: p.title || p.position || \"\",\n    designation: p.title || p.position || \"\",\n    linkedin_url: p.linkedin_url || p.linkedin || \"\",\n    email: p.email || (p.email_status === \"verified\" ? p.email : null),\n    seniority: p.seniority || null,\n  };\n}\n"
+      "head": "// routes/enrich.js\nimport express from \"express\";\nimport { nanoid } from \"nanoid\";\n\nimport { pool } from \"../utils/db.js\";\nimport {\n  scoreCandidate,\n  bucketRole,\n  bucketSeniority,\n  isAgencyRecruiter,\n} from \"../utils/patternHelpers.js\";\nimport {\n  inferPatternFromSamples,\n  applyPattern,\n  loadPatternFromCache,\n  savePatternToCache,\n} from \"../utils/emailPatterns.js\";\nimport { verifyEmail } from \"../utils/emailVerify.js\";\n\nconst router = express.Router();\n\n/* ------------------------------ ENV & consts ------------------------------ */\nconst APOLLO_API_KEY =\n  process.env.APOLLO_API_KEY ||\n  process.env.APOLLOIO_API_KEY ||\n  process.env.APOLLO_TOKEN ||\n  \"\";\nconst hasApollo = !!APOLLO_API_KEY;\n\nconst LLM_OK = !!process.env.OPENAI_API_KEY;\n\nconst HR_KEYWORDS = [\n  \"HR\",\n  \"Human Resources\",\n  \"People\",\n  \"Talent\",\n  \"Recruiting\",\n  \"People Operations\",\n  \"Head of People\",\n  \"HR Manager\",",
+      "tail": "  const org =\n    p.organization ||\n    p.company ||\n    p.employer || {\n      domain: p.organization_domain || p.company_domain || null,\n      website_url: p.organization_website_url || p.company_website_url || null,\n    };\n  const company_linkedin_url =\n    p.organization_linkedin_url || p.company_linkedin_url || p.company_linkedin || null;\n\n  return {\n    source: \"live\",\n    name,\n    first_name: p.first_name || null,\n    last_name: p.last_name || null,\n    title: p.title || p.position || \"\",\n    designation: p.title || p.position || \"\",\n    linkedin_url: p.linkedin_url || p.linkedin || \"\",\n    company_linkedin_url,\n    email: p.email || (p.email_status === \"verified\" ? p.email : null),\n    organization: org,\n    seniority: p.seniority || null,\n  };\n}\n"
     },
     {
       "path": "routes/hrLeads.js",
