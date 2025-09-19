@@ -1,23 +1,22 @@
 import React from "react";
-import { createRoot } from "react-dom/client";
-import { BrowserRouter } from "react-router-dom";
+import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
 import "./index.css";
 
-// Global error visibility (helps when errors happen before React mounts)
-window.addEventListener("error", (e) => {
-  // eslint-disable-next-line no-console
-  console.error("Global error:", e.error || e.message, e);
-});
-window.addEventListener("unhandledrejection", (e) => {
-  // eslint-disable-next-line no-console
-  console.error("Unhandled promise rejection:", e.reason);
-});
+if (!window.__UPR_GLOBAL_ERROR_WIRED__) {
+  window.__UPR_GLOBAL_ERROR_WIRED__ = true;
+  window.addEventListener("error", (e) => {
+    window.__UPR_LAST_UI_ERROR__ = e?.error || e?.message || e;
+    console.error("Global error:", e?.error || e);
+  });
+  window.addEventListener("unhandledrejection", (e) => {
+    window.__UPR_LAST_UI_ERROR__ = e?.reason || e;
+    console.error("Unhandled promise rejection:", e?.reason || e);
+  });
+}
 
-createRoot(document.getElementById("root")).render(
+ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <BrowserRouter basename="/">
-      <App />
-    </BrowserRouter>
+    <App />
   </React.StrictMode>
 );
