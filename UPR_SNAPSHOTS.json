@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-19T14:59:19Z",
-  "generated_human": "Fri, 19 Sep 2025 14:59:19 GMT",
+  "generated": "2025-09-19T15:42:17Z",
+  "generated_human": "Fri, 19 Sep 2025 15:42:17 GMT",
   "branch": "main",
-  "commit": "fedf40d",
+  "commit": "a1c63d3",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -131,19 +131,18 @@
     },
     {
       "path": "dashboard/src/pages/EnrichmentPage.jsx",
-      "size": 676,
-      "mtime": "2025-09-15T18:00:06.485Z",
-      "sha256": "0bdad841b6594fab01d8cc5fb8a43a76e775dec223c2623c7cbcb6b3029a1ba3",
+      "size": 14856,
+      "mtime": "2025-09-19T15:19:37.919Z",
+      "sha256": "31284274aed44400ce04a3177cc403a238e98bef13e3126278ae7fd350abe6e8",
       "imports": [
-        "import React, { useEffect } from \"react\";",
-        "import { useSearchParams } from \"react-router-dom\";",
-        "import EnrichmentView from \"../features/enrichment/EnrichmentView\";"
+        "import { useEffect, useMemo, useState } from \"react\";",
+        "import { authFetch } from \"../utils/auth\";"
       ],
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "import React, { useEffect } from \"react\";\nimport { useSearchParams } from \"react-router-dom\";\nimport EnrichmentView from \"../features/enrichment/EnrichmentView\";\n\n/** Thin wrapper page; company card is shown inside Sidebar via a custom event. */\nexport default function EnrichmentPage() {\n  const [sp] = useSearchParams();\n  const initialQuery = sp.get(\"q\") || \"\";\n\n  useEffect(() => {\n    // Clear sidebar company card when leaving this page\n    return () => {\n      window.dispatchEvent(new CustomEvent(\"upr:companySidebar\", { detail: null }));\n    };\n  }, []);\n\n  return <EnrichmentView initialQuery={initialQuery} onCompanyChange={() => { /* handled via event */ }} />;\n}\n",
-      "tail": "import React, { useEffect } from \"react\";\nimport { useSearchParams } from \"react-router-dom\";\nimport EnrichmentView from \"../features/enrichment/EnrichmentView\";\n\n/** Thin wrapper page; company card is shown inside Sidebar via a custom event. */\nexport default function EnrichmentPage() {\n  const [sp] = useSearchParams();\n  const initialQuery = sp.get(\"q\") || \"\";\n\n  useEffect(() => {\n    // Clear sidebar company card when leaving this page\n    return () => {\n      window.dispatchEvent(new CustomEvent(\"upr:companySidebar\", { detail: null }));\n    };\n  }, []);\n\n  return <EnrichmentView initialQuery={initialQuery} onCompanyChange={() => { /* handled via event */ }} />;\n}\n"
+      "head": "import { useEffect, useMemo, useState } from \"react\";\nimport { authFetch } from \"../utils/auth\";\n\n/**\n * EnrichmentPage\n * - Works with new backend:\n *   GET  /api/enrich/status\n *   GET  /api/enrich/search?q=...\n *   POST /api/enrich { company_id, max_contacts }\n * - UAE focus, Emirate column, status chips (Data Source / DB / LLM with timings)\n * - Left company card (from LLM guess) + \"Create & use\" or clear\n * - Save selected rows to chosen company OR quick-create from card\n */\n\nexport default function EnrichmentPage() {\n  // top status indicators\n  const [status, setStatus] = useState({ data_source: \"mock\", db_ok: false, llm_ok: false });\n  // llm-resolved company guess\n  const [guess, setGuess] = useState(null);\n  // input + results\n  const [q, setQ] = useState(\"\");\n  const [loading, setLoading] = useState(false);\n  const [err, setErr] = useState(\"\");\n  const [timings, setTimings] = useState({});\n  const [rows, setRows] = useState([]);\n  // companies list for \"save into\" dropdown\n  const [companies, setCompanies] = useState([]);\n  const [companyId, setCompanyId] = useState(\"\");\n  // selection\n  const [selected, setSelected] = useState({});\n  // raw response\n  const [showRaw, setShowRaw] = useState(false);\n  const [quality, setQuality] = useState(null);\n\n  // load status + a small page of companies for the dropdown\n  useEffect(() => {\n    (async () => {\n      try {\n        const s = await fetchJSON(\"/api/enrich/status\");\n        if (s?.ok) setStatus(s.data || {});",
+      "tail": "async function fetchJSON(url, opts = {}) {\n  const o = { ...opts };\n  if (o.body && typeof o.body !== \"string\") {\n    o.headers = { ...(o.headers || {}), \"Content-Type\": \"application/json\" };\n    o.body = JSON.stringify(o.body);\n  }\n  const res = await authFetch(url, o);\n  const json = await res.json().catch(() => ({}));\n  return json;\n}\n\nfunction Th({ children, className=\"\" }) {\n  return <th className={`px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 ${className}`}>{children}</th>;\n}\nfunction Td({ children, className=\"\", colSpan }) {\n  return <td className={`px-4 py-2 align-top ${className}`} colSpan={colSpan}>{children}</td>;\n}\nfunction Badge({ children }) {\n  return <span className=\"inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700\">{children}</span>;\n}\nfunction truncate(s, n) {\n  const t = String(s || \"\");\n  return t.length > n ? t.slice(0, n - 1) + \"…\" : t;\n}\n"
     },
     {
       "path": "dashboard/src/pages/HRLeads.jsx",
@@ -257,14 +256,14 @@
     },
     {
       "path": "routes/enrich.js",
-      "size": 25277,
-      "mtime": "2025-09-19T14:54:32.242Z",
-      "sha256": "cb71f3ff91f19408e335fa71187e939e904815036d6ea768f77af3dbe0c0608c",
+      "size": 782,
+      "mtime": "2025-09-19T15:11:20.093Z",
+      "sha256": "d51d6214c654cc5ba3317c789b27feef4ec22d5c67daa485f96d4ca09eed3119",
       "imports": [
         "import express from \"express\";",
-        "import { nanoid } from \"nanoid\";",
         "import { pool } from \"../utils/db.js\";",
-        "import { verifyEmail } from \"../utils/emailVerify.js\";"
+        "import buildSearchRouter from \"./enrich/search.js\";",
+        "import buildEnrichCompanyRouter from \"./enrich/enrichCompany.js\";"
       ],
       "envs": [
         "APOLLOIO_API_KEY",
@@ -274,8 +273,120 @@
       ],
       "appUses": [],
       "endpoints": [],
-      "head": "// routes/enrich.js\nimport express from \"express\";\nimport { nanoid } from \"nanoid\";\nimport { pool } from \"../utils/db.js\";\n\nimport {\n  bucketRole,\n  bucketSeniority,\n  isAgencyRecruiter,\n  scoreCandidate,\n} from \"../utils/patternHelpers.js\";\nimport {\n  inferPatternFromSamples,\n  applyPattern,\n  loadPatternFromCache,\n  savePatternToCache,\n} from \"../utils/emailPatterns.js\";\nimport { verifyEmail } from \"../utils/emailVerify.js\";\n\nconst router = express.Router();\n\n/* ------------------------------ ENV ------------------------------ */\nconst APOLLO_API_KEY =\n  process.env.APOLLO_API_KEY ||\n  process.env.APOLLOIO_API_KEY ||\n  process.env.APOLLO_TOKEN ||\n  \"\";\nconst OPENAI_KEY = process.env.OPENAI_API_KEY || \"\";\n\nconst HAS_APOLLO = !!APOLLO_API_KEY;\nconst LLM_OK = !!OPENAI_KEY;\n\n/* ------------------------------ Role & geo filters ------------------------------ */\nconst HR_WORDS = [\n  \"HR\",\"Human Resources\",\"People\",\"Talent\",\"Recruiting\",\"People Operations\",\n  \"Head of People\",\"HR Manager\",\"HR Director\",\"Compensation\",\"Benefits\",\"Payroll\",\n];\nconst ADMIN_WORDS = [\"Admin\",\"Administration\",\"Office Manager\",\"Executive Assistant\"];\nconst FIN_WORDS = [\"Finance\",\"Financial Controller\",\"CFO\",\"Accounts\",\"Accounting\",\"Procurement\"];\nconst ALLOWED_BUCKETS = new Set([\"hr\",\"admin\",\"finance\"]);",
-      "tail": "  const j = r.json || {};\n  const people = j.people || j.matches || j.results || [];\n  return people.map(mapApollo);\n}\nasync function apolloPeopleByName({ name, keywords, limit = 25, timings, locations = [] }) {\n  const body = {\n    q_organization_name: name,\n    q_keywords: keywords,\n    page: 1,\n    per_page: Math.min(Math.max(limit, 1), 25),\n    person_locations: locations.length ? locations : [\"United Arab Emirates\"],\n  };\n  return apolloPeopleSearch({ body, timings });\n}\nasync function apolloPeopleByDomain({ domain, keywords, limit = 25, timings, locations = [] }) {\n  const body = {\n    q_organization_domains: [domain],\n    q_keywords: keywords,\n    page: 1,\n    per_page: Math.min(Math.max(limit, 1), 25),\n    person_locations: locations.length ? locations : [\"United Arab Emirates\"],\n  };\n  return apolloPeopleSearch({ body, timings });\n}\n"
+      "head": "import express from \"express\";\nimport { pool } from \"../utils/db.js\";\nimport buildSearchRouter from \"./enrich/search.js\";\nimport buildEnrichCompanyRouter from \"./enrich/enrichCompany.js\";\n\nconst router = express.Router();\n\n// Status ping (LLM/DB/Data source)\nrouter.get(\"/status\", async (_req, res) => {\n  const llm_ok = !!process.env.OPENAI_API_KEY;\n  const data_source = process.env.APOLLO_API_KEY || process.env.APOLLOIO_API_KEY || process.env.APOLLO_TOKEN ? \"live\" : \"mock\";\n  let db_ok = false;\n  try { await pool.query(\"SELECT 1\"); db_ok = true; } catch { db_ok = false; }\n  res.json({ ok: true, data: { db_ok, llm_ok, data_source } });\n});\n\n// Mount sub-routers\nrouter.use(buildSearchRouter({ pool }));\nrouter.use(buildEnrichCompanyRouter({ pool }));\n\nexport default router;\n",
+      "tail": "import express from \"express\";\nimport { pool } from \"../utils/db.js\";\nimport buildSearchRouter from \"./enrich/search.js\";\nimport buildEnrichCompanyRouter from \"./enrich/enrichCompany.js\";\n\nconst router = express.Router();\n\n// Status ping (LLM/DB/Data source)\nrouter.get(\"/status\", async (_req, res) => {\n  const llm_ok = !!process.env.OPENAI_API_KEY;\n  const data_source = process.env.APOLLO_API_KEY || process.env.APOLLOIO_API_KEY || process.env.APOLLO_TOKEN ? \"live\" : \"mock\";\n  let db_ok = false;\n  try { await pool.query(\"SELECT 1\"); db_ok = true; } catch { db_ok = false; }\n  res.json({ ok: true, data: { db_ok, llm_ok, data_source } });\n});\n\n// Mount sub-routers\nrouter.use(buildSearchRouter({ pool }));\nrouter.use(buildEnrichCompanyRouter({ pool }));\n\nexport default router;\n"
+    },
+    {
+      "path": "routes/enrich/enrichCompany.js",
+      "size": 8900,
+      "mtime": "2025-09-19T15:11:20.099Z",
+      "sha256": "60d0c620161eede48731b18d54c5bae5eca399d186c6032f8dcf2d511122159e",
+      "imports": [
+        "import express from \"express\";",
+        "import { nanoid } from \"nanoid\";",
+        "import { qualityScore, scoreCandidate, roleBucket, bucketSeniority } from \"./lib/quality.js\";",
+        "import { emirateFromLocation, isUAE } from \"./lib/geo.js\";"
+      ],
+      "envs": [
+        "APOLLOIO_API_KEY",
+        "APOLLO_API_KEY",
+        "APOLLO_TOKEN"
+      ],
+      "appUses": [],
+      "endpoints": [],
+      "head": "import express from \"express\";\nimport { nanoid } from \"nanoid\";\nimport {\n  compactApolloKeywords, apolloPeopleByDomain,\n  deriveLocation\n} from \"./lib/apollo.js\";\nimport { qualityScore, scoreCandidate, roleBucket, bucketSeniority } from \"./lib/quality.js\";\nimport { emirateFromLocation, isUAE } from \"./lib/geo.js\";\nimport {\n  inferPatternFromSamples, applyPattern, isProviderPlaceholderEmail,\n  loadPatternFromCache, savePatternToCache, verifyEmail\n} from \"./lib/email.js\";\n\nexport default function buildEnrichCompanyRouter({ pool }) {\n  const router = express.Router();\n  const jobs = new Map();\n\n  // POST /api/enrich  { company_id, max_contacts? }\n  router.post(\"/\", async (req, res) => {\n    const { company_id, max_contacts = 3 } = req.body || {};\n    if (!company_id) return res.status(400).json({ status: \"error\", error: \"company_id_required\" });\n\n    const job_id = `enrich_${Date.now()}_${nanoid(6)}`;\n    jobs.set(job_id, { status: \"queued\", company_id, results: [], summary: {} });\n\n    try {\n      const company = await getCompany(pool, company_id);\n      if (!company) {\n        const payload = { job_id, status: \"error\", error: \"company_not_found\" };\n        jobs.set(job_id, payload);\n        return res.status(404).json(payload);\n      }\n\n      if (!company.domain && company.website_url) {\n        try {\n          const u = new URL(company.website_url.startsWith(\"http\") ? company.website_url : `https://${company.website_url}`);\n          company.domain = u.hostname.replace(/^www\\./, \"\");\n        } catch {}\n      }\n",
+      "tail": "      email_status=EXCLUDED.email_status,\n      source=EXCLUDED.source,\n      confidence=EXCLUDED.confidence,\n      role_bucket=EXCLUDED.role_bucket,\n      seniority=EXCLUDED.seniority,\n      email_reason=EXCLUDED.email_reason\n    RETURNING id, company_id, email, confidence\n  `;\n  const vals = [\n    company_id,\n    c.name || \"\",\n    c.designation || \"\",\n    c.linkedin_url || \"\",\n    c.email || null,\n    c.email_status || \"unknown\",\n    c.source || \"live\",\n    c.confidence ?? null,\n    c.role_bucket || null,\n    c.seniority || null,\n    c.email_reason || null,\n  ];\n  const { rows } = await pool.query(q, vals);\n  return rows[0];\n}\n"
+    },
+    {
+      "path": "routes/enrich/lib/apollo.js",
+      "size": 3505,
+      "mtime": "2025-09-19T15:11:20.102Z",
+      "sha256": "1fbd33800d3c83de0c50bdbf3538c98757e3afdff81edaea9d6821211a449711",
+      "imports": [],
+      "envs": [
+        "APOLLOIO_API_KEY",
+        "APOLLO_API_KEY",
+        "APOLLO_TOKEN"
+      ],
+      "appUses": [],
+      "endpoints": [],
+      "head": "const APOLLO_API_KEY = process.env.APOLLO_API_KEY || process.env.APOLLOIO_API_KEY || process.env.APOLLO_TOKEN || \"\";\n\nexport function compactApolloKeywords() {\n  // Short to avoid \"Value too long\" 422s\n  return \"HR OR Human Resources OR People OR Talent OR Recruiter OR Payroll OR Finance OR Accounting OR Admin\";\n}\n\nexport function detectOrgDomain(p) {\n  const org = p.organization || p.company || p.employer || {};\n  let d = org.domain || org.primary_domain || org.email_domain || null;\n  if (!d && org.website_url) {\n    try { d = new URL(org.website_url.startsWith(\"http\") ? org.website_url : `https://${org.website_url}`).hostname; }\n    catch {}\n  }\n  return d ? d.replace(/^www\\./, \"\").toLowerCase() : null;\n}\n\nexport function deriveLocation(p = {}) {\n  const city = p.city || p.person_city || p.current_city;\n  const region = p.state || p.region || p.person_region || p.current_region;\n  const country = p.country || p.country_name || p.person_country || p.current_country || p.location_country;\n  const raw = p.location || p.current_location || p.person_location;\n  return raw || [city, region, country].filter(Boolean).join(\", \");\n}\n\nfunction mapApollo(p) {\n  return {\n    name: [p.first_name, p.last_name].filter(Boolean).join(\" \").trim() || p.name || \"\",\n    first_name: p.first_name || null,\n    last_name: p.last_name || null,\n    title: p.title || p.position || \"\",\n    designation: p.title || p.position || \"\",\n    linkedin_url: p.linkedin_url || p.linkedin || \"\",\n    email: p.email || null,\n    organization: p.organization || p.company || p.employer || {\n      domain: p.organization_domain || p.company_domain || null,\n      website_url: p.organization_website_url || p.company_website_url || null,\n    },\n    seniority: p.seniority || null,\n    location: deriveLocation(p),",
+      "tail": "  return people.map(mapApollo);\n}\n\nexport async function apolloPeopleByName({ name, keywords, limit = 25, timings, locations = [] }) {\n  const body = {\n    q_organization_name: name,\n    q_keywords: keywords,\n    page: 1,\n    per_page: Math.min(Math.max(limit, 1), 25),\n    person_locations: locations.length ? locations : [\"United Arab Emirates\"],\n  };\n  return apolloPeopleSearch({ body, timings });\n}\n\nexport async function apolloPeopleByDomain({ domain, keywords, limit = 25, timings, locations = [] }) {\n  const body = {\n    q_organization_domains: [domain],\n    q_keywords: keywords,\n    page: 1,\n    per_page: Math.min(Math.max(limit, 1), 25),\n    person_locations: locations.length ? locations : [\"United Arab Emirates\"],\n  };\n  return apolloPeopleSearch({ body, timings });\n}\n"
+    },
+    {
+      "path": "routes/enrich/lib/email.js",
+      "size": 5155,
+      "mtime": "2025-09-19T15:11:20.112Z",
+      "sha256": "474e007346cfb50611737e527b737ff6e1647f6660ddbab3c1ec65342faa6184",
+      "imports": [],
+      "envs": [
+        "NEVERBOUNCE_API_KEY",
+        "ZEROBOUNCE_API_KEY"
+      ],
+      "appUses": [],
+      "endpoints": [],
+      "head": "/** Email helpers: patterning, cache, and verification (ZeroBounce/NeverBounce if keys present). */\n\nconst KNOWN_PATTERNS = [\n  \"first.last\",\"firstlast\",\"f.last\",\"first.l\",\"flast\",\"last.first\",\"first\",\"last\"\n];\n\nexport function isProviderPlaceholderEmail(e) {\n  if (!e) return false;\n  const s = String(e).toLowerCase();\n  return (\n    s === \"first.last\" ||\n    s === \"first.last@\" ||\n    s === \"first.last@domain.com\" ||\n    s === \"firstlast@domain.com\" ||\n    s.endsWith(\"@domain.com\") ||\n    s.startsWith(\"email_not_unlocked@\")\n  );\n}\n\nexport function applyPattern(first, last, pattern, domain) {\n  const f = String(first || \"\").toLowerCase().replace(/[^a-z]/g, \"\");\n  const l = String(last  || \"\").toLowerCase().replace(/[^a-z]/g, \"\");\n  const fl = f?.[0] || \"\"; const ll = l?.[0] || \"\";\n  let local = \"\";\n  switch (pattern) {\n    case \"first.last\":  local = `${f}.${l}`; break;\n    case \"firstlast\":   local = `${f}${l}`; break;\n    case \"f.last\":      local = `${fl}.${l}`; break;\n    case \"first.l\":     local = `${f}.${ll}`; break;\n    case \"flast\":       local = `${fl}${l}`; break;\n    case \"last.first\":  local = `${l}.${f}`; break;\n    case \"first\":       local = f; break;\n    case \"last\":        local = l; break;\n    default:            local = `${f}.${l}`;\n  }\n  return domain ? `${local}@${domain}` : local;\n}\n\nexport function inferPatternFromSamples(samples = [], domain) {\n  // samples: [{name, email}]",
+      "tail": "      u.searchParams.set(\"api_key\", ZB_KEY);\n      u.searchParams.set(\"email\", email);\n      const r = await fetch(u.toString(), { method: \"GET\" });\n      const j = await r.json().catch(() => null);\n      const s = (j?.status || \"\").toLowerCase();\n      if (s === \"valid\") return { status: \"valid\", reason: \"zerobounce\" };\n      if (s === \"invalid\") return { status: \"invalid\", reason: j?.sub_status || \"zerobounce\" };\n      if (s === \"catch-all\") return { status: \"accept_all\", reason: \"zerobounce\" };\n      return { status: \"unknown\", reason: \"zerobounce\" };\n    }\n    if (NB_KEY) {\n      const r = await fetch(\"https://api.neverbounce.com/v4/single/check?key=\"+encodeURIComponent(NB_KEY)+\"&email=\"+encodeURIComponent(email), { method: \"GET\" });\n      const j = await r.json().catch(() => null);\n      const s = (j?.result || \"\").toLowerCase();\n      if (s === \"valid\") return { status: \"valid\", reason: \"neverbounce\" };\n      if (s === \"invalid\") return { status: \"invalid\", reason: \"neverbounce\" };\n      if (s === \"catchall\" || s === \"unknown\") return { status: \"accept_all\", reason: \"neverbounce\" };\n      return { status: \"unknown\", reason: \"neverbounce\" };\n    }\n  } catch (e) {\n    console.error(\"verifyEmail error\", e);\n  }\n  return { status: \"unknown\", reason: \"no_verifier\" };\n}\n"
+    },
+    {
+      "path": "routes/enrich/lib/geo.js",
+      "size": 818,
+      "mtime": "2025-09-19T15:11:20.110Z",
+      "sha256": "9a1c71db5cb59e2a033e7be06da0c391bf3f11420222ca3e3f36cea5c4a8b3c0",
+      "imports": [],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "export const UAE_EMIRATES = [\n  { key: \"abu dhabi\", label: \"Abu Dhabi\" },\n  { key: \"dubai\", label: \"Dubai\" },\n  { key: \"sharjah\", label: \"Sharjah\" },\n  { key: \"ajman\", label: \"Ajman\" },\n  { key: \"ras al khaimah\", label: \"Ras Al Khaimah\" },\n  { key: \"umm al quwain\", label: \"Umm Al Quwain\" },\n  { key: \"fujairah\", label: \"Fujairah\" },\n];\nconst UAE_KEYS = [\"united arab emirates\",\"uae\", ...UAE_EMIRATES.map(e => e.key)];\n\nexport function emirateFromLocation(loc = \"\") {\n  const s = String(loc).toLowerCase();\n  if (!s) return null;\n  for (const e of UAE_EMIRATES) {\n    if (s.includes(e.key)) return e.label;\n  }\n  if (s.includes(\"united arab emirates\") || s === \"uae\") return \"UAE\";\n  return null;\n}\nexport function isUAE(loc = \"\") {\n  const s = String(loc).toLowerCase();\n  return UAE_KEYS.some(k => s.includes(k));\n}\n",
+      "tail": "export const UAE_EMIRATES = [\n  { key: \"abu dhabi\", label: \"Abu Dhabi\" },\n  { key: \"dubai\", label: \"Dubai\" },\n  { key: \"sharjah\", label: \"Sharjah\" },\n  { key: \"ajman\", label: \"Ajman\" },\n  { key: \"ras al khaimah\", label: \"Ras Al Khaimah\" },\n  { key: \"umm al quwain\", label: \"Umm Al Quwain\" },\n  { key: \"fujairah\", label: \"Fujairah\" },\n];\nconst UAE_KEYS = [\"united arab emirates\",\"uae\", ...UAE_EMIRATES.map(e => e.key)];\n\nexport function emirateFromLocation(loc = \"\") {\n  const s = String(loc).toLowerCase();\n  if (!s) return null;\n  for (const e of UAE_EMIRATES) {\n    if (s.includes(e.key)) return e.label;\n  }\n  if (s.includes(\"united arab emirates\") || s === \"uae\") return \"UAE\";\n  return null;\n}\nexport function isUAE(loc = \"\") {\n  const s = String(loc).toLowerCase();\n  return UAE_KEYS.some(k => s.includes(k));\n}\n"
+    },
+    {
+      "path": "routes/enrich/lib/llm.js",
+      "size": 2782,
+      "mtime": "2025-09-19T15:11:20.106Z",
+      "sha256": "7eac0af7142326c34608688fd7552d50e7a687e28fc71ac171357e44e1b5caa5",
+      "imports": [],
+      "envs": [
+        "OPENAI_API_KEY"
+      ],
+      "appUses": [],
+      "endpoints": [],
+      "head": "const OPENAI_KEY = process.env.OPENAI_API_KEY || \"\";\n\nconst STOPWORDS = /\\b(inc|llc|ltd|limited|international|intl|company|co|corp|corporation|group|holdings?|school|bank|market|solutions?)\\b/gi;\n\nexport function cleanName(s = \"\") {\n  return String(s)\n    .replace(STOPWORDS, \" \")\n    .replace(/[^a-z0-9\\s&-]/gi, \" \")\n    .replace(/\\s{2,}/g, \" \")\n    .trim();\n}\nexport function acronymOf(name = \"\") {\n  const a = name.split(/[\\s&-]+/).filter(Boolean).map(w => w[0]?.toUpperCase()).join(\"\");\n  return a || null;\n}\nexport function wordsToDomain(name = \"\") {\n  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, \"\");\n  return base ? `${base}.com` : null;\n}\n\nexport async function resolveCompanyRich(q, timings = {}) {\n  const t0 = Date.now();\n  const cleaned = cleanName(q);\n  const acr = acronymOf(cleaned);\n\n  if (!OPENAI_KEY) {\n    const domain = wordsToDomain(cleaned);\n    timings.llm_ms = (timings.llm_ms || 0) + (Date.now() - t0);\n    return {\n      name: cleaned,\n      domain,\n      website_url: domain ? `https://www.${domain}` : null,\n      linkedin_url: null,\n      hq: null,\n      industry: null,\n      size: null,\n      synonyms: [cleaned, acr].filter(Boolean),\n      mode: \"Guess\",\n    };\n  }",
+      "tail": "      obj.website_url ||= (obj.domain ? `https://www.${obj.domain}` : null);\n      obj.synonyms = Array.isArray(obj.synonyms) ? obj.synonyms : [];\n      if (acr) obj.synonyms.push(acr);\n      obj.mode = \"LLM\";\n      timings.llm_ms = (timings.llm_ms || 0) + (Date.now() - t0);\n      return obj;\n    }\n  } catch (e) {\n    console.error(\"LLM resolve failed\", e);\n  }\n  const domain = wordsToDomain(cleaned);\n  timings.llm_ms = (timings.llm_ms || 0) + (Date.now() - t0);\n  return {\n    name: cleaned,\n    domain,\n    website_url: domain ? `https://www.${domain}` : null,\n    linkedin_url: null,\n    hq: null,\n    industry: null,\n    size: null,\n    synonyms: [cleaned, acr].filter(Boolean),\n    mode: \"Guess\",\n  };\n}\n"
+    },
+    {
+      "path": "routes/enrich/lib/quality.js",
+      "size": 2358,
+      "mtime": "2025-09-19T15:11:20.108Z",
+      "sha256": "605c6255fce0e72258a5e01bd9da80853f751752b099b32d6d848b36149072a2",
+      "imports": [],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "const HR_WORDS = [\"HR\",\"Human Resources\",\"People\",\"Talent\",\"Recruiting\",\"People Operations\",\"Head of People\",\"HR Manager\",\"HR Director\",\"Compensation\",\"Benefits\",\"Payroll\"];\nconst ADMIN_WORDS = [\"Admin\",\"Administration\",\"Office Manager\",\"Executive Assistant\"];\nconst FIN_WORDS = [\"Finance\",\"Financial Controller\",\"CFO\",\"Accounts\",\"Accounting\",\"Procurement\"];\n\nexport function roleBucket(title = \"\") {\n  const t = String(title || \"\").toLowerCase();\n  if (HR_WORDS.some(k => t.includes(k.toLowerCase()))) return \"hr\";\n  if (ADMIN_WORDS.some(k => t.includes(k.toLowerCase()))) return \"admin\";\n  if (FIN_WORDS.some(k => t.includes(k.toLowerCase()))) return \"finance\";\n  return \"other\";\n}\n\nexport function bucketSeniority(title = \"\") {\n  const t = String(title).toLowerCase();\n  if (/head|chief|director|vp|vice president/.test(t)) return \"head\";\n  if (/manager|lead|principal/.test(t)) return \"manager\";\n  if (/intern|assistant|junior|assoc/.test(t)) return \"ic\";\n  return \"ic\";\n}\n\nexport function scoreCandidate({ role_bucket, seniority, geo_fit = 0.7, email_status = \"unknown\", company_match = 0.8 }) {\n  let s = 0;\n  if ([\"hr\",\"admin\",\"finance\"].includes(role_bucket)) s += 0.25;\n  if (seniority === \"head\") s += 0.15;\n  else if (seniority === \"manager\") s += 0.1;\n\n  if (geo_fit >= 1) s += 0.25; else s += 0.15;\n\n  s += Math.max(0, Math.min(1, company_match)) * 0.2;\n\n  const emailGain = { provider: 0.25, valid: 0.25, accept_all: 0.15, patterned: 0.08, unknown: 0.05, invalid: -0.2 };\n  s += emailGain[email_status] ?? 0;\n\n  return Math.max(0, Math.min(1, s));\n}\n\nexport function qualityScore({ domain, linkedin_url, uaeCount, patternConfidence, hq }) {\n  let s = 0;\n  if (domain) s += 0.2;\n  if (linkedin_url) s += 0.15;",
+      "tail": "\n  s += Math.max(0, Math.min(1, company_match)) * 0.2;\n\n  const emailGain = { provider: 0.25, valid: 0.25, accept_all: 0.15, patterned: 0.08, unknown: 0.05, invalid: -0.2 };\n  s += emailGain[email_status] ?? 0;\n\n  return Math.max(0, Math.min(1, s));\n}\n\nexport function qualityScore({ domain, linkedin_url, uaeCount, patternConfidence, hq }) {\n  let s = 0;\n  if (domain) s += 0.2;\n  if (linkedin_url) s += 0.15;\n  if (uaeCount) s += Math.min(uaeCount, 10) / 10 * 0.4;\n  if (patternConfidence) s += Math.min(Math.max(patternConfidence, 0), 1) * 0.2;\n  if (hq && /uae|united arab emirates|dubai|abu dhabi/i.test(hq)) s += 0.05;\n  s = Math.max(0, Math.min(1, s));\n  const reasons = [];\n  if (domain) reasons.push(\"has primary domain\");\n  if (linkedin_url) reasons.push(\"LinkedIn page found\");\n  if (uaeCount) reasons.push(`${uaeCount} UAE HR/admin/finance contacts`);\n  if (patternConfidence) reasons.push(`email pattern≈${Math.round(patternConfidence * 100)}%`);\n  return { score: s, explanation: reasons.join(\"; \") || \"No signals available\" };\n}\n"
+    },
+    {
+      "path": "routes/enrich/search.js",
+      "size": 6853,
+      "mtime": "2025-09-19T15:11:20.095Z",
+      "sha256": "f13e5f7c4409339d581a3818a7fc9d6e039c0f6170d4eecea1eab7e9e637efcd",
+      "imports": [
+        "import express from \"express\";",
+        "import { resolveCompanyRich, cleanName } from \"./lib/llm.js\";",
+        "import { qualityScore, scoreCandidate, roleBucket, bucketSeniority } from \"./lib/quality.js\";",
+        "import { emirateFromLocation, isUAE } from \"./lib/geo.js\";",
+        "import { applyPattern, isProviderPlaceholderEmail, verifyEmail } from \"./lib/email.js\";"
+      ],
+      "envs": [
+        "APOLLOIO_API_KEY",
+        "APOLLO_API_KEY",
+        "APOLLO_TOKEN"
+      ],
+      "appUses": [],
+      "endpoints": [],
+      "head": "import express from \"express\";\nimport { resolveCompanyRich, cleanName } from \"./lib/llm.js\";\nimport {\n  compactApolloKeywords, apolloPeopleByDomain, apolloPeopleByName,\n  detectOrgDomain, deriveLocation\n} from \"./lib/apollo.js\";\nimport { qualityScore, scoreCandidate, roleBucket, bucketSeniority } from \"./lib/quality.js\";\nimport { emirateFromLocation, isUAE } from \"./lib/geo.js\";\nimport { applyPattern, isProviderPlaceholderEmail, verifyEmail } from \"./lib/email.js\";\n\nexport default function buildSearchRouter({ pool }) {\n  const router = express.Router();\n\n  // GET /api/enrich/search?q=...\n  router.get(\"/search\", async (req, res) => {\n    const q = String(req.query.q || \"\").trim();\n    if (!q) return res.status(400).json({ ok: false, error: \"q is required\" });\n\n    const timings = {};\n    try {\n      // 1) Resolve company (LLM or guess)\n      const guess = await resolveCompanyRich(q, timings);\n\n      // 2) Query provider (Apollo) with UAE + role filters\n      const HAS_APOLLO = !!(process.env.APOLLO_API_KEY || process.env.APOLLOIO_API_KEY || process.env.APOLLO_TOKEN);\n      let people = [];\n      if (HAS_APOLLO) {\n        const keywords = compactApolloKeywords();\n        const locs = [\"United Arab Emirates\"];\n\n        if (guess.domain) {\n          people = await apolloPeopleByDomain({ domain: guess.domain, keywords, limit: 25, timings, locations: locs });\n        }\n        if (!people.length) {\n          people = await apolloPeopleByName({ name: guess.name, keywords, limit: 25, timings, locations: locs });\n        }\n        if (!people.length && Array.isArray(guess.synonyms)) {\n          for (const s of guess.synonyms) {\n            // eslint-disable-next-line no-await-in-loop\n            const batch = await apolloPeopleByName({ name: s, keywords, limit: 25, timings, locations: locs });",
+      "tail": "\n      return res.json({\n        ok: true,\n        data: {\n          status: \"completed\",\n          company_id: null,\n          results: normalized,\n          summary: {\n            total_candidates: normalized.length,\n            kept: normalized.length,\n            provider: \"live\",\n            company_guess: { ...guess, domain },\n            timings,\n            quality: qs,\n          },\n        },\n      });\n    } catch (e) {\n      return res.status(500).json({ ok: false, error: \"search_failed\" });\n    }\n  });\n\n  return router;\n}\n"
     },
     {
       "path": "routes/hrLeads.js",
@@ -345,9 +456,9 @@
     },
     {
       "path": "server.js",
-      "size": 6968,
-      "mtime": "2025-09-19T10:13:13.471Z",
-      "sha256": "a4201af1164bc51ddfeb739deaff500158593f9cbf89f2399686d6cd72e81216",
+      "size": 4305,
+      "mtime": "2025-09-19T15:19:37.915Z",
+      "sha256": "3bf991376a88f0941412b2028778ff80a66a5d4505bf91e8659f522ace3698f1",
       "imports": [
         "import express from \"express\";",
         "import path from \"path\";",
@@ -364,7 +475,9 @@
       "envs": [
         "ADMIN_PASSWORD",
         "ADMIN_USERNAME",
-        "PORT"
+        "PORT",
+        "UPR_ADMIN_PASS",
+        "UPR_ADMIN_USER"
       ],
       "appUses": [
         "app.use(express.json({ limit: \"2mb\" }));",
@@ -372,15 +485,14 @@
         "app.use(\"/api/companies\", companiesRouter);",
         "app.use(\"/api/hr-leads\", hrLeadsRouter);",
         "app.use(\"/api/news\", newsRouter);",
-        "app.use(\"/api/enrich\", enrichRouter);",
-        "app.use(\"/api/manual\", adminOnly, manualRouter);"
+        "app.use(\"/api/enrich\", enrichRouter);"
       ],
       "endpoints": [
         "app.get(\"/health\", (_req, res) => res.json({ ok: true }));",
         "app.get(\"/api/auth/verify\", adminOnly, (_req, res) => res.json({ ok: true }));"
       ],
-      "head": "// server.js\nimport express from \"express\";\nimport path from \"path\";\nimport fs from \"fs\";\nimport { fileURLToPath } from \"url\";\n\nimport { pool } from \"./utils/db.js\";\nimport { adminOnly } from \"./utils/adminOnly.js\";\n\nimport companiesRouter from \"./routes/companies.js\";\nimport hrLeadsRouter from \"./routes/hrLeads.js\";\nimport newsRouter from \"./routes/news.js\";\nimport enrichRouter from \"./routes/enrich.js\";\nimport { signJwt } from \"./utils/jwt.js\"; // username/password login\n\nconst __filename = fileURLToPath(import.meta.url);\nconst __dirname = path.dirname(__filename);\n\nconst app = express();\nconst PORT = process.env.PORT || 10000;\n\n// ---------- Middleware ----------\napp.use(express.json({ limit: \"2mb\" }));\napp.use(express.urlencoded({ extended: true }));\n\n// ---------- Health ----------\napp.get(\"/health\", (_req, res) => res.json({ ok: true }));\napp.get(\"/__diag\", async (_req, res) => {\n  try {\n    await pool.query(\"SELECT 1\");\n    res.json({ ok: true, db_ok: true });\n  } catch (err) {\n    res.status(500).json({ ok: false, db_ok: false, error: String(err?.message || err) });\n  }\n});\n\n// ---------- Auth (username/password only) ----------\napp.post(\"/api/auth/login\", async (req, res) => {\n  try {\n    const { username, password } = req.body || {};",
-      "tail": "  // SPA fallback: anything not under /api/* returns index.html with no-store\n  app.get(/^(?!\\/api\\/).*/, (_req, res) => {\n    res.setHeader(\"Cache-Control\", \"no-store, must-revalidate\");\n    res.sendFile(indexFile);\n  });\n}\n\napp.listen(PORT, () => {\n  console.log(`UPR backend listening on ${PORT}`);\n});\n\n// (kept as in your original file)\napp.get(\"/__diag\", (req, res) => {\n  res.json({\n    ok: true,\n    env: [\n      \"DATABASE_URL\",\"NEVERBOUNCE_API_KEY\",\"ZEROBOUNCE_API_KEY\",\n      \"UPR_ADMIN_USER\",\"UPR_ADMIN_PASS\",\"JWT_SECRET\"\n    ].filter(Boolean).reduce((o,k)=> (o[k] = !!process.env[k], o), {}),\n    routesMounted: (app._router?.stack || [])\n      .filter(l => l?.route)\n      .map(l => Object.keys(l.route.methods)[0] + \" \" + l.route.path)\n  });\n});\n"
+      "head": "import express from \"express\";\nimport path from \"path\";\nimport fs from \"fs\";\nimport { fileURLToPath } from \"url\";\n\nimport { pool } from \"./utils/db.js\";\nimport { adminOnly } from \"./utils/adminOnly.js\";\n\nimport companiesRouter from \"./routes/companies.js\";\nimport hrLeadsRouter from \"./routes/hrLeads.js\";\nimport newsRouter from \"./routes/news.js\";\nimport enrichRouter from \"./routes/enrich.js\"; // <-- refactored aggregator\nimport { signJwt } from \"./utils/jwt.js\"; // username/password login\n\nconst __filename = fileURLToPath(import.meta.url);\nconst __dirname = path.dirname(__filename);\n\nconst app = express();\nconst PORT = process.env.PORT || 10000;\n\n// ---------- Middleware ----------\napp.use(express.json({ limit: \"2mb\" }));\napp.use(express.urlencoded({ extended: true }));\n\n// ---------- Health / Diagnostics ----------\napp.get(\"/health\", (_req, res) => res.json({ ok: true }));\napp.get(\"/__diag\", async (_req, res) => {\n  let db_ok = false;\n  try { await pool.query(\"SELECT 1\"); db_ok = true; } catch {}\n  const env = [\n    \"DATABASE_URL\",\"NEVERBOUNCE_API_KEY\",\"ZEROBOUNCE_API_KEY\",\n    \"ADMIN_USERNAME\",\"ADMIN_PASSWORD\",\"JWT_SECRET\",\n    \"OPENAI_API_KEY\",\"APOLLO_API_KEY\",\"APOLLOIO_API_KEY\",\"APOLLO_TOKEN\"\n  ].reduce((o,k)=> (o[k] = !!process.env[k], o), {});\n  const routesMounted =\n    (app._router?.stack || [])\n      .filter(l => l?.route)\n      .map(l => (Object.keys(l.route.methods)[0] || \"GET\") + \" \" + l.route.path);\n  res.json({ ok: true, db_ok, env, routesMounted });\n});",
+      "tail": "// ---------- Static (dashboard SPA) ----------\nconst dashboardDist = path.join(__dirname, \"dashboard\", \"dist\");\n\nif (fs.existsSync(dashboardDist)) {\n  app.use(\n    express.static(dashboardDist, {\n      setHeaders: (res, filePath) => {\n        if (filePath.endsWith(\".html\")) {\n          res.setHeader(\"Cache-Control\", \"no-store, must-revalidate\");\n        }\n      },\n    })\n  );\n\n  const indexFile = path.join(dashboardDist, \"index.html\");\n  app.get(/^(?!\\/api\\/).*/, (_req, res) => {\n    res.setHeader(\"Cache-Control\", \"no-store, must-revalidate\");\n    res.sendFile(indexFile);\n  });\n}\n\napp.listen(PORT, () => {\n  console.log(`UPR backend listening on ${PORT}`);\n});\n"
     },
     {
       "path": "utils/adminOnly.js",

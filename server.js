@@ -1,4 +1,3 @@
-// server.js
 import express from "express";
 import path from "path";
 import fs from "fs";
@@ -10,7 +9,7 @@ import { adminOnly } from "./utils/adminOnly.js";
 import companiesRouter from "./routes/companies.js";
 import hrLeadsRouter from "./routes/hrLeads.js";
 import newsRouter from "./routes/news.js";
-import enrichRouter from "./routes/enrich.js";
+import enrichRouter from "./routes/enrich.js"; // <-- refactored aggregator
 import { signJwt } from "./utils/jwt.js"; // username/password login
 
 const __filename = fileURLToPath(import.meta.url);
@@ -23,33 +22,38 @@ const PORT = process.env.PORT || 10000;
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 
-// ---------- Health ----------
+// ---------- Health / Diagnostics ----------
 app.get("/health", (_req, res) => res.json({ ok: true }));
 app.get("/__diag", async (_req, res) => {
-  try {
-    await pool.query("SELECT 1");
-    res.json({ ok: true, db_ok: true });
-  } catch (err) {
-    res.status(500).json({ ok: false, db_ok: false, error: String(err?.message || err) });
-  }
+  let db_ok = false;
+  try { await pool.query("SELECT 1"); db_ok = true; } catch {}
+  const env = [
+    "DATABASE_URL","NEVERBOUNCE_API_KEY","ZEROBOUNCE_API_KEY",
+    "ADMIN_USERNAME","ADMIN_PASSWORD","JWT_SECRET",
+    "OPENAI_API_KEY","APOLLO_API_KEY","APOLLOIO_API_KEY","APOLLO_TOKEN"
+  ].reduce((o,k)=> (o[k] = !!process.env[k], o), {});
+  const routesMounted =
+    (app._router?.stack || [])
+      .filter(l => l?.route)
+      .map(l => (Object.keys(l.route.methods)[0] || "GET") + " " + l.route.path);
+  res.json({ ok: true, db_ok, env, routesMounted });
 });
 
 // ---------- Auth (username/password only) ----------
 app.post("/api/auth/login", async (req, res) => {
   try {
     const { username, password } = req.body || {};
-    const u = process.env.ADMIN_USERNAME || "admin";
-    const p = process.env.ADMIN_PASSWORD || "admin123";
+    const u = process.env.ADMIN_USERNAME || process.env.UPR_ADMIN_USER || "admin";
+    const p = process.env.ADMIN_PASSWORD || process.env.UPR_ADMIN_PASS || "admin123";
 
-    if (!username || !password) {
+    if (!username || !password)
       return res.status(400).json({ ok: false, error: "missing credentials" });
-    }
-    if (String(username) !== String(u) || String(password) !== String(p)) {
+    if (String(username) !== String(u) || String(password) !== String(p))
       return res.status(401).json({ ok: false, error: "invalid credentials" });
-    }
+
     const token = signJwt({ sub: "admin", role: "admin" }, "12h");
     return res.json({ ok: true, token });
-  } catch (e) {
+  } catch {
     return res.status(500).json({ ok: false, error: "login failed" });
   }
 });
@@ -70,7 +74,6 @@ app.get("/api/stats", adminOnly, async (_req, res) => {
   const companies = await safeCount(`SELECT COUNT(*) FROM companies`);
   const leads     = await safeCount(`SELECT COUNT(*) FROM hr_leads`);
   const new7d     = await safeCount(`SELECT COUNT(*) FROM hr_leads WHERE created_at >= NOW() - INTERVAL '7 days'`);
-  // Outreach: if you have a messages/outreach table, replace this; otherwise we approximate:
   const outreach  = await safeCount(`SELECT COUNT(*) FROM hr_leads WHERE status ILIKE 'contacted' OR status ILIKE 'outreach%'`);
 
   let recent = [];
@@ -86,10 +89,7 @@ app.get("/api/stats", adminOnly, async (_req, res) => {
     recent = [];
   }
 
-  res.json({
-    ok: true,
-    data: { companies, leads, outreach, new7d, recent }
-  });
+  res.json({ ok: true, data: { companies, leads, outreach, new7d, recent } });
 });
 
 // ---------- API Routers ----------
@@ -98,84 +98,13 @@ app.use("/api/hr-leads", hrLeadsRouter);
 app.use("/api/news", newsRouter);
 app.use("/api/enrich", enrichRouter);
 
-// ---------- Minimal additive manual endpoints ----------
-// Secured with adminOnly, non-invasive alongside existing routers.
-const manualRouter = express.Router();
-
-/**
- * POST /api/manual/companies
- * body: { name, website_url?, linkedin_url?, type?, status?, locations?: string[] }
- */
-manualRouter.post("/companies", async (req, res) => {
-  try {
-    const { name, website_url, linkedin_url, type, status, locations } = req.body || {};
-    if (!name || !String(name).trim()) {
-      return res.status(400).json({ error: "name is required" });
-    }
-
-    const q = `
-      INSERT INTO targeted_companies (name, website_url, linkedin_url, type, status, locations)
-      VALUES ($1,$2,$3,$4,$5,COALESCE($6,'{}'::text[]))
-      RETURNING id, name
-    `;
-    const vals = [
-      String(name).trim(),
-      website_url || null,
-      linkedin_url || null,
-      type || null,
-      status || "New",
-      Array.isArray(locations) ? locations : null,
-    ];
-    const { rows } = await pool.query(q, vals);
-    return res.json({ ok: true, data: rows[0] });
-  } catch (e) {
-    console.error("manual companies error:", e);
-    return res.status(500).json({ error: "server_error" });
-  }
-});
-
-/**
- * POST /api/manual/hr-leads
- * body: { company_id, name, designation?, email?, linkedin_url? }
- */
-manualRouter.post("/hr-leads", async (req, res) => {
-  try {
-    const { company_id, name, designation, email, linkedin_url } = req.body || {};
-    if (!company_id) return res.status(400).json({ error: "company_id is required" });
-    if (!name || !String(name).trim()) return res.status(400).json({ error: "name is required" });
-
-    const q = `
-      INSERT INTO hr_leads (company_id, name, designation, email, linkedin_url, email_status, lead_status, source, confidence)
-      VALUES ($1,$2,$3,$4,$5,'manual','New','manual',0.5)
-      ON CONFLICT (company_id, email) DO NOTHING
-      RETURNING id, company_id, email
-    `;
-    const vals = [
-      company_id,
-      String(name).trim(),
-      designation || null,
-      email || null,
-      linkedin_url || null,
-    ];
-    const { rows } = await pool.query(q, vals);
-    return res.json({ ok: true, data: rows[0] || null });
-  } catch (e) {
-    console.error("manual hr-leads error:", e);
-    return res.status(500).json({ error: "server_error" });
-  }
-});
-
-app.use("/api/manual", adminOnly, manualRouter);
-
 // ---------- Static (dashboard SPA) ----------
 const dashboardDist = path.join(__dirname, "dashboard", "dist");
 
-// serve static assets (cache) but *not* index.html
 if (fs.existsSync(dashboardDist)) {
   app.use(
     express.static(dashboardDist, {
       setHeaders: (res, filePath) => {
-        // don’t cache HTML (especially index.html)
         if (filePath.endsWith(".html")) {
           res.setHeader("Cache-Control", "no-store, must-revalidate");
         }
@@ -184,8 +113,6 @@ if (fs.existsSync(dashboardDist)) {
   );
 
   const indexFile = path.join(dashboardDist, "index.html");
-
-  // SPA fallback: anything not under /api/* returns index.html with no-store
   app.get(/^(?!\/api\/).*/, (_req, res) => {
     res.setHeader("Cache-Control", "no-store, must-revalidate");
     res.sendFile(indexFile);
@@ -194,18 +121,4 @@ if (fs.existsSync(dashboardDist)) {
 
 app.listen(PORT, () => {
   console.log(`UPR backend listening on ${PORT}`);
-});
-
-// (kept as in your original file)
-app.get("/__diag", (req, res) => {
-  res.json({
-    ok: true,
-    env: [
-      "DATABASE_URL","NEVERBOUNCE_API_KEY","ZEROBOUNCE_API_KEY",
-      "UPR_ADMIN_USER","UPR_ADMIN_PASS","JWT_SECRET"
-    ].filter(Boolean).reduce((o,k)=> (o[k] = !!process.env[k], o), {}),
-    routesMounted: (app._router?.stack || [])
-      .filter(l => l?.route)
-      .map(l => Object.keys(l.route.methods)[0] + " " + l.route.path)
-  });
 });

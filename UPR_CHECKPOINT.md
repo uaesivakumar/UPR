@@ -1,8 +1,8 @@
 # UPR — Project Checkpoint (auto)
 
-**Generated:** 2025-09-19T14:59:19Z  
+**Generated:** 2025-09-19T15:42:17Z  
 **Branch:** main  
-**Commit:** fedf40d
+**Commit:** a1c63d3
 **Package:** upr-dashboard
 
 ---
@@ -17,7 +17,7 @@
 <details><summary>Click to expand</summary>
 
 ```
-# Generated: 2025-09-19T14:59:19Z
+# Generated: 2025-09-19T15:42:17Z
 .DS_Store
 .dockerignore
 .githooks/pre-commit
@@ -71,6 +71,13 @@ project-structure.txt
 routes/companies.js
 routes/email.js
 routes/enrich.js
+routes/enrich/enrichCompany.js
+routes/enrich/lib/apollo.js
+routes/enrich/lib/email.js
+routes/enrich/lib/geo.js
+routes/enrich/lib/llm.js
+routes/enrich/lib/quality.js
+routes/enrich/search.js
 routes/hrLeads.js
 routes/news.js
 routes/sourcing.js
@@ -136,6 +143,13 @@ dashboard/src/pages/MessagesPage.jsx
 routes/companies.js
 routes/email.js
 routes/enrich.js
+routes/enrich/enrichCompany.js
+routes/enrich/lib/apollo.js
+routes/enrich/lib/email.js
+routes/enrich/lib/geo.js
+routes/enrich/lib/llm.js
+routes/enrich/lib/quality.js
+routes/enrich/search.js
 routes/hrLeads.js
 routes/news.js
 routes/sourcing.js
