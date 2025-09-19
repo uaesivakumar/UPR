@@ -1,73 +1,81 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { useMemo } from "react";
+import { useEffect, useState } from "react";
 
-function CompanyCard({ company }) {
-  const c = company || {};
-  return (
-    <div className="rounded-xl border border-zinc-200 p-4 mt-6">
-      <div className="text-xs uppercase tracking-wider text-zinc-500 mb-2">Company</div>
-      {!c.name ? (
-        <div className="text-sm text-zinc-500">
-          No company selected. Pick one in <a className="underline" href="/companies">Companies</a> or use LLM on the{" "}
-          <a className="underline" href="/enrichment">Enrichment</a> page.
-        </div>
-      ) : (
-        <>
-          <div className="font-semibold leading-tight">{c.name}</div>
-          <div className="text-xs text-zinc-500 mt-1">Domain: {c.domain || "—"}</div>
-          <div className="text-xs text-zinc-500">Mode: {c.mode || "—"}</div>
-          {c.website_url && (
-            <div className="text-xs mt-2">
-              <a className="text-blue-600 underline" href={c.website_url} target="_blank" rel="noreferrer">Website</a>
-            </div>
-          )}
-          {c.linkedin_url && (
-            <div className="text-xs mt-1">
-              <a className="text-blue-600 underline" href={c.linkedin_url} target="_blank" rel="noreferrer">LinkedIn</a>
-            </div>
-          )}
-          {(c.hq || c.industry || c.size) && (
-            <div className="text-xs text-zinc-600 mt-2 space-y-0.5">
-              {c.hq && <div>HQ: {c.hq}</div>}
-              {c.industry && <div>Industry: {c.industry}</div>}
-              {c.size && <div>Size: {c.size}</div>}
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
+// Reads the last selected company (if any) from localStorage.
+// Pages can set it via: localStorage.setItem("upr.company.sidebar", JSON.stringify(company))
+function useSidebarCompany() {
+  const [company, setCompany] = useState(null);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("upr.company.sidebar");
+      if (raw) setCompany(JSON.parse(raw));
+    } catch (_) {
+      // ignore parse errors
+    }
+  }, []);
+  return company;
 }
 
-export default function Sidebar({ company }) {
+export default function Sidebar() {
   const loc = useLocation();
-  const links = useMemo(() => ([
-    { to: "/", label: "Dashboard" },
-    { to: "/companies", label: "Companies" },
-    { to: "/hr-leads", label: "HR Leads" },
-    { to: "/enrichment", label: "Enrichment" },
-    { to: "/messages", label: "Messages" },
-  ]), []);
+  const company = useSidebarCompany();
+
+  const item = (to, label) => (
+    <NavLink
+      to={to}
+      className={({ isActive }) =>
+        `block rounded-md px-3 py-2 text-sm font-medium ${
+          isActive ? "bg-gray-900 text-white" : "text-gray-700 hover:bg-gray-100"
+        }`
+      }
+    >
+      {label}
+    </NavLink>
+  );
 
   return (
-    <aside className="w-[240px] shrink-0 px-4 py-6 border-r border-zinc-200">
-      <div className="text-lg font-semibold mb-6">UAE Premium Radar</div>
-      <nav className="flex flex-col gap-1">
-        {links.map(l => (
-          <NavLink
-            key={l.to}
-            to={l.to}
-            className={({ isActive }) =>
-              "px-3 py-2 rounded-lg text-sm " +
-              (isActive ? "bg-zinc-900 text-white" : "text-zinc-700 hover:bg-zinc-100")
-            }
-            end={l.to === "/"}
-          >
-            {l.label}
-          </NavLink>
-        ))}
+    <aside className="w-64 shrink-0 border-r bg-white min-h-screen">
+      <div className="p-4 text-xs font-semibold tracking-wide text-gray-500">UAE Premium Radar</div>
+      <nav className="px-3 space-y-1">
+        {item("/dashboard", "Dashboard")}
+        {item("/companies", "Companies")}
+        {item("/hr-leads", "HR Leads")}
+        {item("/enrichment", "Enrichment")}
+        {item("/messages", "Messages")}
       </nav>
-      <CompanyCard company={company} />
+
+      {/* Company card (safe if unavailable) */}
+      <div className="p-4">
+        <div className="text-xs font-semibold tracking-wide text-gray-500 mb-2">Company</div>
+        {company ? (
+          <div className="rounded-lg border p-3 text-sm">
+            <div className="font-semibold">{company.name || "—"}</div>
+            <div className="text-gray-600">
+              Domain: <span className="font-mono">{company.domain || "—"}</span>
+            </div>
+            {company.website_url ? (
+              <a
+                href={company.website_url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-blue-600 underline text-xs"
+              >
+                {company.website_url}
+              </a>
+            ) : null}
+            {company.hq ? <div className="text-xs text-gray-600 mt-1">HQ: {company.hq}</div> : null}
+            {company.industry ? (
+              <div className="text-xs text-gray-600">Industry: {company.industry}</div>
+            ) : null}
+            {company.size ? <div className="text-xs text-gray-600">Size: {company.size}</div> : null}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed p-3 text-xs text-gray-600">
+            No company selected. Pick one in <span className="font-medium">Companies</span> or use LLM on the{" "}
+            <span className="font-medium">Enrichment</span> page.
+          </div>
+        )}
+      </div>
     </aside>
   );
 }
