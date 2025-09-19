@@ -49,6 +49,22 @@ const jobs = new Map();
 
 /* ------------------------------ tiny helpers ------------------------------ */
 
+function safeLog(...args) {
+  try {
+    console.error(...args);
+  } catch {}
+}
+
+async function safeCall(fn, args) {
+  try {
+    const out = await fn(args);
+    return Array.isArray(out) ? out : out ? [out] : [];
+  } catch (e) {
+    safeLog("[safeCall] error:", e);
+    return [];
+  }
+}
+
 function makeMockFromText(q) {
   const domain = q.toLowerCase().replace(/\s+/g, "") + ".com";
   const results = [
@@ -154,11 +170,9 @@ function roleBucketFromTitle(title = "") {
 }
 
 /* --------------------------------- LLM ----------------------------------- */
-// Best-effort resolver: turn free-text company string into {name, domain, synonyms[]}
 async function resolveCompanyFromQuery(q) {
   const cleaned = cleanCompanyName(q);
   const acronym = makeAcronym(cleaned);
-  // some curated synonyms for high-value cases
   const curated = [
     { match: /kellogg\s*brown\s*and\s*root/i, name: "KBR", domain: "kbr.com", synonyms: ["KBR", "Kellogg Brown & Root"] },
   ];
@@ -166,7 +180,6 @@ async function resolveCompanyFromQuery(q) {
     if (c.match.test(q)) return { name: c.name, domain: c.domain, synonyms: c.synonyms };
   }
 
-  // LLM route (optional)
   if (LLM_OK) {
     try {
       const resp = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -185,10 +198,7 @@ async function resolveCompanyFromQuery(q) {
               content:
                 "You convert noisy company names to a JSON {name, domain, synonyms} where domain is the primary public website domain (e.g., 'kbr.com'). Only output valid JSON.",
             },
-            {
-              role: "user",
-              content: `Company: "${q}"`,
-            },
+            { role: "user", content: `Company: "${q}"` },
           ],
         }),
       });
@@ -204,17 +214,11 @@ async function resolveCompanyFromQuery(q) {
         }
       }
     } catch {
-      // ignore — fall through to heuristics
+      /* ignore */
     }
   }
 
-  // Heuristic fallback
-  const guess = {
-    name: cleaned,
-    domain: null,
-    synonyms: [cleaned, acronym].filter(Boolean),
-  };
-  return guess;
+  return { name: cleaned, domain: null, synonyms: [cleaned, acronym].filter(Boolean) };
 }
 
 /* -------------------------------- Status --------------------------------- */
@@ -240,139 +244,138 @@ router.get("/status", async (_req, res) => {
 router.get("/mock", async (req, res) => {
   const q = (req.query.q || "").toString().trim();
   if (!q) return res.status(400).json({ error: "q is required" });
-  return res.json(makeMockFromText(q));
+  const mock = makeMockFromText(q);
+  mock.summary.provider = "mock";
+  return res.json({ ok: true, data: mock });
 });
 
 /* ----------------------- Free-text provider SEARCH ------------------------ */
-/**
- * GET /api/enrich/search?q=...
- * Strategy:
- *  1) Apollo search by name with HR/Admin/Finance keywords
- *  2) If empty, LLM/heuristics => resolve domain & synonyms; try domain search
- *  3) If still empty, loosen keywords and retry by name + synonyms
- *  4) If still empty → mock
- * Also returns summary.company_guess to help the UI pick a save target.
- */
 router.get("/search", async (req, res) => {
   const q = (req.query.q || "").toString().trim();
   if (!q) return res.status(400).json({ error: "q is required" });
 
-  const allKeywords = [...HR_KEYWORDS, ...ADMIN_KEYWORDS, ...FINANCE_KEYWORDS].join(" OR ");
-  let people = [];
-  let companyGuess = null;
+  try {
+    const allKeywords = [...HR_KEYWORDS, ...ADMIN_KEYWORDS, ...FINANCE_KEYWORDS].join(" OR ");
+    let people = [];
+    let companyGuess = null;
 
-  if (hasApollo) {
-    // try by name (filtered)
-    people = await safeCall(apolloPeopleSearchByText, {
-      q,
-      limit: 20,
-      geo: "United Arab Emirates",
-      keywords: allKeywords,
-    });
+    if (hasApollo) {
+      // 1) try by organization name (filtered)
+      people = await safeCall(apolloPeopleSearchByText, {
+        q,
+        limit: 20,
+        geo: "United Arab Emirates",
+        keywords: allKeywords,
+      });
 
-    // If nothing, resolve company & try domain
-    if (!people.length) {
-      companyGuess = await resolveCompanyFromQuery(q);
-      if (companyGuess?.domain) {
-        people = await safeCall(apolloPeopleSearchByDomain, {
-          domain: companyGuess.domain,
-          limit: 20,
-          geo: "United Arab Emirates",
-          keywords: allKeywords,
-        });
+      // 2) resolve company & try domain
+      if (!people.length) {
+        companyGuess = await resolveCompanyFromQuery(q);
+        if (companyGuess?.domain) {
+          people = await safeCall(apolloPeopleSearchByDomain, {
+            domain: companyGuess.domain,
+            limit: 20,
+            geo: "United Arab Emirates",
+            keywords: allKeywords,
+          });
+        }
       }
-    }
 
-    // Still nothing? Loosen search by trying synonyms & no keywords
-    if (!people.length) {
-      const synonyms = (companyGuess?.synonyms || []).slice(0, 3);
-      const namesToTry = [q, cleanCompanyName(q), ...synonyms].filter(Boolean);
-      for (const name of namesToTry) {
-        const batch = await safeCall(apolloPeopleSearchByText, {
-          q: name,
-          limit: 20,
-          geo: "United Arab Emirates",
-          keywords: undefined, // loosen
-        });
-        if (batch.length) {
-          people = batch;
-          break;
+      // 3) loosen by synonyms / no keywords
+      if (!people.length) {
+        const synonyms = (companyGuess?.synonyms || []).slice(0, 3);
+        const namesToTry = [q, cleanCompanyName(q), ...synonyms].filter(Boolean);
+        for (const name of namesToTry) {
+          const batch = await safeCall(apolloPeopleSearchByText, {
+            q: name,
+            limit: 20,
+            geo: "United Arab Emirates",
+            keywords: undefined,
+          });
+          if (batch.length) {
+            people = batch;
+            break;
+          }
         }
       }
     }
-  }
 
-  if (!people.length) {
-    const mock = makeMockFromText(q);
-    // include whatever guess we had so UI can still preselect a save target
-    if (companyGuess) mock.summary.company_guess = companyGuess;
+    if (!people.length) {
+      const mock = makeMockFromText(q);
+      if (companyGuess) mock.summary.company_guess = companyGuess;
+      mock.summary.provider = hasApollo ? "mock_fallback" : "mock";
+      return res.json({ ok: true, data: mock });
+    }
+
+    // Normalize + filter + email pattern if locked
+    let domain =
+      people
+        .map(detectDomainFromCandidate)
+        .filter(Boolean)
+        .map((s) => s.replace(/^www\./, ""))
+        .find(Boolean) || companyGuess?.domain || null;
+
+    const results = [];
+    for (const p of people) {
+      const title = p.title || p.position || p.designation || "";
+      const rb = roleBucketFromTitle(title);
+      if (!ALLOWED_BUCKETS.has(rb)) continue;
+
+      const seniority = bucketSeniority(title || "");
+      let email = p.email || null;
+      let email_status = p.email ? "provider" : "unknown";
+      let email_reason;
+
+      if (email && /^email_not_unlocked@/i.test(email)) {
+        email = null;
+        email_status = "unknown";
+        email_reason = "provider_locked_email";
+      }
+
+      const first = p.first_name || guessFirst(p.name || "");
+      const last = p.last_name || guessLast(p.name || "");
+
+      if (!email && domain && first && last) {
+        email = applyPattern(first, last, "first.last", domain);
+        email_status = "patterned";
+        email_reason = "pattern_guess";
+      }
+
+      results.push({
+        name: [first, last].filter(Boolean).join(" ").trim() || p.name || "",
+        designation: title,
+        linkedin_url: p.linkedin_url || p.linkedin || "",
+        email,
+        email_status,
+        email_reason,
+        role_bucket: rb,
+        seniority,
+        source: "live",
+        confidence: 0.85,
+      });
+    }
+
     return res.json({
       ok: true,
-      data: mock,
-      provider: hasApollo ? "live_fallback_to_mock" : "mock_only",
-    });
-  }
-
-  // Normalize + role filter + pattern if locked
-  let domain =
-    people
-      .map(detectDomainFromCandidate)
-      .filter(Boolean)
-      .map((s) => s.replace(/^www\./, ""))
-      .find(Boolean) || companyGuess?.domain || null;
-
-  const results = [];
-  for (const p of people) {
-    const title = p.title || p.position || p.designation || "";
-    const rb = roleBucketFromTitle(title);
-    if (!ALLOWED_BUCKETS.has(rb)) continue; // HR/Admin/Finance only
-    const seniority = bucketSeniority(title || "");
-    let email = p.email || null;
-    let email_status = p.email ? "provider" : "unknown";
-    let email_reason;
-
-    if (email && /^email_not_unlocked@/i.test(email)) {
-      email = null;
-      email_status = "unknown";
-      email_reason = "provider_locked_email";
-    }
-
-    const first = p.first_name || guessFirst(p.name || "");
-    const last = p.last_name || guessLast(p.name || "");
-    if (!email && domain && first && last) {
-      email = applyPattern(first, last, "first.last", domain);
-      email_status = "patterned";
-      email_reason = email_reason || "pattern_guess";
-    }
-
-    results.push({
-      name: [first, last].filter(Boolean).join(" ").trim() || p.name || "",
-      designation: title,
-      linkedin_url: p.linkedin_url || p.linkedin || "",
-      email,
-      email_status,
-      email_reason,
-      role_bucket: rb,
-      seniority,
-      source: "live",
-      confidence: 0.85,
-    });
-  }
-
-  return res.json({
-    ok: true,
-    data: {
-      status: "completed",
-      company_id: null,
-      results,
-      summary: {
-        total_candidates: results.length,
-        kept: results.length,
-        provider: "live", // this run actually used the live provider
-        company_guess: companyGuess || (domain ? { name: cleanCompanyName(q), domain } : null),
+      data: {
+        status: "completed",
+        company_id: null,
+        results,
+        summary: {
+          total_candidates: results.length,
+          kept: results.length,
+          provider: "live",
+          company_guess: companyGuess || (domain ? { name: cleanCompanyName(q), domain } : null),
+        },
       },
-    },
-  });
+    });
+  } catch (e) {
+    safeLog("search route error:", e);
+    // never 500 out: send a safe fallback so UI doesn’t show “Search failed”
+    const mock = makeMockFromText(q);
+    mock.summary.provider = "error_fallback";
+    return res.json({ ok: true, data: mock });
+  }
 });
 
 /* ------------------------ Company-selected ENRICH ------------------------- */
@@ -507,7 +510,7 @@ router.post("/", async (req, res) => {
         const row = await upsertHrLead(company_id, c);
         saved.push(row);
       } catch (e) {
-        if (String(e?.code) !== "42P01") console.error("hr_leads upsert error:", e);
+        if (String(e?.code) !== "42P01") safeLog("hr_leads upsert error:", e);
       }
     }
     const primary = saved[0]?.id || null;
@@ -538,7 +541,7 @@ router.post("/", async (req, res) => {
     jobs.set(job_id, result);
     return res.status(202).json({ job_id, ...result });
   } catch (err) {
-    console.error("enrich job error:", err);
+    safeLog("enrich job error:", err);
     const payload = { job_id, status: "error", error: "exception" };
     jobs.set(job_id, payload);
     return res.status(500).json(payload);
@@ -674,11 +677,11 @@ async function safeFetch(url, init) {
       json = await res.json();
     } catch {}
     if (!res.ok) {
-      console.warn("apollo non-200", res.status, json || (await res.text().catch(() => "")));
+      safeLog("apollo non-200", res.status, json || (await res.text().catch(() => "")));
     }
     return { ok: res.ok, status: res.status, json };
   } catch (e) {
-    console.error("apollo fetch error", e);
+    safeLog("apollo fetch error", e);
     return { ok: false, status: 0, json: null };
   }
 }

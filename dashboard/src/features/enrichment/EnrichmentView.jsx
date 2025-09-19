@@ -8,24 +8,18 @@ export default function EnrichmentView() {
   const [attempted, setAttempted] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Global capability chips
   const [status, setStatus] = useState({ db_ok: null, llm_ok: null, data_source: null });
 
-  // Selected company broadcast from Companies page
-  const [company, setCompany] = useState(null); // { id, name, domain, website_url }
-
-  // Free-text search results
+  const [company, setCompany] = useState(null);
   const [result, setResult] = useState(null);
 
-  // Results -> selection -> save
   const [rowsChecked, setRowsChecked] = useState({});
-  const [companies, setCompanies] = useState([]); // for dropdown fallback
-  const [saveCompanyId, setSaveCompanyId] = useState(""); // auto-set when we detect company
-  const [saveCompanyMeta, setSaveCompanyMeta] = useState(null); // {id,name,domain}
+  const [companies, setCompanies] = useState([]);
+  const [saveCompanyId, setSaveCompanyId] = useState("");
+  const [saveCompanyMeta, setSaveCompanyMeta] = useState(null);
 
   const inputRef = useRef(null);
 
-  /* ------------------------- global status chips -------------------------- */
   const loadStatus = useCallback(async () => {
     try {
       const r = await authFetch("/api/enrich/status");
@@ -41,7 +35,6 @@ export default function EnrichmentView() {
     return () => clearInterval(t);
   }, [loadStatus]);
 
-  /* --------------------- company broadcast & prefill ---------------------- */
   useEffect(() => {
     const onSidebarCompany = (e) => {
       const detail = e?.detail || null;
@@ -56,7 +49,6 @@ export default function EnrichmentView() {
     return () => window.removeEventListener("upr:companySidebar", onSidebarCompany);
   }, [text]);
 
-  /* ------------------------- companies for fallback ----------------------- */
   useEffect(() => {
     (async () => {
       try {
@@ -69,7 +61,6 @@ export default function EnrichmentView() {
 
   const canSubmit = useMemo(() => Boolean(company?.id) || Boolean(text && text.trim()), [company, text]);
 
-  /* ----------------------------- API helpers ------------------------------ */
   const callSearch = useCallback(async (q) => {
     const res = await authFetch(`/api/enrich/search?q=${encodeURIComponent(q)}`);
     const raw = await res.json().catch(() => ({}));
@@ -91,7 +82,6 @@ export default function EnrichmentView() {
   const findOrCreateCompany = useCallback(
     async (guess) => {
       if (!guess?.name && !guess?.domain) return null;
-      // 1) Try to find an existing match
       try {
         const term = encodeURIComponent(guess.domain || guess.name);
         const r = await authFetch(`/api/companies?search=${term}&sort=name.asc`);
@@ -104,7 +94,6 @@ export default function EnrichmentView() {
           if (hit) return { id: hit.id, name: hit.name, domain: hit.domain || null };
         }
       } catch {}
-      // 2) Create one (manual companies endpoint)
       try {
         const payload = {
           name: guess.name || (guess.domain ? guess.domain.replace(/\.[a-z]+$/, "") : "Company"),
@@ -120,15 +109,12 @@ export default function EnrichmentView() {
         });
         const j = await r.json();
         if (r.ok && j?.id) return { id: j.id, name: payload.name, domain: guess.domain || null };
-      } catch (e) {
-        console.error("create company failed", e);
-      }
+      } catch {}
       return null;
     },
     []
   );
 
-  /* ------------------------------- actions -------------------------------- */
   const handleEnrich = useCallback(async () => {
     setAttempted(true);
     if (!canSubmit) return;
@@ -144,7 +130,6 @@ export default function EnrichmentView() {
         window.dispatchEvent(new CustomEvent("upr:companySidebar", { detail: company }));
       } else {
         data = await callSearch(text.trim());
-        // If API guessed the company (e.g., kbr.com), auto-resolve save target
         const guess = data?.summary?.company_guess || null;
         if (guess && (!saveCompanyId || !saveCompanyMeta)) {
           const ensured = await findOrCreateCompany(guess);
@@ -174,7 +159,7 @@ export default function EnrichmentView() {
   }, [result, rowsChecked]);
 
   const addSelectedToLeads = useCallback(async () => {
-    const targetCompanyId = company?.id || saveCompanyId;
+    const targetCompanyId = company?.id || saveCompanyId || saveCompanyMeta?.id;
     if (!targetCompanyId) {
       setErr("Choose or create a company to save leads into.");
       return;
@@ -197,17 +182,14 @@ export default function EnrichmentView() {
             linkedin_url: r.linkedin_url || null,
           }),
         });
-      } catch (e) {
-        console.error("save lead failed", e);
-      }
+      } catch {}
     }
     alert("Saved selected contacts to HR Leads.");
-  }, [selectedRows, company, saveCompanyId]);
+  }, [selectedRows, company, saveCompanyId, saveCompanyMeta]);
 
-  /* --------------------------------- UI ----------------------------------- */
   const contacts = result?.results || [];
   const summary = result?.summary || {};
-  const resultsProvider = summary?.provider || null; // 'live' | 'mock' | 'live_fallback_to_mock' | 'none'
+  const resultsProvider = summary?.provider || null; // 'live' | 'mock' | 'mock_fallback' | 'error_fallback'
 
   const CapabilityChips = () => (
     <div className="flex items-center gap-3">
@@ -218,16 +200,19 @@ export default function EnrichmentView() {
   );
 
   const ResultsChips = () => {
-    const map = {
-      live: { ok: true, label: "Data Source: Live" },
-      mock: { ok: false, label: "Data Source: Mock" },
-      live_fallback_to_mock: { ok: false, label: "Data Source: Mock (fallback)" },
-      none: { ok: false, label: "Data Source: None" },
-    };
-    const v = map[resultsProvider] || null;
+    const text =
+      resultsProvider === "live"
+        ? "Data Source: Live"
+        : resultsProvider === "mock"
+        ? "Data Source: Mock"
+        : resultsProvider === "mock_fallback"
+        ? "Data Source: Mock (fallback)"
+        : resultsProvider === "error_fallback"
+        ? "Data Source: Mock (error)"
+        : null;
     return (
       <div className="flex items-center gap-3">
-        {v && <StatusDot ok={v.ok} label={v.label} />}
+        {text && <StatusDot ok={resultsProvider === "live"} label={text} />}
         <StatusDot ok={!!status.db_ok} label="DB" />
         <StatusDot ok={!!status.llm_ok} label="LLM" />
       </div>
@@ -238,7 +223,6 @@ export default function EnrichmentView() {
 
   return (
     <div className="p-6 space-y-6">
-      {/* Always-visible capability chips */}
       <div className="flex items-center justify-end">
         <CapabilityChips />
       </div>
@@ -298,7 +282,6 @@ export default function EnrichmentView() {
 
       {result && (
         <div className="max-w-5xl mx-auto w-full">
-          {/* Save toolbar */}
           <div className="flex items-center justify-between mb-2">
             <div className="font-medium">Results</div>
             <div className="flex items-center gap-2">
@@ -322,7 +305,7 @@ export default function EnrichmentView() {
               {showCreateCompany && (
                 <button
                   className="rounded border px-2 py-1 text-sm"
-                onClick={async () => {
+                  onClick={async () => {
                     const ensured = await findOrCreateCompany(summary.company_guess);
                     if (ensured) {
                       setSaveCompanyId(ensured.id);
