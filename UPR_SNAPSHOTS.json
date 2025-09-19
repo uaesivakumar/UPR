@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-19T10:14:09Z",
-  "generated_human": "Fri, 19 Sep 2025 10:14:09 GMT",
+  "generated": "2025-09-19T10:17:59Z",
+  "generated_human": "Fri, 19 Sep 2025 10:17:59 GMT",
   "branch": "main",
-  "commit": "1d2f524",
+  "commit": "13ca362",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -40,18 +40,18 @@
     },
     {
       "path": "dashboard/src/features/enrichment/EnrichmentView.jsx",
-      "size": 14221,
-      "mtime": "2025-09-19T10:10:35.770Z",
-      "sha256": "f5ccc1b18a9cf0547547aef2f052471257f9f8ad8c5b4ce6c8bc381898eeebbc",
+      "size": 9457,
+      "mtime": "2025-09-19T10:17:54.206Z",
+      "sha256": "bddfbbe9dbc3b171d208fd282d9958daaa98bf0a02a65e942f20ebb5a3a926ad",
       "imports": [
-        "import { useEffect, useMemo, useState } from \"react\";",
-        "import { authFetch } from \"../utils/auth\";"
+        "import React, { useCallback, useEffect, useMemo, useRef, useState } from \"react\";",
+        "import { authFetch } from \"../../utils/auth\";"
       ],
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "// dashboard/src/pages/CompaniesPage.jsx\nimport { useEffect, useMemo, useState } from \"react\";\nimport { authFetch } from \"../utils/auth\";\n\nconst TYPE_OPTIONS = [\"ALE\", \"NON_ALE\", \"Good Coded\"];\nconst STATUS_OPTIONS = [\"New\", \"Contacted\", \"Response Received\", \"Converted\", \"Declined\"];\nconst LOCATION_OPTIONS = [\"Abu Dhabi\", \"Dubai\", \"Sharjah\"];\n\nexport default function CompaniesPage() {\n  const [query, setQuery] = useState(\"\");\n  const [type, setType] = useState(\"\");\n  const [status, setStatus] = useState(\"\");\n  const [location, setLocation] = useState(\"\");\n  const [rows, setRows] = useState([]);\n  const [loading, setLoading] = useState(false);\n  const [err, setErr] = useState(\"\");\n\n  const [showAddCompany, setShowAddCompany] = useState(false);\n  const [showAddLead, setShowAddLead] = useState(false);\n\n  const qs = useMemo(() => {\n    const p = new URLSearchParams();\n    if (query.trim()) p.set(\"search\", query.trim());\n    if (type) p.set(\"type\", type);\n    if (status) p.set(\"status\", status);\n    if (location) p.set(\"location\", location);\n    p.set(\"sort\", \"created_at.desc\");\n    return p.toString();\n  }, [query, type, status, location]);\n\n  const load = async () => {\n    setLoading(true);\n    setErr(\"\");\n    try {\n      const res = await authFetch(`/api/companies?${qs}`);\n      const json = await res.json();\n      if (!res.ok || !json.ok) throw new Error(json.error || \"Request failed\");\n      setRows(Array.isArray(json.data) ? json.data : []);\n    } catch (e) {\n      console.error(e);",
-      "tail": "function Input({ label, value, onChange, placeholder }) {\n  return (\n    <div>\n      <label className=\"text-sm block mb-1\">{label}</label>\n      <input className=\"w-full rounded border px-3 py-2\" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />\n    </div>\n  );\n}\nfunction Row({ children }) {\n  return <div className=\"grid grid-cols-1 sm:grid-cols-2 gap-3\">{children}</div>;\n}\nfunction Modal({ title, children, onClose }) {\n  return (\n    <div className=\"fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4\">\n      <div className=\"bg-white rounded-2xl shadow-xl w-full max-w-xl\">\n        <div className=\"flex items-center justify-between p-4 border-b\">\n          <div className=\"text-lg font-semibold\">{title}</div>\n          <button className=\"text-gray-500 hover:text-gray-700\" onClick={onClose}>✕</button>\n        </div>\n        <div className=\"p-4\">{children}</div>\n      </div>\n    </div>\n  );\n}\n"
+      "head": "// dashboard/src/features/enrichment/EnrichmentView.jsx\nimport React, { useCallback, useEffect, useMemo, useRef, useState } from \"react\";\nimport { authFetch } from \"../../utils/auth\";\n\nexport default function EnrichmentView() {\n  const [text, setText] = useState(\"\");\n  const [err, setErr] = useState(null);\n  const [attempted, setAttempted] = useState(false);\n  const [loading, setLoading] = useState(false);\n  const [llmErr, setLlmErr] = useState(null);\n  const [company, setCompany] = useState(null); // { id, name, domain, website_url }\n  const [result, setResult] = useState(null);\n\n  const inputRef = useRef(null);\n\n  useEffect(() => {\n    const onSidebarCompany = (e) => {\n      const detail = e?.detail || null;\n      setCompany(detail);\n      if (detail?.name && !text) setText(detail.name);\n    };\n    window.addEventListener(\"upr:companySidebar\", onSidebarCompany);\n    return () => window.removeEventListener(\"upr:companySidebar\", onSidebarCompany);\n  }, [text]);\n\n  const canSubmit = useMemo(() => {\n    return Boolean(company?.id) || Boolean(text && text.trim());\n  }, [company, text]);\n\n  const callMock = useCallback(async (q) => {\n    const res = await authFetch(`/api/enrich/mock?q=${encodeURIComponent(q)}`);\n    if (!res.ok) {\n      const t = await res.text().catch(() => \"\");\n      throw new Error(`Mock enrich failed (${res.status}): ${t || res.statusText}`);\n    }\n    return res.json();\n  }, []);\n\n  const callReal = useCallback(async (company_id) => {\n    const res = await authFetch(`/api/enrich`, {",
+      "tail": "\n          <div className=\"mt-4 rounded-xl border p-3 bg-gray-50\">\n            <div className=\"text-xs font-semibold mb-2 text-gray-600\">Raw response</div>\n            <pre className=\"text-xs whitespace-pre-wrap text-gray-800\">\n              {JSON.stringify(result, null, 2)}\n            </pre>\n          </div>\n        </div>\n      )}\n    </div>\n  );\n}\n\nfunction Th({ children }) {\n  return (\n    <th scope=\"col\" className=\"px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500\">\n      {children}\n    </th>\n  );\n}\n\nfunction Td({ children, className = \"\" }) {\n  return <td className={`px-3 py-2 ${className}`}>{children}</td>;\n}\n"
     },
     {
       "path": "dashboard/src/features/enrichment/LLMStatus.jsx",
