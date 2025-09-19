@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-19T16:58:41Z",
-  "generated_human": "Fri, 19 Sep 2025 16:58:41 GMT",
+  "generated": "2025-09-19T17:03:50Z",
+  "generated_human": "Fri, 19 Sep 2025 17:03:50 GMT",
   "branch": "main",
-  "commit": "ff2ac43",
+  "commit": "77b4120",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -329,9 +329,9 @@
     },
     {
       "path": "routes/enrich/lib/email.js",
-      "size": 4303,
-      "mtime": "2025-09-19T16:38:01.619Z",
-      "sha256": "ec7494d165f049a5087569ce0a57263662f57d579a45035bbf445115b282fdfa",
+      "size": 2618,
+      "mtime": "2025-09-19T17:03:50.153Z",
+      "sha256": "9e253f5a07fd081db5274bd19e7ea8a8e66c808e21e7280aef1bb29378fd0b1c",
       "imports": [],
       "envs": [
         "NEVERBOUNCE_API_KEY",
@@ -339,8 +339,8 @@
       ],
       "appUses": [],
       "endpoints": [],
-      "head": "/**\n * Email utilities used by enrichment routes.\n * Backward-compatible export names expected by search.js:\n *   - applyEmailPattern(fullName, domain, pattern?)\n * Also provides:\n *   - inferPatternFromSamples(domain, samples)\n *   - verifyEmailSMTP(email)  -> { status, reason }\n */\n\nconst CLEAN = (s = \"\") => String(s).normalize(\"NFKD\");\n\n/** Split a full name into [first, last] with basic cleanup */\nfunction splitName(fullName = \"\") {\n  const raw = CLEAN(fullName).trim().replace(/\\s+/g, \" \");\n  if (!raw) return [\"\", \"\"];\n  const parts = raw.split(\" \");\n  const first = parts[0] || \"\";\n  const last = parts.length > 1 ? parts[parts.length - 1] : \"\";\n  return [first, last];\n}\n\n/** Sanitize name part to letters only, lowercase */\nfunction slugPart(s = \"\") {\n  return CLEAN(s).toLowerCase().replace(/[^a-z]/g, \"\");\n}\n\n/** Normalize domain (\"https://kbr.com/foo\" -> \"kbr.com\") */\nfunction normalizeDomain(domain = \"\") {\n  let d = String(domain).trim();\n  d = d.replace(/^https?:\\/\\//i, \"\").replace(/\\/.*$/, \"\");\n  return d.toLowerCase();\n}\n\n/**\n * Build an email using a pattern id.\n * Supported patterns:\n *  - first.last\n *  - firstlast\n *  - f.last\n *  - first.l",
-      "tail": "  const best = Object.entries(score).sort((a, b) => b[1] - a[1])[0];\n  return best && best[1] > 0 ? best[0] : \"first.last\";\n}\n\n/**\n * SMTP verification stub.\n * If NEVERBOUNCE_API_KEY or ZEROBOUNCE_API_KEY exist, this can be wired later.\n * For now, return {status: \"unknown\", reason: \"no_verifier\"} to keep callers happy.\n */\nexport async function verifyEmailSMTP(_email) {\n  const hasNB = !!process.env.NEVERBOUNCE_API_KEY;\n  const hasZB = !!process.env.ZEROBOUNCE_API_KEY;\n\n  if (!hasNB && !hasZB) {\n    return { status: \"unknown\", reason: \"no_verifier\" };\n  }\n\n  // Placeholder: integrate real verifier here when keys are configured\n  // Implementations should normalize to {status: \"valid\"|\"invalid\"|\"accept_all\"|\"unknown\", reason}\n  return { status: \"unknown\", reason: \"not_implemented\" };\n}\n\n// Also export helpers some callers may use\nexport const _internal = { splitName, slugPart, normalizeDomain };\n"
+      "head": "/**\n * Email helpers\n * Exports:\n *  - applyEmailPattern(fullName, domain, pattern=\"first.last\") -> string email\n *  - inferPatternFromSamples(domain, samples)\n *  - verifyEmailSMTP(email)  (stub; returns unknown unless you wire NB/ZB)\n */\n\nfunction clean(s=\"\"){ return String(s).normalize(\"NFKD\"); }\nfunction splitName(fullName=\"\"){\n  const raw = clean(fullName).trim().replace(/\\s+/g,\" \");\n  if (!raw) return [\"\",\"\"];\n  const parts = raw.split(\" \");\n  return [parts[0]||\"\", parts.length>1 ? parts[parts.length-1] : \"\"];\n}\nfunction slug(s=\"\"){ return clean(s).toLowerCase().replace(/[^a-z]/g,\"\"); }\nfunction normDomain(d=\"\"){ return String(d).trim().toLowerCase().replace(/^https?:\\/\\//,\"\").replace(/\\/.*$/,\"\"); }\n\n/** Build email from a pattern id */\nexport function applyEmailPattern(fullName, domain, pattern=\"first.last\"){\n  if (!fullName || !domain) return null;\n  const dom = normDomain(domain);\n  const [fraw, lraw] = splitName(fullName);\n  const f = slug(fraw), l = slug(lraw), fi = f.slice(0,1), li = l.slice(0,1);\n  const table = {\n    \"first.last\": `${f}.${l}@${dom}`,\n    \"firstlast\":  `${f}${l}@${dom}`,\n    \"f.last\":     `${fi}.${l}@${dom}`,\n    \"first.l\":    `${f}.${li}@${dom}`,\n    \"first_last\": `${f}_${l}@${dom}`,\n    \"first-last\": `${f}-${l}@${dom}`,\n    \"first\":      `${f}@${dom}`,\n    \"last\":       `${l}@${dom}`,\n    \"firstl\":     `${f}${li}@${dom}`,\n    \"flast\":      `${fi}${l}@${dom}`,\n  };\n  return table[pattern] || table[\"first.last\"];\n}\n\nexport function inferPatternFromSamples(domain, samples=[]){",
+      "tail": "  const pats = [\"first.last\",\"firstlast\",\"f.last\",\"first.l\",\"first_last\",\"first-last\",\"first\",\"last\",\"firstl\",\"flast\"];\n  const score = Object.fromEntries(pats.map(p=>[p,0]));\n  for (const e of samples){\n    if (typeof e!==\"string\") continue;\n    const email = e.toLowerCase().trim();\n    if (!email.endsWith(`@${dom}`)) continue;\n    const local = email.split(\"@\")[0];\n    if (/\\./.test(local)) score[\"first.last\"]+=1;\n    if (!/\\W/.test(local)) score[\"firstlast\"]+=0.5;\n    if (/^[a-z]\\.[a-z]/.test(local)) score[\"f.last\"]+=1;\n    if (/^[a-z]+\\.[a-z]$/.test(local)) score[\"first.l\"]+=1;\n    if (/_/.test(local)) score[\"first_last\"]+=1;\n    if (/-/.test(local)) score[\"first-last\"]+=1;\n  }\n  const best = Object.entries(score).sort((a,b)=>b[1]-a[1])[0];\n  return best && best[1]>0 ? best[0] : \"first.last\";\n}\n\nexport async function verifyEmailSMTP(_email){\n  if (!process.env.NEVERBOUNCE_API_KEY && !process.env.ZEROBOUNCE_API_KEY) {\n    return { status:\"unknown\", reason:\"no_verifier\" };\n  }\n  return { status:\"unknown\", reason:\"not_implemented\" };\n}\n"
     },
     {
       "path": "routes/enrich/lib/geo.js",
@@ -380,22 +380,22 @@
     },
     {
       "path": "routes/enrich/search.js",
-      "size": 3046,
-      "mtime": "2025-09-19T16:58:41.272Z",
-      "sha256": "e2d96257f3c23b5b053319ed6886a9ad4b084fba38e10b00b01032f5df608a10",
+      "size": 3108,
+      "mtime": "2025-09-19T17:03:50.156Z",
+      "sha256": "3575a9502c0e3328d5569b88c3daedff9512773212d258960d2a761b73f02e4e",
       "imports": [
         "import express from \"express\";",
-        "import { guessCompany } from \"./lib/llm.js\";",
-        "import { searchPeopleByCompany } from \"./lib/apollo.js\";",
-        "import * as quality from \"./lib/quality.js\";",
+        "import * as LLM from \"./lib/llm.js\";",
+        "import * as Apollo from \"./lib/apollo.js\";",
+        "import { scoreQuality } from \"./lib/quality.js\";",
         "import { tagEmirate } from \"./lib/geo.js\";",
-        "import * as emailLib from \"./lib/email.js\";"
+        "import { applyEmailPattern } from \"./lib/email.js\";"
       ],
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "import express from \"express\";\nimport { guessCompany } from \"./lib/llm.js\";\nimport { searchPeopleByCompany } from \"./lib/apollo.js\";\nimport * as quality from \"./lib/quality.js\";\nconst { scoreQuality } = quality;\nimport { tagEmirate } from \"./lib/geo.js\";\nimport * as emailLib from \"./lib/email.js\";\nconst { applyEmailPattern } = emailLib;\n\nconst router = express.Router();\n\n/**\n * GET /api/enrich/search\n * q=free text (required)\n * Optional overrides:\n *   &name=Exact Co Name\n *   &domain=example.com    (or full URL; we normalize to domain)\n *   &linkedin_url=...\n *   &parent=Mubadala\n */\nrouter.get(\"/\", async (req, res) => {\n  const t0 = Date.now();\n  try {\n    const q = String(req.query.q || \"\").trim();\n    if (!q) return res.status(400).json({ ok:false, error:\"missing q\" });\n\n    const overrides = {\n      name: req.query.name ? String(req.query.name) : undefined,\n      domain: req.query.domain ? String(req.query.domain) : undefined,\n      linkedin_url: req.query.linkedin_url ? String(req.query.linkedin_url) : undefined,\n      parent: req.query.parent ? String(req.query.parent) : undefined,\n    };\n\n    // 1) LLM guess (respects overrides)\n    const g0 = Date.now();\n    const guess = await guessCompany(q, overrides);\n    const llm_ms = Date.now() - g0;\n\n    // 2) Provider search (domain preferred)\n    const p0 = Date.now();",
-      "tail": "    const quality = scoreQuality({ guess, results });\n\n    return res.json({\n      ok: true,\n      data: {\n        status: \"completed\",\n        results,\n        summary: {\n          provider: \"live\",\n          company_guess: guess,\n          timings: { llm_ms, provider_ms, smtp_ms: 0 },\n          quality,\n          total_candidates: results.length,\n          kept: results.length,\n        },\n      },\n    });\n  } catch (e) {\n    console.error(\"enrich search error\", e);\n    res.status(500).json({ ok:false, error:\"search_failed\" });\n  }\n});\n\nexport default router;\n"
+      "head": "import express from \"express\";\nimport * as LLM from \"./lib/llm.js\";\nimport * as Apollo from \"./lib/apollo.js\";\nimport { scoreQuality } from \"./lib/quality.js\";\nimport { tagEmirate } from \"./lib/geo.js\";\nimport { applyEmailPattern } from \"./lib/email.js\";\n\nconst router = express.Router();\n\n/**\n * GET /api/enrich/search\n * q=free text (required)\n * Optional overrides:\n *   &name=Exact Company Name\n *   &domain=example.com  (or full URL; we normalize)\n *   &linkedin_url=...\n *   &parent=Mubadala\n */\nrouter.get(\"/\", async (req, res) => {\n  try {\n    const q = String(req.query.q || \"\").trim();\n    if (!q) return res.status(400).json({ ok: false, error: \"missing q\" });\n\n    const overrides = {\n      name: req.query.name ? String(req.query.name) : undefined,\n      domain: req.query.domain ? String(req.query.domain) : undefined,\n      linkedin_url: req.query.linkedin_url ? String(req.query.linkedin_url) : undefined,\n      parent: req.query.parent ? String(req.query.parent) : undefined,\n    };\n\n    // 1) LLM guess (respects overrides)\n    const tLLM0 = Date.now();\n    const guess = await LLM.guessCompany(q, overrides);\n    const llm_ms = Date.now() - tLLM0;\n\n    // 2) Provider search\n    const tProv0 = Date.now();\n    const providerResults = await Apollo.searchPeopleByCompany({\n      name: guess.name,\n      domain: guess.domain,",
+      "tail": "    const quality = scoreQuality(guess, results);\n\n    return res.json({\n      ok: true,\n      data: {\n        status: \"completed\",\n        results,\n        summary: {\n          provider: \"live\",\n          company_guess: guess,\n          timings: { llm_ms, provider_ms, smtp_ms: 0 },\n          quality,\n          total_candidates: results.length,\n          kept: results.length,\n        },\n      },\n    });\n  } catch (e) {\n    console.error(\"enrich search error\", e);\n    return res.status(500).json({ ok: false, error: \"search_failed\" });\n  }\n});\n\nexport default router;\n"
     },
     {
       "path": "routes/hrLeads.js",
