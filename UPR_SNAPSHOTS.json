@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-19T17:42:26Z",
-  "generated_human": "Fri, 19 Sep 2025 17:42:26 GMT",
+  "generated": "2025-09-19T18:06:32Z",
+  "generated_human": "Fri, 19 Sep 2025 18:06:32 GMT",
   "branch": "main",
-  "commit": "9e0fb74",
+  "commit": "43a86bf",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -214,6 +214,18 @@
       "endpoints": [],
       "head": "// dashboard/src/pages/MessagesPage.jsx\nexport default function MessagesPage() {\n  return (\n    <div className=\"space-y-3\">\n      <h1 className=\"text-2xl font-semibold\">Messages</h1>\n      <p className=\"text-sm text-gray-600\">\n        Outreach queue & templates will appear here (email / LinkedIn). Coming soon.\n      </p>\n      <div className=\"rounded-xl border bg-white p-4 text-sm text-gray-500\">\n        No messages yet.\n      </div>\n    </div>\n  );\n}\n",
       "tail": "// dashboard/src/pages/MessagesPage.jsx\nexport default function MessagesPage() {\n  return (\n    <div className=\"space-y-3\">\n      <h1 className=\"text-2xl font-semibold\">Messages</h1>\n      <p className=\"text-sm text-gray-600\">\n        Outreach queue & templates will appear here (email / LinkedIn). Coming soon.\n      </p>\n      <div className=\"rounded-xl border bg-white p-4 text-sm text-gray-500\">\n        No messages yet.\n      </div>\n    </div>\n  );\n}\n"
+    },
+    {
+      "path": "dashboard/src/pages/index.js",
+      "size": 535,
+      "mtime": "2025-09-19T18:05:51.290Z",
+      "sha256": "88410b76a091309c99dcbd1eac357cfe616a2f20735885931e504d113ebba37e",
+      "imports": [],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// Barrel exports for pages (keeps imports case-correct & tidy)\nexport { default as DashboardHome }  from \"./DashboardHome.jsx\";\nexport { default as EnrichmentPage } from \"./EnrichmentPage.jsx\";\nexport { default as CompaniesPage }  from \"./CompaniesPage.jsx\";\nexport { default as HRLeads }        from \"./HRLeads.jsx\";\nexport { default as MessagesPage }   from \"./MessagesPage.jsx\";\n\n// Add more when needed, e.g.:\n// export { default as Admin } from \"./Admin.jsx\";\n// export { default as AdminDashboard } from \"./AdminDashboard.jsx\";\n",
+      "tail": "// Barrel exports for pages (keeps imports case-correct & tidy)\nexport { default as DashboardHome }  from \"./DashboardHome.jsx\";\nexport { default as EnrichmentPage } from \"./EnrichmentPage.jsx\";\nexport { default as CompaniesPage }  from \"./CompaniesPage.jsx\";\nexport { default as HRLeads }        from \"./HRLeads.jsx\";\nexport { default as MessagesPage }   from \"./MessagesPage.jsx\";\n\n// Add more when needed, e.g.:\n// export { default as Admin } from \"./Admin.jsx\";\n// export { default as AdminDashboard } from \"./AdminDashboard.jsx\";\n"
     },
     {
       "path": "routes/companies.js",

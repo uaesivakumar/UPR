@@ -1,4 +1,4 @@
-# Generated: 2025-09-19T18:03:19Z
+# Generated: 2025-09-19T18:06:32Z
 .DS_Store
 .dockerignore
 .githooks/pre-commit
@@ -39,6 +39,7 @@ dashboard/src/pages/Leads.jsx
 dashboard/src/pages/LeadsPage.jsx
 dashboard/src/pages/Login.jsx
 dashboard/src/pages/MessagesPage.jsx
+dashboard/src/pages/index.js
 dashboard/src/utils/auth.ts
 dashboard/tailwind.config.js
 dashboard/vite.config.js
