@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-19T09:56:48Z",
-  "generated_human": "Fri, 19 Sep 2025 09:56:48 GMT",
+  "generated": "2025-09-19T10:13:27Z",
+  "generated_human": "Fri, 19 Sep 2025 10:13:27 GMT",
   "branch": "main",
-  "commit": "18db862",
+  "commit": "fa8801d",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -40,18 +40,18 @@
     },
     {
       "path": "dashboard/src/features/enrichment/EnrichmentView.jsx",
-      "size": 11052,
-      "mtime": "2025-09-19T09:55:39.555Z",
-      "sha256": "e124b4a31a58701c76271a942225eff0418cbedb8ef255eb0140010378adc2bd",
+      "size": 14221,
+      "mtime": "2025-09-19T10:10:35.770Z",
+      "sha256": "f5ccc1b18a9cf0547547aef2f052471257f9f8ad8c5b4ce6c8bc381898eeebbc",
       "imports": [
-        "import React, { useCallback, useEffect, useMemo, useRef, useState } from \"react\";",
-        "import { authFetch } from \"../../utils/auth\";"
+        "import { useEffect, useMemo, useState } from \"react\";",
+        "import { authFetch } from \"../utils/auth\";"
       ],
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "// dashboard/src/features/enrichment/EnrichmentView.jsx\nimport React, { useCallback, useEffect, useMemo, useRef, useState } from \"react\";\nimport { authFetch } from \"../../utils/auth\";\n\n/**\n * Optional props:\n *  - initialQuery?: string\n *  - onCompanyChange?: (company|null) => void\n */\nexport default function EnrichmentView({ initialQuery = \"\", onCompanyChange = () => {} }) {\n  // UI state\n  const [text, setText] = useState(initialQuery);\n  const [loading, setLoading] = useState(false);\n  const [err, setErr] = useState(null);\n  const [llmErr, setLlmErr] = useState(null);\n\n  // Selected company from CompaniesPage (via window event)\n  const [company, setCompany] = useState(null); // { id, name, domain, website_url }\n\n  // API result\n  const [result, setResult] = useState(null); // { status, company_id|null, results: [], summary: {} }\n\n  const inputRef = useRef(null);\n\n  // Listen for broadcasted selections from CompaniesPage (or anywhere else)\n  useEffect(() => {\n    const onSidebarCompany = (e) => {\n      const detail = e?.detail || null;\n      if (!detail) {\n        setCompany(null);\n        onCompanyChange(null);\n        return;\n      }\n      setCompany({\n        id: detail.id,\n        name: detail.name,\n        domain: detail.domain,\n        website_url: detail.website_url,\n      });\n      if (detail.name && !text) setText(detail.name);",
-      "tail": "            <div className=\"text-xs font-semibold mb-2 text-gray-600\">Raw response</div>\n            <pre className=\"text-xs whitespace-pre-wrap text-gray-800\">\n              {JSON.stringify(result, null, 2)}\n            </pre>\n          </div>\n        </div>\n      )}\n    </div>\n  );\n}\n\n/* ---------- small UI helpers ---------- */\n\nfunction Th({ children }) {\n  return (\n    <th scope=\"col\" className=\"px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500\">\n      {children}\n    </th>\n  );\n}\n\nfunction Td({ children, className = \"\" }) {\n  return <td className={`px-3 py-2 ${className}`}>{children}</td>;\n}\n"
+      "head": "// dashboard/src/pages/CompaniesPage.jsx\nimport { useEffect, useMemo, useState } from \"react\";\nimport { authFetch } from \"../utils/auth\";\n\nconst TYPE_OPTIONS = [\"ALE\", \"NON_ALE\", \"Good Coded\"];\nconst STATUS_OPTIONS = [\"New\", \"Contacted\", \"Response Received\", \"Converted\", \"Declined\"];\nconst LOCATION_OPTIONS = [\"Abu Dhabi\", \"Dubai\", \"Sharjah\"];\n\nexport default function CompaniesPage() {\n  const [query, setQuery] = useState(\"\");\n  const [type, setType] = useState(\"\");\n  const [status, setStatus] = useState(\"\");\n  const [location, setLocation] = useState(\"\");\n  const [rows, setRows] = useState([]);\n  const [loading, setLoading] = useState(false);\n  const [err, setErr] = useState(\"\");\n\n  const [showAddCompany, setShowAddCompany] = useState(false);\n  const [showAddLead, setShowAddLead] = useState(false);\n\n  const qs = useMemo(() => {\n    const p = new URLSearchParams();\n    if (query.trim()) p.set(\"search\", query.trim());\n    if (type) p.set(\"type\", type);\n    if (status) p.set(\"status\", status);\n    if (location) p.set(\"location\", location);\n    p.set(\"sort\", \"created_at.desc\");\n    return p.toString();\n  }, [query, type, status, location]);\n\n  const load = async () => {\n    setLoading(true);\n    setErr(\"\");\n    try {\n      const res = await authFetch(`/api/companies?${qs}`);\n      const json = await res.json();\n      if (!res.ok || !json.ok) throw new Error(json.error || \"Request failed\");\n      setRows(Array.isArray(json.data) ? json.data : []);\n    } catch (e) {\n      console.error(e);",
+      "tail": "function Input({ label, value, onChange, placeholder }) {\n  return (\n    <div>\n      <label className=\"text-sm block mb-1\">{label}</label>\n      <input className=\"w-full rounded border px-3 py-2\" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />\n    </div>\n  );\n}\nfunction Row({ children }) {\n  return <div className=\"grid grid-cols-1 sm:grid-cols-2 gap-3\">{children}</div>;\n}\nfunction Modal({ title, children, onClose }) {\n  return (\n    <div className=\"fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4\">\n      <div className=\"bg-white rounded-2xl shadow-xl w-full max-w-xl\">\n        <div className=\"flex items-center justify-between p-4 border-b\">\n          <div className=\"text-lg font-semibold\">{title}</div>\n          <button className=\"text-gray-500 hover:text-gray-700\" onClick={onClose}>✕</button>\n        </div>\n        <div className=\"p-4\">{children}</div>\n      </div>\n    </div>\n  );\n}\n"
     },
     {
       "path": "dashboard/src/features/enrichment/LLMStatus.jsx",
@@ -257,9 +257,9 @@
     },
     {
       "path": "routes/enrich.js",
-      "size": 9923,
-      "mtime": "2025-09-19T09:43:21.125Z",
-      "sha256": "b2fd1a0c01ab9149d7c94f16dddffd013894550a8920f48582f9ebf71d5931a6",
+      "size": 10019,
+      "mtime": "2025-09-19T10:09:25.589Z",
+      "sha256": "8c3892a52380b2bd8aa1d26bd690e2613fa1bb30bbea5fb89169fecdb65d23d2",
       "imports": [
         "import express from \"express\";",
         "import { nanoid } from \"nanoid\";",
@@ -269,7 +269,7 @@
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "// routes/enrich.js\nimport express from \"express\";\nimport { nanoid } from \"nanoid\";\n\nimport { pool } from \"../utils/db.js\";\nimport {\n  scoreCandidate,\n  bucketRole,\n  bucketSeniority,\n  isAgencyRecruiter,\n} from \"../utils/patternHelpers.js\";\nimport {\n  inferPatternFromSamples,\n  applyPattern,\n  loadPatternFromCache,\n  savePatternToCache,\n} from \"../utils/emailPatterns.js\";\nimport { verifyEmail } from \"../utils/emailVerify.js\";\n\nconst router = express.Router();\n\n// In-memory job store (MVP)\nconst jobs = new Map();\n\n/**\n * POST /api/enrich\n * body: { company_id: string, max_contacts?: number, role?: \"hr\", geo?: \"uae\" }\n */\nrouter.post(\"/\", async (req, res) => {\n  const { company_id, max_contacts = 3, role = \"hr\", geo = \"uae\" } = req.body || {};\n  if (!company_id) return res.status(400).json({ error: \"company_id is required\" });\n\n  const job_id = `enrich_${Date.now()}_${nanoid(6)}`;\n  jobs.set(job_id, { status: \"queued\", company_id, results: [], summary: {} });\n\n  try {\n    const company = await getCompany(company_id);\n    if (!company) {\n      const payload = { job_id, status: \"error\", error: \"company_not_found\" };\n      jobs.set(job_id, payload);",
+      "head": "// routes/enrich.js\nimport express from \"express\";\nimport { nanoid } from \"nanoid\";\n\nimport { pool } from \"../utils/db.js\";\nimport {\n  scoreCandidate,\n  bucketRole,\n  bucketSeniority,\n  isAgencyRecruiter,\n} from \"../utils/patternHelpers.js\";\nimport {\n  inferPatternFromSamples,\n  applyPattern,\n  loadPatternFromCache,\n  savePatternToCache,\n} from \"../utils/emailPatterns.js\";\nimport { verifyEmail } from \"../utils/emailVerify.js\";\n\nconst router = express.Router();\n\n// In-memory job store (MVP)\nconst jobs = new Map();\n\n/**\n * GET /api/enrich/mock?q=Company+Name\n * Lightweight mock enrichment to test the UI without needing a company_id.\n * NOTE: This MUST be registered BEFORE the \"/:job_id\" route to avoid being captured as a param.\n */\nrouter.get(\"/mock\", async (req, res) => {\n  const q = (req.query.q || \"\").toString().trim();\n  if (!q) return res.status(400).json({ error: \"q is required\" });\n  const domain = q.toLowerCase().replace(/\\s+/g, \"\") + \".com\";\n\n  const results = [\n    {\n      name: \"Jane Doe\",\n      designation: \"HR Manager\",\n      linkedin_url: `https://www.linkedin.com/in/jane-doe-hr-${Math.floor(Math.random()*9000+1000)}/`,\n      email: `jane.doe@${domain}`,",
       "tail": "      email_reason = EXCLUDED.email_reason\n    RETURNING id, company_id, email, confidence\n  `;\n  const vals = [\n    company_id,\n    c.name || \"\",\n    c.designation || \"\",\n    c.linkedin_url || \"\",\n    c.email || null,\n    c.email_status || \"unknown\",\n    c.source || \"provider_or_pattern\",\n    c.confidence ?? null,\n    c.role_bucket || null,\n    c.seniority || null,\n    c.email_reason || null,\n  ];\n  const { rows } = await pool.query(q, vals);\n  return rows[0];\n}\n\n// TODO: Wire Apollo/Clearbit/PDL here\nasync function queryPrimaryProvider() {\n  return [];\n}\n"
     },
     {
@@ -340,9 +340,9 @@
     },
     {
       "path": "server.js",
-      "size": 4563,
-      "mtime": "2025-09-16T17:31:05.285Z",
-      "sha256": "054a3b89986006857c40734f00cbb3c19bd3f8bb54ed580252ca130e29d8edcf",
+      "size": 6968,
+      "mtime": "2025-09-19T10:13:13.471Z",
+      "sha256": "a4201af1164bc51ddfeb739deaff500158593f9cbf89f2399686d6cd72e81216",
       "imports": [
         "import express from \"express\";",
         "import path from \"path\";",
@@ -367,14 +367,15 @@
         "app.use(\"/api/companies\", companiesRouter);",
         "app.use(\"/api/hr-leads\", hrLeadsRouter);",
         "app.use(\"/api/news\", newsRouter);",
-        "app.use(\"/api/enrich\", enrichRouter);"
+        "app.use(\"/api/enrich\", enrichRouter);",
+        "app.use(\"/api/manual\", adminOnly, manualRouter);"
       ],
       "endpoints": [
         "app.get(\"/health\", (_req, res) => res.json({ ok: true }));",
         "app.get(\"/api/auth/verify\", adminOnly, (_req, res) => res.json({ ok: true }));"
       ],
       "head": "// server.js\nimport express from \"express\";\nimport path from \"path\";\nimport fs from \"fs\";\nimport { fileURLToPath } from \"url\";\n\nimport { pool } from \"./utils/db.js\";\nimport { adminOnly } from \"./utils/adminOnly.js\";\n\nimport companiesRouter from \"./routes/companies.js\";\nimport hrLeadsRouter from \"./routes/hrLeads.js\";\nimport newsRouter from \"./routes/news.js\";\nimport enrichRouter from \"./routes/enrich.js\";\nimport { signJwt } from \"./utils/jwt.js\"; // username/password login\n\nconst __filename = fileURLToPath(import.meta.url);\nconst __dirname = path.dirname(__filename);\n\nconst app = express();\nconst PORT = process.env.PORT || 10000;\n\n// ---------- Middleware ----------\napp.use(express.json({ limit: \"2mb\" }));\napp.use(express.urlencoded({ extended: true }));\n\n// ---------- Health ----------\napp.get(\"/health\", (_req, res) => res.json({ ok: true }));\napp.get(\"/__diag\", async (_req, res) => {\n  try {\n    await pool.query(\"SELECT 1\");\n    res.json({ ok: true, db_ok: true });\n  } catch (err) {\n    res.status(500).json({ ok: false, db_ok: false, error: String(err?.message || err) });\n  }\n});\n\n// ---------- Auth (username/password only) ----------\napp.post(\"/api/auth/login\", async (req, res) => {\n  try {\n    const { username, password } = req.body || {};",
-      "tail": "  );\n\n  const indexFile = path.join(dashboardDist, \"index.html\");\n\n  // SPA fallback: anything not under /api/* returns index.html with no-store\n  app.get(/^(?!\\/api\\/).*/, (_req, res) => {\n    res.setHeader(\"Cache-Control\", \"no-store, must-revalidate\");\n    res.sendFile(indexFile);\n  });\n}\n\napp.listen(PORT, () => {\n  console.log(`UPR backend listening on ${PORT}`);\n});\napp.get(\"/__diag\", (req, res) => {\n  res.json({\n    ok: true,\n    env: [\n      \"DATABASE_URL\",\"NEVERBOUNCE_API_KEY\",\"ZEROBOUNCE_API_KEY\",\n      \"UPR_ADMIN_USER\",\"UPR_ADMIN_PASS\",\"JWT_SECRET\"\n    ].filter(Boolean).reduce((o,k)=> (o[k] = !!process.env[k], o), {}),\n    routesMounted: (app._router?.stack || []).filter(l => l?.route).map(l => Object.keys(l.route.methods)[0] + \" \" + l.route.path)\n  });\n});\n"
+      "tail": "  // SPA fallback: anything not under /api/* returns index.html with no-store\n  app.get(/^(?!\\/api\\/).*/, (_req, res) => {\n    res.setHeader(\"Cache-Control\", \"no-store, must-revalidate\");\n    res.sendFile(indexFile);\n  });\n}\n\napp.listen(PORT, () => {\n  console.log(`UPR backend listening on ${PORT}`);\n});\n\n// (kept as in your original file)\napp.get(\"/__diag\", (req, res) => {\n  res.json({\n    ok: true,\n    env: [\n      \"DATABASE_URL\",\"NEVERBOUNCE_API_KEY\",\"ZEROBOUNCE_API_KEY\",\n      \"UPR_ADMIN_USER\",\"UPR_ADMIN_PASS\",\"JWT_SECRET\"\n    ].filter(Boolean).reduce((o,k)=> (o[k] = !!process.env[k], o), {}),\n    routesMounted: (app._router?.stack || [])\n      .filter(l => l?.route)\n      .map(l => Object.keys(l.route.methods)[0] + \" \" + l.route.path)\n  });\n});\n"
     },
     {
       "path": "utils/adminOnly.js",

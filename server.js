@@ -98,6 +98,75 @@ app.use("/api/hr-leads", hrLeadsRouter);
 app.use("/api/news", newsRouter);
 app.use("/api/enrich", enrichRouter);
 
+// ---------- Minimal additive manual endpoints ----------
+// Secured with adminOnly, non-invasive alongside existing routers.
+const manualRouter = express.Router();
+
+/**
+ * POST /api/manual/companies
+ * body: { name, website_url?, linkedin_url?, type?, status?, locations?: string[] }
+ */
+manualRouter.post("/companies", async (req, res) => {
+  try {
+    const { name, website_url, linkedin_url, type, status, locations } = req.body || {};
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ error: "name is required" });
+    }
+
+    const q = `
+      INSERT INTO targeted_companies (name, website_url, linkedin_url, type, status, locations)
+      VALUES ($1,$2,$3,$4,$5,COALESCE($6,'{}'::text[]))
+      RETURNING id, name
+    `;
+    const vals = [
+      String(name).trim(),
+      website_url || null,
+      linkedin_url || null,
+      type || null,
+      status || "New",
+      Array.isArray(locations) ? locations : null,
+    ];
+    const { rows } = await pool.query(q, vals);
+    return res.json({ ok: true, data: rows[0] });
+  } catch (e) {
+    console.error("manual companies error:", e);
+    return res.status(500).json({ error: "server_error" });
+  }
+});
+
+/**
+ * POST /api/manual/hr-leads
+ * body: { company_id, name, designation?, email?, linkedin_url? }
+ */
+manualRouter.post("/hr-leads", async (req, res) => {
+  try {
+    const { company_id, name, designation, email, linkedin_url } = req.body || {};
+    if (!company_id) return res.status(400).json({ error: "company_id is required" });
+    if (!name || !String(name).trim()) return res.status(400).json({ error: "name is required" });
+
+    const q = `
+      INSERT INTO hr_leads (company_id, name, designation, email, linkedin_url, email_status, lead_status, source, confidence)
+      VALUES ($1,$2,$3,$4,$5,'manual','New','manual',0.5)
+      ON CONFLICT (company_id, email) DO NOTHING
+      RETURNING id, company_id, email
+    `;
+    const vals = [
+      company_id,
+      String(name).trim(),
+      designation || null,
+      email || null,
+      linkedin_url || null,
+    ];
+    const { rows } = await pool.query(q, vals);
+    return res.json({ ok: true, data: rows[0] || null });
+  } catch (e) {
+    console.error("manual hr-leads error:", e);
+    return res.status(500).json({ error: "server_error" });
+  }
+});
+
+app.use("/api/manual", adminOnly, manualRouter);
+
 // ---------- Static (dashboard SPA) ----------
 const dashboardDist = path.join(__dirname, "dashboard", "dist");
 
@@ -126,6 +195,8 @@ if (fs.existsSync(dashboardDist)) {
 app.listen(PORT, () => {
   console.log(`UPR backend listening on ${PORT}`);
 });
+
+// (kept as in your original file)
 app.get("/__diag", (req, res) => {
   res.json({
     ok: true,
@@ -133,6 +204,8 @@ app.get("/__diag", (req, res) => {
       "DATABASE_URL","NEVERBOUNCE_API_KEY","ZEROBOUNCE_API_KEY",
       "UPR_ADMIN_USER","UPR_ADMIN_PASS","JWT_SECRET"
     ].filter(Boolean).reduce((o,k)=> (o[k] = !!process.env[k], o), {}),
-    routesMounted: (app._router?.stack || []).filter(l => l?.route).map(l => Object.keys(l.route.methods)[0] + " " + l.route.path)
+    routesMounted: (app._router?.stack || [])
+      .filter(l => l?.route)
+      .map(l => Object.keys(l.route.methods)[0] + " " + l.route.path)
   });
 });
