@@ -23,6 +23,56 @@ const router = express.Router();
 const jobs = new Map();
 
 /**
+ * GET /api/enrich/mock?q=Company+Name
+ * Lightweight mock enrichment to test the UI without needing a company_id.
+ * NOTE: This MUST be registered BEFORE the "/:job_id" route to avoid being captured as a param.
+ */
+router.get("/mock", async (req, res) => {
+  const q = (req.query.q || "").toString().trim();
+  if (!q) return res.status(400).json({ error: "q is required" });
+  const domain = q.toLowerCase().replace(/\s+/g, "") + ".com";
+
+  const results = [
+    {
+      name: "Jane Doe",
+      designation: "HR Manager",
+      linkedin_url: `https://www.linkedin.com/in/jane-doe-hr-${Math.floor(Math.random()*9000+1000)}/`,
+      email: `jane.doe@${domain}`,
+      email_status: "valid",
+      email_reason: "mock",
+      role_bucket: "hr",
+      seniority: "manager",
+      source: "mock",
+      confidence: 0.92
+    },
+    {
+      name: "John Smith",
+      designation: "Head of People",
+      linkedin_url: `https://www.linkedin.com/in/john-smith-people-${Math.floor(Math.random()*9000+1000)}/`,
+      email: `john.smith@${domain}`,
+      email_status: "accept_all",
+      email_reason: "mock",
+      role_bucket: "hr",
+      seniority: "head",
+      source: "mock",
+      confidence: 0.88
+    }
+  ];
+
+  return res.json({
+    status: "completed",
+    company_id: null,
+    results,
+    summary: {
+      total_candidates: results.length,
+      kept: results.length,
+      pattern_used: "first.last@" + domain,
+      verification_provider: "mock"
+    }
+  });
+});
+
+/**
  * POST /api/enrich
  * body: { company_id: string, max_contacts?: number, role?: "hr", geo?: "uae" }
  */
@@ -197,59 +247,9 @@ router.get("/:job_id", (req, res) => {
   return res.json(job);
 });
 
-/**
- * GET /api/enrich/mock?q=Company+Name
- * Lightweight mock enrichment to test the UI without needing a company_id.
- */
-router.get("/mock", async (req, res) => {
-  const q = (req.query.q || "").toString().trim();
-  if (!q) return res.status(400).json({ error: "q is required" });
-  const domain = q.toLowerCase().replace(/\s+/g, "") + ".com";
-
-  const results = [
-    {
-      name: "Jane Doe",
-      designation: "HR Manager",
-      linkedin_url: `https://www.linkedin.com/in/jane-doe-hr-${Math.floor(Math.random()*9000+1000)}/`,
-      email: `jane.doe@${domain}`,
-      email_status: "valid",
-      email_reason: "mock",
-      role_bucket: "hr",
-      seniority: "manager",
-      source: "mock",
-      confidence: 0.92
-    },
-    {
-      name: "John Smith",
-      designation: "Head of People",
-      linkedin_url: `https://www.linkedin.com/in/john-smith-people-${Math.floor(Math.random()*9000+1000)}/`,
-      email: `john.smith@${domain}`,
-      email_status: "accept_all",
-      email_reason: "mock",
-      role_bucket: "hr",
-      seniority: "head",
-      source: "mock",
-      confidence: 0.88
-    }
-  ];
-
-  return res.json({
-    status: "completed",
-    company_id: null,
-    results,
-    summary: {
-      total_candidates: results.length,
-      kept: results.length,
-      pattern_used: "first.last@" + domain,
-      verification_provider: "mock"
-    }
-  });
-});
-
 export default router;
 
 // ---------- helpers ----------
-
 async function getCompany(company_id) {
   const q = `
     SELECT id, name, website_url, domain, email_pattern, pattern_confidence
