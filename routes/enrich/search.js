@@ -30,6 +30,13 @@ import {
 
 import { guessCompany as llmGuessCompany } from "./lib/llm.js";
 
+// hard 12s cutoff so UI never hangs forever
+const controller = new AbortController();
+const timeout = setTimeout(() => controller.abort(new Error("timeout")), 12_000);
+// pass controller.signal to any fetches you do, then finally:
+clearTimeout(timeout);
+
+
 const router = Router();
 
 /**

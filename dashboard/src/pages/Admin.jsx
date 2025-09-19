@@ -1,220 +1,83 @@
 // dashboard/src/pages/Admin.jsx
-import { useEffect, useState } from "react";
-import { authFetch, logout } from "../utils/auth";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { logout } from "../utils/auth";
 
 export default function Admin() {
-  const [verifyMsg, setVerifyMsg] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  // demo payloads
-  const [enrichmentJson, setEnrichmentJson] = useState(() =>
-    JSON.stringify(
-      {
-        company: {
-          name: "Acme Corp",
-          type: "Private",
-          locations: ["Dubai"],
-          website_url: "https://acme.example",
-          linkedin_url: "https://www.linkedin.com/company/acme",
-        },
-        contact: {
-          name: "Jane Doe",
-          designation: "HR Director",
-          linkedin_url: "https://www.linkedin.com/in/janedoe",
-          location: "Dubai",
-          email: "jane.doe@acme.example",
-          email_status: "validated",
-        },
-        status: "New",
-        notes: "Saved from Admin page",
-      },
-      null,
-      2
-    )
-  );
-
-  const [bulkJson, setBulkJson] = useState(() =>
-    JSON.stringify(
-      [
-        {
-          company: {
-            name: "Beta LLC",
-            locations: ["Abu Dhabi"],
-            website_url: "https://beta.example",
-          },
-          contact: { name: "Ali Khan", designation: "TA Manager", email: null },
-          status: "New",
-          notes: "Bulk import 1",
-        },
-        {
-          company: { name: "Gamma FZ-LLC", locations: ["Dubai"] },
-          contact: { name: "Sara Lee", designation: "HRBP", email: "sara@gamma.example" },
-          status: "New",
-          notes: "Bulk import 2",
-        },
-      ],
-      null,
-      2
-    )
-  );
-
-  useEffect(() => {
-    // quick verify on load (optional)
-    (async () => {
-      try {
-        const res = await authFetch("/api/admin/verify");
-        setVerifyMsg(res.ok ? "✅ Admin verified" : "❌ Not authorized");
-      } catch {
-        setVerifyMsg("❌ Not authorized");
-      }
-    })();
-  }, []);
-
-  async function doVerify() {
-    setBusy(true);
-    setVerifyMsg("");
-    try {
-      const res = await authFetch("/api/admin/verify");
-      setVerifyMsg(res.ok ? "✅ Admin verified" : "❌ Not authorized");
-    } catch (e) {
-      setVerifyMsg("❌ Not authorized");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function saveFromEnrichment() {
-    setBusy(true);
-    try {
-      let payload;
-      try {
-        payload = JSON.parse(enrichmentJson);
-      } catch {
-        alert("Enrichment JSON is invalid.");
-        return;
-      }
-      const res = await authFetch("/api/hr-leads/from-enrichment", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await safeJson(res);
-      if (!res.ok || !data?.ok) throw new Error(data?.error || "Save failed");
-      alert("Saved ✅");
-    } catch (e) {
-      alert(e?.message || "Save failed");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function bulkImport() {
-    setBusy(true);
-    try {
-      let rows;
-      try {
-        rows = JSON.parse(bulkJson);
-        if (!Array.isArray(rows)) throw new Error("Bulk JSON must be an array");
-      } catch (e) {
-        alert(e.message || "Bulk JSON is invalid.");
-        return;
-      }
-      const res = await authFetch("/api/hr-leads/bulk", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ items: rows }),
-      });
-      const data = await safeJson(res);
-      if (!res.ok || !data?.ok) throw new Error(data?.error || "Bulk import failed");
-      alert(`Imported ${data.count ?? rows.length} rows ✅`);
-    } catch (e) {
-      alert(e?.message || "Bulk import failed");
-    } finally {
-      setBusy(false);
-    }
-  }
+  const navigate = useNavigate();
 
   return (
-    <div className="space-y-8">
-      <header>
-        <h1 className="text-2xl font-semibold text-gray-900">Admin</h1>
-        <p className="text-sm text-gray-500">
-          You’re authenticated with username/password. Admin actions below use your JWT automatically.
-        </p>
-      </header>
+    <div className="min-h-screen flex bg-gray-50">
+      {/* Sidebar */}
+      <aside className="w-[260px] border-r bg-white">
+        <div className="px-4 py-4 text-sm font-semibold text-gray-700">
+          UAE Premium Radar
+        </div>
 
-      <section className="bg-white rounded-xl shadow p-5 space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">Session</h2>
-          <div className="flex gap-2">
-            <button
-              onClick={doVerify}
-              disabled={busy}
-              className="rounded-lg bg-gray-900 text-white px-3 py-1.5 text-sm hover:bg-gray-800 disabled:opacity-60"
-            >
-              Verify Admin
-            </button>
-            <button
-              onClick={() => logout()}
-              className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
-            >
-              Logout
-            </button>
+        <nav className="px-2 space-y-1">
+          <SideItem to="/dashboard" label="Dashboard" />
+          <SideItem to="/companies" label="Companies" />
+          <SideItem to="/hr-leads" label="HR Leads" />
+          <SideItem to="/enrichment" label="Enrichment" />
+          <SideItem to="/messages" label="Messages" />
+        </nav>
+
+        {/* Company card placeholder (left column) */}
+        <div className="m-4 rounded-xl border border-dashed p-4 text-sm text-gray-600">
+          <div className="font-medium mb-1">Company</div>
+          <div>
+            No company selected. Pick one in <span className="font-medium">Companies</span> or use LLM on the{" "}
+            <span className="font-medium">Enrichment</span> page.
           </div>
         </div>
-        <p className="text-sm">{verifyMsg}</p>
-      </section>
+      </aside>
 
-      <section className="bg-white rounded-xl shadow p-5 space-y-3">
-        <h2 className="text-lg font-semibold text-gray-900">Save From Enrichment JSON</h2>
-        <p className="text-sm text-gray-500">
-          POST <code className="bg-gray-100 px-1 rounded">/api/hr-leads/from-enrichment</code>
-        </p>
-        <textarea
-          className="w-full min-h-[220px] border rounded-xl px-3 py-2 font-mono text-xs"
-          value={enrichmentJson}
-          onChange={(e) => setEnrichmentJson(e.target.value)}
-        />
-        <div className="flex justify-end">
-          <button
-            onClick={saveFromEnrichment}
-            disabled={busy}
-            className="rounded-lg bg-gray-900 text-white px-3 py-1.5 text-sm hover:bg-gray-800 disabled:opacity-60"
-          >
-            Save
+      {/* Main area */}
+      <div className="flex-1 flex flex-col">
+        {/* Top bar */}
+        <header className="h-[64px] border-b bg-white flex items-center gap-3 px-4">
+          <input
+            className="flex-1 rounded-xl border px-3 py-2 text-[15px] focus:outline-none focus:ring-2 focus:ring-gray-900/10"
+            placeholder="Search companies, LinkedIn URLs, or roles..."
+            onKeyDown={(e) => {
+              // Simple behavior: Enter focuses the Enrichment page (where search happens)
+              if (e.key === "Enter") navigate("/enrichment");
+            }}
+          />
+          <button className="rounded-xl bg-gray-900 px-4 py-2 text-white font-medium">
+            + Add Lead
           </button>
-        </div>
-      </section>
+          <button
+            className="rounded-xl border px-4 py-2 text-gray-700 bg-white"
+            onClick={() => {
+              logout();
+              // after clearing token, route to login
+              navigate("/login", { replace: true });
+            }}
+          >
+            Logout
+          </button>
+        </header>
 
-      <section className="bg-white rounded-xl shadow p-5 space-y-3">
-        <h2 className="text-lg font-semibold text-gray-900">Bulk Import</h2>
-        <p className="text-sm text-gray-500">
-          POST <code className="bg-gray-100 px-1 rounded">/api/hr-leads/bulk</code> with{" "}
-          <code className="bg-gray-100 px-1 rounded">{`{ items: [...] }`}</code>
-        </p>
-        <textarea
-          className="w-full min-h-[220px] border rounded-xl px-3 py-2 font-mono text-xs"
-          value={bulkJson}
-          onChange={(e) => setBulkJson(e.target.value)}
-        />
-        <div className="flex justify-end">
-          <button
-            onClick={bulkImport}
-            disabled={busy}
-            className="rounded-lg bg-gray-900 text-white px-3 py-1.5 text-sm hover:bg-gray-800 disabled:opacity-60"
-          >
-            Import
-          </button>
-        </div>
-      </section>
+        {/* CONTENT OUTLET (this is what was missing) */}
+        <main className="flex-1 p-4 overflow-auto">
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }
 
-async function safeJson(res) {
-  try {
-    return await res.json();
-  } catch {
-    return null;
-  }
+function SideItem({ to, label }) {
+  return (
+    <NavLink
+      to={to}
+      className={({ isActive }) =>
+        `block rounded-lg px-3 py-2 text-[15px] ${
+          isActive ? "bg-gray-900 text-white" : "text-gray-800 hover:bg-gray-100"
+        }`
+      }
+    >
+      {label}
+    </NavLink>
+  );
 }

@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-19T19:30:22Z",
-  "generated_human": "Fri, 19 Sep 2025 19:30:22 GMT",
-  "branch": "main",
-  "commit": "366d2df",
+  "generated": "2025-09-19T19:40:51Z",
+  "generated_human": "Fri, 19 Sep 2025 19:40:51 GMT",
+  "branch": "fix/routing-enrichment-ui",
+  "commit": "c8b42c0",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -69,18 +69,18 @@
     },
     {
       "path": "dashboard/src/pages/Admin.jsx",
-      "size": 6749,
-      "mtime": "2025-09-14T04:35:37.712Z",
-      "sha256": "117cd39d4a05b474c4d2e63c4d5893a5a5a5be5fdadf2fd2c7f3c5bcfb712245",
+      "size": 2802,
+      "mtime": "2025-09-19T19:36:57.473Z",
+      "sha256": "89b3a8c4b33e52819c6ab18e11b065f2dc33bdee9cfa0d7dd7c1f5697d23c928",
       "imports": [
-        "import { useEffect, useState } from \"react\";",
-        "import { authFetch, logout } from \"../utils/auth\";"
+        "import { NavLink, Outlet, useNavigate } from \"react-router-dom\";",
+        "import { logout } from \"../utils/auth\";"
       ],
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "// dashboard/src/pages/Admin.jsx\nimport { useEffect, useState } from \"react\";\nimport { authFetch, logout } from \"../utils/auth\";\n\nexport default function Admin() {\n  const [verifyMsg, setVerifyMsg] = useState(\"\");\n  const [busy, setBusy] = useState(false);\n\n  // demo payloads\n  const [enrichmentJson, setEnrichmentJson] = useState(() =>\n    JSON.stringify(\n      {\n        company: {\n          name: \"Acme Corp\",\n          type: \"Private\",\n          locations: [\"Dubai\"],\n          website_url: \"https://acme.example\",\n          linkedin_url: \"https://www.linkedin.com/company/acme\",\n        },\n        contact: {\n          name: \"Jane Doe\",\n          designation: \"HR Director\",\n          linkedin_url: \"https://www.linkedin.com/in/janedoe\",\n          location: \"Dubai\",\n          email: \"jane.doe@acme.example\",\n          email_status: \"validated\",\n        },\n        status: \"New\",\n        notes: \"Saved from Admin page\",\n      },\n      null,\n      2\n    )\n  );\n\n  const [bulkJson, setBulkJson] = useState(() =>\n    JSON.stringify(\n      [\n        {\n          company: {",
-      "tail": "          value={bulkJson}\n          onChange={(e) => setBulkJson(e.target.value)}\n        />\n        <div className=\"flex justify-end\">\n          <button\n            onClick={bulkImport}\n            disabled={busy}\n            className=\"rounded-lg bg-gray-900 text-white px-3 py-1.5 text-sm hover:bg-gray-800 disabled:opacity-60\"\n          >\n            Import\n          </button>\n        </div>\n      </section>\n    </div>\n  );\n}\n\nasync function safeJson(res) {\n  try {\n    return await res.json();\n  } catch {\n    return null;\n  }\n}\n"
+      "head": "// dashboard/src/pages/Admin.jsx\nimport { NavLink, Outlet, useNavigate } from \"react-router-dom\";\nimport { logout } from \"../utils/auth\";\n\nexport default function Admin() {\n  const navigate = useNavigate();\n\n  return (\n    <div className=\"min-h-screen flex bg-gray-50\">\n      {/* Sidebar */}\n      <aside className=\"w-[260px] border-r bg-white\">\n        <div className=\"px-4 py-4 text-sm font-semibold text-gray-700\">\n          UAE Premium Radar\n        </div>\n\n        <nav className=\"px-2 space-y-1\">\n          <SideItem to=\"/dashboard\" label=\"Dashboard\" />\n          <SideItem to=\"/companies\" label=\"Companies\" />\n          <SideItem to=\"/hr-leads\" label=\"HR Leads\" />\n          <SideItem to=\"/enrichment\" label=\"Enrichment\" />\n          <SideItem to=\"/messages\" label=\"Messages\" />\n        </nav>\n\n        {/* Company card placeholder (left column) */}\n        <div className=\"m-4 rounded-xl border border-dashed p-4 text-sm text-gray-600\">\n          <div className=\"font-medium mb-1\">Company</div>\n          <div>\n            No company selected. Pick one in <span className=\"font-medium\">Companies</span> or use LLM on the{\" \"}\n            <span className=\"font-medium\">Enrichment</span> page.\n          </div>\n        </div>\n      </aside>\n\n      {/* Main area */}\n      <div className=\"flex-1 flex flex-col\">\n        {/* Top bar */}\n        <header className=\"h-[64px] border-b bg-white flex items-center gap-3 px-4\">\n          <input\n            className=\"flex-1 rounded-xl border px-3 py-2 text-[15px] focus:outline-none focus:ring-2 focus:ring-gray-900/10\"\n            placeholder=\"Search companies, LinkedIn URLs, or roles...\"",
+      "tail": "\n        {/* CONTENT OUTLET (this is what was missing) */}\n        <main className=\"flex-1 p-4 overflow-auto\">\n          <Outlet />\n        </main>\n      </div>\n    </div>\n  );\n}\n\nfunction SideItem({ to, label }) {\n  return (\n    <NavLink\n      to={to}\n      className={({ isActive }) =>\n        `block rounded-lg px-3 py-2 text-[15px] ${\n          isActive ? \"bg-gray-900 text-white\" : \"text-gray-800 hover:bg-gray-100\"\n        }`\n      }\n    >\n      {label}\n    </NavLink>\n  );\n}\n"
     },
     {
       "path": "dashboard/src/pages/AdminDashboard.jsx",
@@ -407,9 +407,9 @@
     },
     {
       "path": "routes/enrich/search.js",
-      "size": 8215,
-      "mtime": "2025-09-19T19:29:34.094Z",
-      "sha256": "726b66a7f6606164fdbe54bcc07af83f3884a9df33d70cfb5f14da6425e42c44",
+      "size": 8472,
+      "mtime": "2025-09-19T19:39:32.729Z",
+      "sha256": "015f4365bdd85c6bccbf65c91ba794fe49fbd8ee71336a1fbcf3d1d8949492c3",
       "imports": [
         "import { Router } from \"express\";",
         "\nimport { guessCompany as llmGuessCompany } from \"./lib/llm.js\";"
@@ -417,7 +417,7 @@
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "// routes/enrich/search.js\nimport { Router } from \"express\";\n\n// Data providers / helpers\nimport {\n  // flexible: any of these may be no-ops depending on your apollo.js\n  searchPeopleByCompany,\n  compactApolloKeywords,\n} from \"./lib/apollo.js\";\n\nimport {\n  qualityScore,\n  scoreCandidate,   // used per-row for confidence tweaks (safe if pass-through)\n} from \"./lib/quality.js\";\n\nimport {\n  emirateFromLocation,\n  tagEmirate,         // graceful if it just returns input.emirate internally\n  isUAE,\n} from \"./lib/geo.js\";\n\nimport {\n  inferPatternFromSamples,\n  applyPattern as applyEmailPattern,   // alias to what email.js exports\n  isProviderPlaceholderEmail,\n  loadPatternFromCache,\n  savePatternToCache,\n  verifyEmail,                          // may return { status:'unknown', reason:'no_verifier' }\n} from \"./lib/email.js\";\n\nimport { guessCompany as llmGuessCompany } from \"./lib/llm.js\";\n\nconst router = Router();\n\n/**\n * Normalize a person row to UI schema\n */\nfunction normalizeCandidate(raw, domainHint) {\n  const name = raw?.name || [raw?.first_name, raw?.last_name].filter(Boolean).join(\" \").trim();\n  const designation = raw?.designation || raw?.title || \"\";",
+      "head": "// routes/enrich/search.js\nimport { Router } from \"express\";\n\n// Data providers / helpers\nimport {\n  // flexible: any of these may be no-ops depending on your apollo.js\n  searchPeopleByCompany,\n  compactApolloKeywords,\n} from \"./lib/apollo.js\";\n\nimport {\n  qualityScore,\n  scoreCandidate,   // used per-row for confidence tweaks (safe if pass-through)\n} from \"./lib/quality.js\";\n\nimport {\n  emirateFromLocation,\n  tagEmirate,         // graceful if it just returns input.emirate internally\n  isUAE,\n} from \"./lib/geo.js\";\n\nimport {\n  inferPatternFromSamples,\n  applyPattern as applyEmailPattern,   // alias to what email.js exports\n  isProviderPlaceholderEmail,\n  loadPatternFromCache,\n  savePatternToCache,\n  verifyEmail,                          // may return { status:'unknown', reason:'no_verifier' }\n} from \"./lib/email.js\";\n\nimport { guessCompany as llmGuessCompany } from \"./lib/llm.js\";\n\n// hard 12s cutoff so UI never hangs forever\nconst controller = new AbortController();\nconst timeout = setTimeout(() => controller.abort(new Error(\"timeout\")), 12_000);\n// pass controller.signal to any fetches you do, then finally:\nclearTimeout(timeout);\n\n\nconst router = Router();",
       "tail": "    timings: {\n      llm_ms: llm.ms,\n      provider_ms: provider.ms,\n      smtp_ms: 0,\n    },\n    quality,\n  };\n\n  // Even if provider errored, return ok: true with empty results so UI never spins forever.\n  return res.json({\n    ok: true,\n    data: {\n      summary,\n      results: normalized,\n    },\n    // surface non-fatal provider/llm errors in debug field (not used by UI)\n    debug: {\n      llm_error: llm.error ? String(llm.error?.message || llm.error) : null,\n      provider_error: provider.error ? String(provider.error?.message || provider.error) : null,\n    },\n  });\n});\n\nexport default router;\n"
     },
     {
