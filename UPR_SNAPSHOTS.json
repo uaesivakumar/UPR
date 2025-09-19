@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-19T17:29:37Z",
-  "generated_human": "Fri, 19 Sep 2025 17:29:37 GMT",
+  "generated": "2025-09-19T17:34:34Z",
+  "generated_human": "Fri, 19 Sep 2025 17:34:34 GMT",
   "branch": "main",
-  "commit": "6a6e465",
+  "commit": "76d202d",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -345,30 +345,27 @@
     },
     {
       "path": "routes/enrich/lib/email.js",
-      "size": 3689,
-      "mtime": "2025-09-19T17:10:10.229Z",
-      "sha256": "ec5639ec059a7cc59f699710fff4762371b480d6faf282cfb12683c6a74a61b3",
-      "imports": [],
-      "envs": [
-        "NEVERBOUNCE_API_KEY",
-        "ZEROBOUNCE_API_KEY"
-      ],
-      "appUses": [],
-      "endpoints": [],
-      "head": "/**\n * Email helpers\n * Exports:\n *  - applyEmailPattern(fullName, domain, pattern=\"first.last\") -> string email\n *  - applyPattern(...)  // alias kept for older callers\n *  - inferPatternFromSamples(domain, samples)\n *  - isProviderPlaceholderEmail(email)\n *  - verifyEmailSMTP(email)  (stub; returns unknown unless you wire NB/ZB)\n */\n\nfunction clean(s=\"\"){ return String(s).normalize(\"NFKD\"); }\nfunction splitName(fullName=\"\"){\n  const raw = clean(fullName).trim().replace(/\\s+/g,\" \");\n  if (!raw) return [\"\",\"\"];\n  const parts = raw.split(\" \");\n  return [parts[0]||\"\", parts.length>1 ? parts[parts.length-1] : \"\"];\n}\nfunction slug(s=\"\"){ return clean(s).toLowerCase().replace(/[^a-z]/g,\"\"); }\nfunction normDomain(d=\"\"){ return String(d).trim().toLowerCase().replace(/^https?:\\/\\//,\"\").replace(/\\/.*$/,\"\"); }\n\n/** Build email from a pattern id */\nexport function applyEmailPattern(fullName, domain, pattern=\"first.last\"){\n  if (!fullName || !domain) return null;\n  const dom = normDomain(domain);\n  const [fraw, lraw] = splitName(fullName);\n  const f = slug(fraw), l = slug(lraw), fi = f.slice(0,1), li = l.slice(0,1);\n  const table = {\n    \"first.last\": `${f}.${l}@${dom}`,\n    \"firstlast\":  `${f}${l}@${dom}`,\n    \"f.last\":     `${fi}.${l}@${dom}`,\n    \"first.l\":    `${f}.${li}@${dom}`,\n    \"first_last\": `${f}_${l}@${dom}`,\n    \"first-last\": `${f}-${l}@${dom}`,\n    \"first\":      `${f}@${dom}`,\n    \"last\":       `${l}@${dom}`,\n    \"firstl\":     `${f}${li}@${dom}`,\n    \"flast\":      `${fi}${l}@${dom}`,\n  };\n  return table[pattern] || table[\"first.last\"];\n}",
-      "tail": "    if (/^[a-z]\\.[a-z]/.test(local)) score[\"f.last\"]+=1;\n    if (/^[a-z]+\\.[a-z]$/.test(local)) score[\"first.l\"]+=1;\n    if (/_/.test(local)) score[\"first_last\"]+=1;\n    if (/-/.test(local)) score[\"first-last\"]+=1;\n  }\n  const best = Object.entries(score).sort((a,b)=>b[1]-a[1])[0];\n  return best && best[1]>0 ? best[0] : \"first.last\";\n}\n\nexport async function verifyEmailSMTP(_email){\n  if (!process.env.NEVERBOUNCE_API_KEY && !process.env.ZEROBOUNCE_API_KEY) {\n    return { status:\"unknown\", reason:\"no_verifier\" };\n  }\n  // TODO: wire NeverBounce/ZeroBounce; normalize to {status, reason}\n  return { status:\"unknown\", reason:\"not_implemented\" };\n}\n\nexport default {\n  applyEmailPattern,\n  applyPattern,\n  isProviderPlaceholderEmail,\n  inferPatternFromSamples,\n  verifyEmailSMTP,\n};\n"
-    },
-    {
-      "path": "routes/enrich/lib/geo.js",
-      "size": 472,
-      "mtime": "2025-09-19T16:58:41.253Z",
-      "sha256": "177dc7f99a8efecc0c28a25d25082c69ff5d3282c1b9918ed34cf63498a53c10",
+      "size": 3563,
+      "mtime": "2025-09-19T17:34:33.888Z",
+      "sha256": "a60ec6cd9581ed8b3b589bf0edbcedfd85bf0ee342091180bbe0141b7b7e68bf",
       "imports": [],
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "/**\n * Emirate tagger from a free-text location.\n */\nconst EMIRATES = [\n  \"Abu Dhabi\",\n  \"Dubai\",\n  \"Sharjah\",\n  \"Ajman\",\n  \"Fujairah\",\n  \"Ras Al Khaimah\",\n  \"Umm Al Quwain\",\n];\n\nexport function tagEmirate(location = \"\") {\n  const s = String(location).toLowerCase();\n  for (const e of EMIRATES) {\n    if (s.includes(e.toLowerCase())) return e;\n  }\n  if (s.includes(\"united arab emirates\") || s.includes(\"uae\")) return \"UAE\";\n  return \"\";\n}\n\nexport default { tagEmirate };\n",
-      "tail": "/**\n * Emirate tagger from a free-text location.\n */\nconst EMIRATES = [\n  \"Abu Dhabi\",\n  \"Dubai\",\n  \"Sharjah\",\n  \"Ajman\",\n  \"Fujairah\",\n  \"Ras Al Khaimah\",\n  \"Umm Al Quwain\",\n];\n\nexport function tagEmirate(location = \"\") {\n  const s = String(location).toLowerCase();\n  for (const e of EMIRATES) {\n    if (s.includes(e.toLowerCase())) return e;\n  }\n  if (s.includes(\"united arab emirates\") || s.includes(\"uae\")) return \"UAE\";\n  return \"\";\n}\n\nexport default { tagEmirate };\n"
+      "head": "/**\n * Email pattern helpers\n * Exports:\n *   - inferPatternFromSamples(samples, domain?)\n *   - applyPattern(fullName, domain, pattern)\n *   - applyEmailPattern({ name }, domain, pattern)  // convenience\n *   - isProviderPlaceholderEmail(email)\n */\n\nconst PATTERNS = [\n  \"first.last\",\n  \"flast\",\n  \"firstlast\",\n  \"first\",\n  \"last\",\n  \"f.last\",\n  \"first.l\",\n  \"first_last\",\n  \"lfirst\",\n];\n\nfunction splitName(fullName = \"\") {\n  const clean = String(fullName || \"\").trim().replace(/\\s+/g, \" \");\n  if (!clean) return { first: \"\", last: \"\" };\n  const parts = clean.split(\" \");\n  const first = parts[0] || \"\";\n  const last = parts.length > 1 ? parts[parts.length - 1] : \"\";\n  return { first: first.toLowerCase(), last: last.toLowerCase() };\n}\n\nfunction buildLocal(first, last, pattern) {\n  const f = first || \"\";\n  const l = last || \"\";\n  switch (pattern) {\n    case \"first.last\":   return `${f}.${l}`;\n    case \"flast\":        return `${f.slice(0,1)}${l}`;\n    case \"firstlast\":    return `${f}${l}`;\n    case \"first\":        return f;\n    case \"last\":         return l;\n    case \"f.last\":       return `${f.slice(0,1)}.${l}`;",
+      "tail": "    if (v > bestVal) { best = p; bestVal = v; }\n  }\n  const confidence = Math.max(0.5, Math.min(1, bestVal / Math.max(2, arr.length * 2)));\n  return { pattern: best, confidence, domain };\n}\n\n/** Detect provider placeholders we should replace with a patterned email guess */\nexport function isProviderPlaceholderEmail(email = \"\") {\n  const e = String(email || \"\").toLowerCase();\n  return (\n    !e ||\n    /email[_\\-]?not[_\\-]?unlocked/.test(e) ||\n    /protected/.test(e) ||\n    /unavailable/.test(e) ||\n    /example\\.com$/.test(e)\n  );\n}\n\nexport default {\n  inferPatternFromSamples,\n  applyPattern,\n  applyEmailPattern,\n  isProviderPlaceholderEmail,\n};\n"
+    },
+    {
+      "path": "routes/enrich/lib/geo.js",
+      "size": 2222,
+      "mtime": "2025-09-19T17:34:33.886Z",
+      "sha256": "940cbb9d3adafb4151755a07d018b88089a467b20243dc2c7b4aeac53d594f93",
+      "imports": [],
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "/**\n * GEO helpers focused on UAE heuristics\n * Exports:\n *   - isUAE(locationLike)\n *   - emirateFromLocation(locationLike)\n */\n\nconst EMIRATES = [\n  \"Abu Dhabi\",\n  \"Dubai\",\n  \"Sharjah\",\n  \"Ajman\",\n  \"Fujairah\",\n  \"Ras Al Khaimah\",\n  \"Umm Al Quwain\",\n];\n\n// common city/area mentions mapped to emirates\nconst CITY_TO_EMIRATE = new Map([\n  // Abu Dhabi\n  [\"abu dhabi\",\"Abu Dhabi\"],\n  [\"al ain\",\"Abu Dhabi\"],\n  [\"mussafah\",\"Abu Dhabi\"],\n  // Dubai\n  [\"dubai\",\"Dubai\"],\n  [\"jlt\",\"Dubai\"],\n  [\"jumeirah\",\"Dubai\"],\n  [\"business bay\",\"Dubai\"],\n  [\"internet city\",\"Dubai\"],\n  // Sharjah\n  [\"sharjah\",\"Sharjah\"],\n  // Ajman\n  [\"ajman\",\"Ajman\"],\n  // Fujairah\n  [\"fujairah\",\"Fujairah\"],\n  // Ras Al Khaimah\n  [\"rak\",\"Ras Al Khaimah\"],\n  [\"ras al khaimah\",\"Ras Al Khaimah\"],\n  // Umm Al Quwain\n  [\"umm al quwain\",\"Umm Al Khaimah\"], // minor typos handled below",
+      "tail": "/** Best-effort emirate extraction from a free-form location string/object */\nexport function emirateFromLocation(loc) {\n  const s = norm(\n    typeof loc === \"string\"\n      ? loc\n      : [loc?.city, loc?.state, loc?.country, loc?.location].filter(Boolean).join(\", \")\n  );\n  if (!s) return \"\";\n\n  // direct emirate match\n  for (const e of EMIRATES) {\n    if (s.includes(e.toLowerCase())) return e;\n  }\n  // city -> emirate mapping\n  for (const [k, v] of CITY_TO_EMIRATE.entries()) {\n    if (s.includes(k)) return v;\n  }\n\n  // country-level only\n  if (/(united arab emirates|u\\.?a\\.?e\\.?|\\buae\\b)/i.test(s)) return \"United Arab Emirates\";\n  return \"\";\n}\n\nexport default { isUAE, emirateFromLocation };\n"
     },
     {
       "path": "routes/enrich/lib/llm.js",
@@ -384,15 +381,15 @@
     },
     {
       "path": "routes/enrich/lib/quality.js",
-      "size": 4336,
-      "mtime": "2025-09-19T17:13:19.867Z",
-      "sha256": "bf2024f233104c9efaa8b67621dd7bd3415be354dacb6428a15a9d6e48ef4e4f",
+      "size": 2324,
+      "mtime": "2025-09-19T17:34:33.891Z",
+      "sha256": "371b0b0ab7577f09409735f0277dfe378b374f32596f38b822d2424ba718d9cf",
       "imports": [],
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "/**\n * Quality & classification helpers for enrichment.\n *\n * Exports:\n *  - roleBucket(title)\n *  - bucketSeniority(title)\n *  - scoreCandidate(candidate)\n *  - scoreQuality(company, results)       // main set-level scorer\n *  - qualityScore(company, results)       // alias used by enrichCompany.js\n */\n\nfunction lc(s = \"\") { return String(s).toLowerCase(); }\nfunction inUAEText(s = \"\") {\n  const x = lc(s);\n  return [\n    \"abu dhabi\",\"dubai\",\"sharjah\",\"ajman\",\"fujairah\",\n    \"ras al khaimah\",\"umm al quwain\",\"united arab emirates\",\"uae\"\n  ].some(k => x.includes(k));\n}\n\nexport function roleBucket(title = \"\") {\n  const t = lc(title);\n  if (/(hr|people|talent|recruit|human resources)/.test(t)) return \"hr\";\n  if (/(admin|administrator|office|operations)/.test(t))   return \"admin\";\n  if (/(finance|account|payroll|treasury)/.test(t))        return \"finance\";\n  return \"other\";\n}\n\nexport function bucketSeniority(title = \"\") {\n  const t = lc(title);\n  if (/(chief|cxo|cfo|coo|chro|chief human|chief people|chief talent)/.test(t)) return \"cxo\";\n  if (/(vp|vice president)/.test(t))                                             return \"vp\";\n  if (/(director)/.test(t))                                                      return \"director\";\n  if (/(head)/.test(t))                                                          return \"head\";\n  if (/(manager|lead)/.test(t))                                                  return \"manager\";\n  return \"staff\";\n}\n\n/**\n * scoreCandidate: 0..1",
-      "tail": "  const acceptAll = st.filter(x => x === \"accept_all\").length;\n  const patterned = st.filter(x => x === \"patterned\").length;\n  const denom = results.length || 1;\n  const ratio = (valid + 0.6*acceptAll + 0.8*patterned) / denom;\n  score += Math.min(0.20, ratio * 0.20);\n  notes.push(`email pattern≈${Math.round(ratio*100)}%`);\n\n  // Clamp and explain\n  if (score < 0) score = 0;\n  if (score > 1) score = 1;\n\n  return { score, explanation: notes.join(\"; \") || \"no signals\" };\n}\n\n/** alias kept for compatibility with enrichCompany.js */\nexport const qualityScore = scoreQuality;\n\nexport default {\n  roleBucket,\n  bucketSeniority,\n  scoreCandidate,\n  scoreQuality,\n  qualityScore,\n};\n"
+      "head": "/**\n * Quality heuristics for companies & candidates\n * Exports:\n *   - roleBucket(title)\n *   - bucketSeniority(title)\n *   - scoreCandidate(c)\n *   - qualityScore(summaryLike)       // company-level\n *   - scoreQuality(summaryLike)       // alias for back-compat\n */\n\nexport function roleBucket(title = \"\") {\n  const t = String(title).toLowerCase();\n  if (/(hr|people|talent|recruit|human resources)/.test(t)) return \"hr\";\n  if (/(admin|administrator|office|operations)/.test(t)) return \"admin\";\n  if (/(finance|account|payroll|treasury)/.test(t)) return \"finance\";\n  return \"other\";\n}\n\nexport function bucketSeniority(title = \"\") {\n  const t = String(title).toLowerCase();\n  if (/(chief|cxo|cfo|coo|chro|chief human|chief people|chief talent)/.test(t)) return \"cxo\";\n  if (/(vp|vice president)/.test(t)) return \"vp\";\n  if (/(director)/.test(t)) return \"director\";\n  if (/(head)/.test(t)) return \"head\";\n  if (/(manager|lead)/.test(t)) return \"manager\";\n  return \"staff\";\n}\n\nexport function scoreCandidate(c = {}) {\n  let s = 0.5;\n\n  const bucket = c.role_bucket || roleBucket(c.designation || c.title);\n  if ([\"hr\",\"admin\",\"finance\"].includes(bucket)) s += 0.15;\n  const senior = c.seniority || bucketSeniority(c.designation || c.title);\n  if ([\"manager\",\"head\",\"director\",\"vp\",\"cxo\"].includes(senior)) s += 0.1;\n\n  if (typeof c.confidence === \"number\") {\n    s += Math.max(-0.1, Math.min(0.2, c.confidence - 0.85));\n  }\n",
+      "tail": "  let s = 0.5;\n\n  if (summary.company_guess?.domain) s += 0.15;\n  if (summary.company_guess?.linkedin_url) s += 0.1;\n\n  const kept = Number(summary.kept || summary.total_candidates || 0);\n  if (kept >= 5) s += 0.1;\n  if (kept >= 10) s += 0.05;\n\n  if (summary.email_pattern_confidence >= 0.7) s += 0.05;\n\n  return Math.max(0, Math.min(1, s));\n}\n\n/** Back-compat alias */\nexport const scoreQuality = qualityScore;\n\nexport default {\n  roleBucket,\n  bucketSeniority,\n  scoreCandidate,\n  qualityScore,\n  scoreQuality,\n};\n"
     },
     {
       "path": "routes/enrich/search.js",
