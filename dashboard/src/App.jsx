@@ -1,60 +1,72 @@
-import React, { Suspense } from "react";
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
-import "./App.css";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import ErrorBoundary from "./components/ErrorBoundary.jsx";
 
-import Sidebar from "./components/sidebar.jsx";
-import Topbar from "./components/Topbar.jsx";
-import ProtectedRoute from "./components/ProtectedRoute.jsx";
-
-// Barrel exports (case-sensitive)
-import {
-  DashboardHome,
-  EnrichmentPage,
-  CompaniesPage,
-  HRLeads,
-  MessagesPage,
-} from "./pages";
-
-// Direct import for Login (not behind auth)
+import DashboardHome from "./pages/DashboardHome.jsx";
+import CompaniesPage from "./pages/CompaniesPage.jsx";
+import EnrichmentPage from "./pages/EnrichmentPage.jsx";
+import LeadsPage from "./pages/LeadsPage.jsx";
+import MessagesPage from "./pages/MessagesPage.jsx";
 import Login from "./pages/Login.jsx";
+import Sidebar from "./components/sidebar.jsx";
 
-function AppShell() {
+function Shell({ children }) {
   return (
-    <div className="min-h-screen w-full bg-gray-50 text-gray-900 flex">
-      <Sidebar />
-      <div className="flex-1 flex flex-col min-w-0">
-        <Topbar />
-        <main className="p-6">
-          <Outlet />
-        </main>
-      </div>
+    <div className="min-h-screen flex bg-white">
+      <Sidebar /* company comes from Enrichment or Companies when selected */ />
+      <main className="flex-1">{children}</main>
     </div>
   );
 }
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Suspense fallback={<div className="p-6 text-sm text-gray-500">Loading…</div>}>
+    <ErrorBoundary>
+      <BrowserRouter>
         <Routes>
-          {/* Public routes */}
           <Route path="/login" element={<Login />} />
-
-          {/* Private app routes */}
-          <Route element={<ProtectedRoute />}>
-            <Route element={<AppShell />}>
-              <Route index element={<DashboardHome />} />
-              <Route path="/enrichment" element={<EnrichmentPage />} />
-              <Route path="/companies" element={<CompaniesPage />} />
-              <Route path="/hr-leads" element={<HRLeads />} />
-              <Route path="/messages" element={<MessagesPage />} />
-            </Route>
-          </Route>
-
-          {/* Fallback */}
+          <Route
+            path="/"
+            element={
+              <Shell>
+                <DashboardHome />
+              </Shell>
+            }
+          />
+          <Route
+            path="/companies"
+            element={
+              <Shell>
+                <CompaniesPage />
+              </Shell>
+            }
+          />
+          <Route
+            path="/enrichment"
+            element={
+              <Shell>
+                <EnrichmentPage />
+              </Shell>
+            }
+          />
+          <Route
+            path="/hr-leads"
+            element={
+              <Shell>
+                <LeadsPage />
+              </Shell>
+            }
+          />
+          <Route
+            path="/messages"
+            element={
+              <Shell>
+                <MessagesPage />
+              </Shell>
+            }
+          />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-      </Suspense>
-    </BrowserRouter>
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }

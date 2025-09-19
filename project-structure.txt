@@ -1,4 +1,4 @@
-# Generated: 2025-09-19T18:10:36Z
+# Generated: 2025-09-19T18:17:46Z
 .DS_Store
 .dockerignore
 .githooks/pre-commit
@@ -20,6 +20,7 @@ dashboard/public/vite.svg
 dashboard/src/App.css
 dashboard/src/App.jsx
 dashboard/src/assets/react.svg
+dashboard/src/components/ErrorBoundary.jsx
 dashboard/src/components/LLMStatus.jsx
 dashboard/src/components/ProtectedRoute.jsx
 dashboard/src/components/Topbar.jsx
