@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-19T16:34:40Z",
-  "generated_human": "Fri, 19 Sep 2025 16:34:40 GMT",
+  "generated": "2025-09-19T16:38:02Z",
+  "generated_human": "Fri, 19 Sep 2025 16:38:02 GMT",
   "branch": "main",
-  "commit": "256976e",
+  "commit": "ed78309",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -331,9 +331,9 @@
     },
     {
       "path": "routes/enrich/lib/email.js",
-      "size": 5155,
-      "mtime": "2025-09-19T15:11:20.112Z",
-      "sha256": "474e007346cfb50611737e527b737ff6e1647f6660ddbab3c1ec65342faa6184",
+      "size": 4303,
+      "mtime": "2025-09-19T16:38:01.619Z",
+      "sha256": "ec7494d165f049a5087569ce0a57263662f57d579a45035bbf445115b282fdfa",
       "imports": [],
       "envs": [
         "NEVERBOUNCE_API_KEY",
@@ -341,8 +341,8 @@
       ],
       "appUses": [],
       "endpoints": [],
-      "head": "/** Email helpers: patterning, cache, and verification (ZeroBounce/NeverBounce if keys present). */\n\nconst KNOWN_PATTERNS = [\n  \"first.last\",\"firstlast\",\"f.last\",\"first.l\",\"flast\",\"last.first\",\"first\",\"last\"\n];\n\nexport function isProviderPlaceholderEmail(e) {\n  if (!e) return false;\n  const s = String(e).toLowerCase();\n  return (\n    s === \"first.last\" ||\n    s === \"first.last@\" ||\n    s === \"first.last@domain.com\" ||\n    s === \"firstlast@domain.com\" ||\n    s.endsWith(\"@domain.com\") ||\n    s.startsWith(\"email_not_unlocked@\")\n  );\n}\n\nexport function applyPattern(first, last, pattern, domain) {\n  const f = String(first || \"\").toLowerCase().replace(/[^a-z]/g, \"\");\n  const l = String(last  || \"\").toLowerCase().replace(/[^a-z]/g, \"\");\n  const fl = f?.[0] || \"\"; const ll = l?.[0] || \"\";\n  let local = \"\";\n  switch (pattern) {\n    case \"first.last\":  local = `${f}.${l}`; break;\n    case \"firstlast\":   local = `${f}${l}`; break;\n    case \"f.last\":      local = `${fl}.${l}`; break;\n    case \"first.l\":     local = `${f}.${ll}`; break;\n    case \"flast\":       local = `${fl}${l}`; break;\n    case \"last.first\":  local = `${l}.${f}`; break;\n    case \"first\":       local = f; break;\n    case \"last\":        local = l; break;\n    default:            local = `${f}.${l}`;\n  }\n  return domain ? `${local}@${domain}` : local;\n}\n\nexport function inferPatternFromSamples(samples = [], domain) {\n  // samples: [{name, email}]",
-      "tail": "      u.searchParams.set(\"api_key\", ZB_KEY);\n      u.searchParams.set(\"email\", email);\n      const r = await fetch(u.toString(), { method: \"GET\" });\n      const j = await r.json().catch(() => null);\n      const s = (j?.status || \"\").toLowerCase();\n      if (s === \"valid\") return { status: \"valid\", reason: \"zerobounce\" };\n      if (s === \"invalid\") return { status: \"invalid\", reason: j?.sub_status || \"zerobounce\" };\n      if (s === \"catch-all\") return { status: \"accept_all\", reason: \"zerobounce\" };\n      return { status: \"unknown\", reason: \"zerobounce\" };\n    }\n    if (NB_KEY) {\n      const r = await fetch(\"https://api.neverbounce.com/v4/single/check?key=\"+encodeURIComponent(NB_KEY)+\"&email=\"+encodeURIComponent(email), { method: \"GET\" });\n      const j = await r.json().catch(() => null);\n      const s = (j?.result || \"\").toLowerCase();\n      if (s === \"valid\") return { status: \"valid\", reason: \"neverbounce\" };\n      if (s === \"invalid\") return { status: \"invalid\", reason: \"neverbounce\" };\n      if (s === \"catchall\" || s === \"unknown\") return { status: \"accept_all\", reason: \"neverbounce\" };\n      return { status: \"unknown\", reason: \"neverbounce\" };\n    }\n  } catch (e) {\n    console.error(\"verifyEmail error\", e);\n  }\n  return { status: \"unknown\", reason: \"no_verifier\" };\n}\n"
+      "head": "/**\n * Email utilities used by enrichment routes.\n * Backward-compatible export names expected by search.js:\n *   - applyEmailPattern(fullName, domain, pattern?)\n * Also provides:\n *   - inferPatternFromSamples(domain, samples)\n *   - verifyEmailSMTP(email)  -> { status, reason }\n */\n\nconst CLEAN = (s = \"\") => String(s).normalize(\"NFKD\");\n\n/** Split a full name into [first, last] with basic cleanup */\nfunction splitName(fullName = \"\") {\n  const raw = CLEAN(fullName).trim().replace(/\\s+/g, \" \");\n  if (!raw) return [\"\", \"\"];\n  const parts = raw.split(\" \");\n  const first = parts[0] || \"\";\n  const last = parts.length > 1 ? parts[parts.length - 1] : \"\";\n  return [first, last];\n}\n\n/** Sanitize name part to letters only, lowercase */\nfunction slugPart(s = \"\") {\n  return CLEAN(s).toLowerCase().replace(/[^a-z]/g, \"\");\n}\n\n/** Normalize domain (\"https://kbr.com/foo\" -> \"kbr.com\") */\nfunction normalizeDomain(domain = \"\") {\n  let d = String(domain).trim();\n  d = d.replace(/^https?:\\/\\//i, \"\").replace(/\\/.*$/, \"\");\n  return d.toLowerCase();\n}\n\n/**\n * Build an email using a pattern id.\n * Supported patterns:\n *  - first.last\n *  - firstlast\n *  - f.last\n *  - first.l",
+      "tail": "  const best = Object.entries(score).sort((a, b) => b[1] - a[1])[0];\n  return best && best[1] > 0 ? best[0] : \"first.last\";\n}\n\n/**\n * SMTP verification stub.\n * If NEVERBOUNCE_API_KEY or ZEROBOUNCE_API_KEY exist, this can be wired later.\n * For now, return {status: \"unknown\", reason: \"no_verifier\"} to keep callers happy.\n */\nexport async function verifyEmailSMTP(_email) {\n  const hasNB = !!process.env.NEVERBOUNCE_API_KEY;\n  const hasZB = !!process.env.ZEROBOUNCE_API_KEY;\n\n  if (!hasNB && !hasZB) {\n    return { status: \"unknown\", reason: \"no_verifier\" };\n  }\n\n  // Placeholder: integrate real verifier here when keys are configured\n  // Implementations should normalize to {status: \"valid\"|\"invalid\"|\"accept_all\"|\"unknown\", reason}\n  return { status: \"unknown\", reason: \"not_implemented\" };\n}\n\n// Also export helpers some callers may use\nexport const _internal = { splitName, slugPart, normalizeDomain };\n"
     },
     {
       "path": "routes/enrich/lib/geo.js",
