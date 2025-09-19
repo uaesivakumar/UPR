@@ -1,9 +1,11 @@
 import express from "express";
 import { guessCompany } from "./lib/llm.js";
 import { searchPeopleByCompany } from "./lib/apollo.js";
-import { scoreQuality } from "./lib/quality.js";
+import * as quality from "./lib/quality.js";
+const { scoreQuality } = quality;
 import { tagEmirate } from "./lib/geo.js";
-import { applyEmailPattern } from "./lib/email.js";
+import * as emailLib from "./lib/email.js";
+const { applyEmailPattern } = emailLib;
 
 const router = express.Router();
 

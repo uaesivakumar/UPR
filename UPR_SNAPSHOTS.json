@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-19T16:48:35Z",
-  "generated_human": "Fri, 19 Sep 2025 16:48:35 GMT",
+  "generated": "2025-09-19T16:51:41Z",
+  "generated_human": "Fri, 19 Sep 2025 16:51:41 GMT",
   "branch": "main",
-  "commit": "7b323dd",
+  "commit": "452fad8",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -370,33 +370,33 @@
     },
     {
       "path": "routes/enrich/lib/quality.js",
-      "size": 2765,
-      "mtime": "2025-09-19T16:48:35.534Z",
-      "sha256": "c6d1428f23e4a5477f3de2c3045a4783255d945de855bf08ec94e612372a9c1b",
+      "size": 2199,
+      "mtime": "2025-09-19T16:51:41.528Z",
+      "sha256": "459794af427e39ef4f04de38251bb45d3313f577569f42023888c0008550ee07",
       "imports": [],
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "/**\n * Quality scoring for an enrichment result set.\n * Input:\n *   company (object) — fields we may use: domain, linkedin_url, hq, industry, size\n *   results (array) — contacts with role_bucket, email_status, location/emirate, source, confidence\n * Output:\n *   { score: number 0..1, explanation: string }\n */\n\nfunction pct(x) { return Math.round(x * 100); }\nfunction hasUAE(hq = \"\") {\n  const s = String(hq).toLowerCase();\n  return s.includes(\"united arab emirates\") || [\"abu dhabi\",\"dubai\",\"sharjah\",\"ajman\",\"fujairah\",\"ras al khaimah\",\"umm al quwain\"].some(e => s.includes(e));\n}\n\nexport function scoreQuality(company = {}, results = []) {\n  let score = 0;\n  const notes = [];\n\n  // Company metadata signals\n  if (company.domain)        { score += 0.30; notes.push(\"has primary domain\"); }\n  if (company.linkedin_url)  { score += 0.10; notes.push(\"LinkedIn page found\"); }\n  if (company.hq && hasUAE(company.hq)) { score += 0.10; notes.push(\"HQ in UAE\"); }\n  if (company.industry)      { score += 0.05; }\n  if (company.size)          { score += 0.05; }\n\n  // Contact signals (favor HR/Admin/Finance and UAE)\n  const buckets = new Set([\"hr\",\"admin\",\"finance\"]);\n  const contactsUAE = results.filter(r => {\n    const emirate = (r.emirate || \"\").toLowerCase();\n    const loc = String(r.location || \"\").toLowerCase();\n    const inUAE = [\"abu dhabi\",\"dubai\",\"sharjah\",\"ajman\",\"fujairah\",\"ras al khaimah\",\"umm al quwain\",\"united arab emirates\"].some(k => emirate.includes(k) || loc.includes(k));\n    return inUAE && buckets.has(String(r.role_bucket || \"\").toLowerCase());\n  });\n  const kept = contactsUAE.length;\n  if (kept > 0) {\n    // up to +0.30 for useful UAE contacts\n    const contactBoost = Math.min(0.30, kept * 0.05); // 5% per contact, cap at 6 contacts\n    score += contactBoost;\n    notes.push(`${kept} UAE HR/admin/finance contacts`);",
-      "tail": "  const emailStatuses = results.map(r => String(r.email_status || \"unknown\").toLowerCase());\n  const valid = emailStatuses.filter(s => s === \"valid\").length;\n  const acceptAll = emailStatuses.filter(s => s === \"accept_all\").length;\n  const patterned = emailStatuses.filter(s => s === \"patterned\").length;\n  const denom = results.length || 1;\n  // treat valid=1.0, accept_all=0.6, patterned=0.8 toward pattern quality\n  const qualityRatio = (valid + 0.6*acceptAll + 0.8*patterned) / denom;\n  score += Math.min(0.20, qualityRatio * 0.20);\n  if (denom > 0) {\n    const approx = Math.round(qualityRatio * 100);\n    notes.push(`email pattern≈${approx}%`);\n  }\n\n  // clamp\n  if (score < 0) score = 0;\n  if (score > 1) score = 1;\n\n  return {\n    score,\n    explanation: notes.length ? notes.join(\"; \") : \"no signals\",\n  };\n}\n\nexport default { scoreQuality };\n"
+      "head": "/**\n * Quality scoring for an enrichment result set.\n *   company: { domain, linkedin_url, hq, industry, size }\n *   results: [{ role_bucket, email_status, location, emirate, source, confidence }]\n * Returns: { score: 0..1, explanation: string }\n */\nfunction inUAE(hq = \"\") {\n  const s = String(hq).toLowerCase();\n  const emirates = [\"abu dhabi\",\"dubai\",\"sharjah\",\"ajman\",\"fujairah\",\"ras al khaimah\",\"umm al quwain\",\"united arab emirates\"];\n  return emirates.some(e => s.includes(e));\n}\n\nexport function scoreQuality(company = {}, results = []) {\n  let score = 0;\n  const notes = [];\n\n  if (company.domain)       { score += 0.30; notes.push(\"has primary domain\"); }\n  if (company.linkedin_url) { score += 0.10; notes.push(\"LinkedIn page found\"); }\n  if (company.hq && inUAE(company.hq)) { score += 0.10; notes.push(\"HQ in UAE\"); }\n  if (company.industry)     { score += 0.05; }\n  if (company.size)         { score += 0.05; }\n\n  // Prefer UAE + HR/Admin/Finance contacts\n  const buckets = new Set([\"hr\",\"admin\",\"finance\"]);\n  const isUAE = (loc=\"\") => {\n    const s = String(loc).toLowerCase();\n    return [\"abu dhabi\",\"dubai\",\"sharjah\",\"ajman\",\"fujairah\",\"ras al khaimah\",\"umm al quwain\",\"united arab emirates\"].some(x => s.includes(x));\n  };\n  const useful = results.filter(r => buckets.has(String(r.role_bucket||\"\").toLowerCase()) &&\n    (isUAE(r.emirate) || isUAE(r.location)));\n  if (useful.length) {\n    const boost = Math.min(0.30, useful.length * 0.05); // up to +0.30\n    score += boost;\n    notes.push(`${useful.length} UAE HR/admin/finance contacts`);\n  }\n\n  // Email status quality (up to +0.20)\n  const st = results.map(r => String(r.email_status||\"unknown\").toLowerCase());\n  const valid = st.filter(s => s===\"valid\").length;\n  const acceptAll = st.filter(s => s===\"accept_all\").length;",
+      "tail": "    return [\"abu dhabi\",\"dubai\",\"sharjah\",\"ajman\",\"fujairah\",\"ras al khaimah\",\"umm al quwain\",\"united arab emirates\"].some(x => s.includes(x));\n  };\n  const useful = results.filter(r => buckets.has(String(r.role_bucket||\"\").toLowerCase()) &&\n    (isUAE(r.emirate) || isUAE(r.location)));\n  if (useful.length) {\n    const boost = Math.min(0.30, useful.length * 0.05); // up to +0.30\n    score += boost;\n    notes.push(`${useful.length} UAE HR/admin/finance contacts`);\n  }\n\n  // Email status quality (up to +0.20)\n  const st = results.map(r => String(r.email_status||\"unknown\").toLowerCase());\n  const valid = st.filter(s => s===\"valid\").length;\n  const acceptAll = st.filter(s => s===\"accept_all\").length;\n  const patterned = st.filter(s => s===\"patterned\").length;\n  const denom = results.length || 1;\n  const ratio = (valid + 0.6*acceptAll + 0.8*patterned) / denom;\n  score += Math.min(0.20, ratio * 0.20);\n  notes.push(`email pattern≈${Math.round(ratio*100)}%`);\n\n  return { score: Math.max(0, Math.min(1, score)), explanation: notes.join(\"; \") || \"no signals\" };\n}\n\nexport default { scoreQuality };\n"
     },
     {
       "path": "routes/enrich/search.js",
-      "size": 2401,
-      "mtime": "2025-09-19T16:32:49.963Z",
-      "sha256": "a8eb9ce28752ae2ab7172f6d0c4e98961467fd70eb1f92d273b6b779ccd48869",
+      "size": 2463,
+      "mtime": "2025-09-19T16:51:41.555Z",
+      "sha256": "8d55d824b05c15aa24a897b3309cf7bd353a584b9fa1d34de233bfe3a69c54d6",
       "imports": [
         "import express from \"express\";",
         "import { guessCompany } from \"./lib/llm.js\";",
         "import { searchPeopleByCompany } from \"./lib/apollo.js\";",
-        "import { scoreQuality } from \"./lib/quality.js\";",
+        "import * as quality from \"./lib/quality.js\";",
         "import { tagEmirate } from \"./lib/geo.js\";",
-        "import { applyEmailPattern } from \"./lib/email.js\";"
+        "import * as emailLib from \"./lib/email.js\";"
       ],
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "import express from \"express\";\nimport { guessCompany } from \"./lib/llm.js\";\nimport { searchPeopleByCompany } from \"./lib/apollo.js\";\nimport { scoreQuality } from \"./lib/quality.js\";\nimport { tagEmirate } from \"./lib/geo.js\";\nimport { applyEmailPattern } from \"./lib/email.js\";\n\nconst router = express.Router();\n\n/**\n * GET /api/enrich/search\n * q=free text (required)\n * Optional overrides:\n *   &name=Exact Co Name\n *   &domain=example.com    (or full URL; we normalize to domain)\n *   &linkedin_url=...\n *   &parent=Mubadala\n */\nrouter.get(\"/\", async (req, res) => {\n  const t0 = Date.now();\n  try {\n    const q = String(req.query.q || \"\").trim();\n    if (!q) return res.status(400).json({ ok:false, error:\"missing q\" });\n\n    const overrides = {\n      name: req.query.name ? String(req.query.name) : undefined,\n      domain: req.query.domain ? String(req.query.domain) : undefined,\n      linkedin_url: req.query.linkedin_url ? String(req.query.linkedin_url) : undefined,\n      parent: req.query.parent ? String(req.query.parent) : undefined,\n    };\n\n    // 1) LLM guess (respects overrides)\n    const g0 = Date.now();\n    const guess = await guessCompany(q, overrides);\n    const llm_ms = Date.now() - g0;\n\n    // 2) Provider search (domain preferred)\n    const p0 = Date.now();\n    const providerResults = await searchPeopleByCompany({\n      name: guess.name,",
+      "head": "import express from \"express\";\nimport { guessCompany } from \"./lib/llm.js\";\nimport { searchPeopleByCompany } from \"./lib/apollo.js\";\nimport * as quality from \"./lib/quality.js\";\nconst { scoreQuality } = quality;\nimport { tagEmirate } from \"./lib/geo.js\";\nimport * as emailLib from \"./lib/email.js\";\nconst { applyEmailPattern } = emailLib;\n\nconst router = express.Router();\n\n/**\n * GET /api/enrich/search\n * q=free text (required)\n * Optional overrides:\n *   &name=Exact Co Name\n *   &domain=example.com    (or full URL; we normalize to domain)\n *   &linkedin_url=...\n *   &parent=Mubadala\n */\nrouter.get(\"/\", async (req, res) => {\n  const t0 = Date.now();\n  try {\n    const q = String(req.query.q || \"\").trim();\n    if (!q) return res.status(400).json({ ok:false, error:\"missing q\" });\n\n    const overrides = {\n      name: req.query.name ? String(req.query.name) : undefined,\n      domain: req.query.domain ? String(req.query.domain) : undefined,\n      linkedin_url: req.query.linkedin_url ? String(req.query.linkedin_url) : undefined,\n      parent: req.query.parent ? String(req.query.parent) : undefined,\n    };\n\n    // 1) LLM guess (respects overrides)\n    const g0 = Date.now();\n    const guess = await guessCompany(q, overrides);\n    const llm_ms = Date.now() - g0;\n\n    // 2) Provider search (domain preferred)\n    const p0 = Date.now();",
       "tail": "    const quality = scoreQuality({ guess, results });\n\n    return res.json({\n      ok: true,\n      data: {\n        status: \"completed\",\n        results,\n        summary: {\n          provider: \"live\",\n          company_guess: guess,\n          timings: { llm_ms, provider_ms, smtp_ms: 0 },\n          quality,\n          total_candidates: results.length,\n          kept: results.length,\n        },\n      },\n    });\n  } catch (e) {\n    console.error(\"enrich search error\", e);\n    res.status(500).json({ ok:false, error:\"search_failed\" });\n  }\n});\n\nexport default router;\n"
     },
     {
