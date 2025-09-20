@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-20T12:23:09Z",
-  "generated_human": "Sat, 20 Sep 2025 12:23:09 GMT",
+  "generated": "2025-09-20T12:28:23Z",
+  "generated_human": "Sat, 20 Sep 2025 12:28:23 GMT",
   "branch": "main",
-  "commit": "2a113b2",
+  "commit": "21e8c77",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -395,15 +395,15 @@
     },
     {
       "path": "routes/enrich/lib/quality.js",
-      "size": 2518,
-      "mtime": "2025-09-19T17:42:26.094Z",
-      "sha256": "ab3dedb73b37514f0de370c15092022e288cafa1c7bbab7c2abc21dd41870e5a",
+      "size": 3258,
+      "mtime": "2025-09-20T12:28:19.058Z",
+      "sha256": "0fab63af3069e4e3f46e43bf3249127239193152880edf5f9d1744b2010c3d91",
       "imports": [],
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "/**\n * Quality scoring utilities\n *  - roleBucket(title)\n *  - bucketSeniority(title)\n *  - scoreCandidate(c)\n *  - qualityScore(companyGuess, candidates)\n *  - scoreQuality(...)  // alias kept for older imports\n */\n\nconst HR_RX = /(human\\s*resources|hr|talent|recruit(ing|er)?|people ops?|people\\s*(and)?\\s*culture)/i;\nconst ADMIN_RX = /\\b(admin(istration)?|office\\s*manager|operations?|ops)\\b/i;\nconst FIN_RX = /\\b(finance|account(s|ing)?|payroll|fp&a)\\b/i;\n\nexport function roleBucket(title = \"\") {\n  if (HR_RX.test(title)) return \"hr\";\n  if (ADMIN_RX.test(title)) return \"admin\";\n  if (FIN_RX.test(title)) return \"finance\";\n  return \"other\";\n}\n\nexport function bucketSeniority(title = \"\") {\n  const t = String(title).toLowerCase();\n  if (/chief|cxo|cfo|coo|chro|vp|vice president|director|head/.test(t)) return \"head\";\n  if (/lead|manager|supervisor/.test(t)) return \"manager\";\n  if (/sr\\.?|senior/.test(t)) return \"senior\";\n  if (/intern|junior|assistant/.test(t)) return \"junior\";\n  return \"staff\";\n}\n\nexport function scoreCandidate(c = {}) {\n  let s = 0.5;\n  const bucket = c.role_bucket || roleBucket(c.designation || c.title || \"\");\n  const senior = c.seniority || bucketSeniority(c.designation || c.title || \"\");\n\n  if (bucket === \"hr\") s += 0.2;\n  if (bucket === \"admin\" || bucket === \"finance\") s += 0.1;\n  if (c.emirate && c.emirate !== \"United Arab Emirates\") s += 0.1; // emirate-level match\n  if (senior === \"head\" || senior === \"manager\") s += 0.05;\n\n  if (c.email_status === \"valid\") s += 0.1;",
-      "tail": "\n  const uaeCount = candidates.filter((c) => (c.emirate || \"\").length && (c.country || \"\").toLowerCase().includes(\"united arab emirates\")).length\n    || candidates.filter((c) => (c.location || \"\").toLowerCase().includes(\"united arab emirates\")).length;\n\n  if (uaeCount >= 5) s += 0.15;\n  else if (uaeCount >= 1) s += 0.05;\n\n  const patterned = candidates.filter((c) => c.email && !c.email.includes(\"@example.\")).length;\n  if (patterned >= 5) s += 0.15;\n  else if (patterned >= 1) s += 0.05;\n\n  return Number(Math.max(0, Math.min(0.98, s)).toFixed(2));\n}\n\n// legacy alias\nexport const scoreQuality = qualityScore;\n\nexport default {\n  roleBucket,\n  bucketSeniority,\n  scoreCandidate,\n  qualityScore,\n  scoreQuality,\n};\n"
+      "head": "/**\n * Quality scoring utilities\n *  - roleBucket(title)\n *  - bucketSeniority(title)\n *  - scoreCandidate(c)\n *  - qualityScore(companyGuess, candidates)\n *  - computeQuality(candidates, companyGuess)  // NEW for enrich/search.js\n *  - scoreQuality(...)  // alias kept for older imports\n */\n\nconst HR_RX = /(human\\s*resources|hr|talent|recruit(ing|er)?|people ops?|people\\s*(and)?\\s*culture)/i;\nconst ADMIN_RX = /\\b(admin(istration)?|office\\s*manager|operations?|ops)\\b/i;\nconst FIN_RX = /\\b(finance|account(s|ing)?|payroll|fp&a)\\b/i;\n\nexport function roleBucket(title = \"\") {\n  if (HR_RX.test(title)) return \"hr\";\n  if (ADMIN_RX.test(title)) return \"admin\";\n  if (FIN_RX.test(title)) return \"finance\";\n  return \"other\";\n}\n\nexport function bucketSeniority(title = \"\") {\n  const t = String(title).toLowerCase();\n  if (/chief|cxo|cfo|coo|chro|vp|vice president|director|head/.test(t)) return \"head\";\n  if (/lead|manager|supervisor/.test(t)) return \"manager\";\n  if (/sr\\.?|senior/.test(t)) return \"senior\";\n  if (/intern|junior|assistant/.test(t)) return \"junior\";\n  return \"staff\";\n}\n\nexport function scoreCandidate(c = {}) {\n  let s = 0.5;\n  const bucket = c.role_bucket || roleBucket(c.designation || c.title || \"\");\n  const senior = c.seniority || bucketSeniority(c.designation || c.title || \"\");\n\n  if (bucket === \"hr\") s += 0.2;\n  if (bucket === \"admin\" || bucket === \"finance\") s += 0.1;\n  if (c.emirate && c.emirate !== \"United Arab Emirates\") s += 0.1;\n  if (senior === \"head\" || senior === \"manager\") s += 0.05;\n",
+      "tail": "  let explanation = \"Base quality score.\";\n  if (!candidates.length) {\n    explanation = \"No candidates to score.\";\n  } else if (score > 0.8) {\n    explanation = \"High-quality match with multiple valid signals.\";\n  } else if (score > 0.6) {\n    explanation = \"Moderate-quality match with some signals.\";\n  } else {\n    explanation = \"Low-quality match or insufficient data.\";\n  }\n  return { score, explanation };\n}\n\n// legacy alias\nexport const scoreQuality = qualityScore;\n\nexport default {\n  roleBucket,\n  bucketSeniority,\n  scoreCandidate,\n  qualityScore,\n  computeQuality,\n  scoreQuality,\n};\n"
     },
     {
       "path": "routes/enrich/search.js",

@@ -4,6 +4,7 @@
  *  - bucketSeniority(title)
  *  - scoreCandidate(c)
  *  - qualityScore(companyGuess, candidates)
+ *  - computeQuality(candidates, companyGuess)  // NEW for enrich/search.js
  *  - scoreQuality(...)  // alias kept for older imports
  */
 
@@ -34,7 +35,7 @@ export function scoreCandidate(c = {}) {
 
   if (bucket === "hr") s += 0.2;
   if (bucket === "admin" || bucket === "finance") s += 0.1;
-  if (c.emirate && c.emirate !== "United Arab Emirates") s += 0.1; // emirate-level match
+  if (c.emirate && c.emirate !== "United Arab Emirates") s += 0.1;
   if (senior === "head" || senior === "manager") s += 0.05;
 
   if (c.email_status === "valid") s += 0.1;
@@ -49,17 +50,44 @@ export function qualityScore(companyGuess = {}, candidates = []) {
   if (companyGuess?.domain) s += 0.15;
   if (companyGuess?.linkedin_url) s += 0.05;
 
-  const uaeCount = candidates.filter((c) => (c.emirate || "").length && (c.country || "").toLowerCase().includes("united arab emirates")).length
-    || candidates.filter((c) => (c.location || "").toLowerCase().includes("united arab emirates")).length;
+  const uaeCount =
+    candidates.filter((c) =>
+      (c.emirate || "").length &&
+      (c.country || "").toLowerCase().includes("united arab emirates")
+    ).length ||
+    candidates.filter((c) =>
+      (c.location || "").toLowerCase().includes("united arab emirates")
+    ).length;
 
   if (uaeCount >= 5) s += 0.15;
   else if (uaeCount >= 1) s += 0.05;
 
-  const patterned = candidates.filter((c) => c.email && !c.email.includes("@example.")).length;
+  const patterned = candidates.filter(
+    (c) => c.email && !c.email.includes("@example.")
+  ).length;
   if (patterned >= 5) s += 0.15;
   else if (patterned >= 1) s += 0.05;
 
   return Number(Math.max(0, Math.min(0.98, s)).toFixed(2));
+}
+
+/**
+ * New wrapper for enrich/search.js
+ * Returns both score and human explanation
+ */
+export function computeQuality(candidates = [], companyGuess = {}) {
+  const score = qualityScore(companyGuess, candidates);
+  let explanation = "Base quality score.";
+  if (!candidates.length) {
+    explanation = "No candidates to score.";
+  } else if (score > 0.8) {
+    explanation = "High-quality match with multiple valid signals.";
+  } else if (score > 0.6) {
+    explanation = "Moderate-quality match with some signals.";
+  } else {
+    explanation = "Low-quality match or insufficient data.";
+  }
+  return { score, explanation };
 }
 
 // legacy alias
@@ -70,5 +98,6 @@ export default {
   bucketSeniority,
   scoreCandidate,
   qualityScore,
+  computeQuality,
   scoreQuality,
 };
