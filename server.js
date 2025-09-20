@@ -11,10 +11,7 @@ import companiesRouter from "./routes/companies.js";
 import hrLeadsRouter from "./routes/hrLeads.js";
 import newsRouter from "./routes/news.js";
 import enrichRouter from "./routes/enrich/index.js"; // index re-exports status/search/etc.
-import { signJwt } from "./utils/jwt.js";
-
-// NEW: accept cookie-session OR Bearer JWT
-import authAny from "./server/middleware/authAny.js";
+import { signJwt, verifyToken } from "./utils/jwt.js"; // <-- add verifyToken
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -48,6 +45,29 @@ function setAuthCookie(res, token) {
   res.setHeader("Set-Cookie", parts.join("; "));
 }
 
+/* ----------------------- authAny (inline middleware) ----------------------- */
+// Accept cookie-session (future) OR Bearer JWT
+function authAny(req, res, next) {
+  if (req?.session?.user) {
+    req.user = req.session.user;
+    return next();
+  }
+  const h = req.headers.authorization || "";
+  const m = h.match(/^Bearer\s+(.+)$/i);
+  if (m) {
+    try {
+      const payload = verifyToken(m[1]);
+      if (payload) {
+        req.user = { id: payload.sub, role: payload.role, ...payload };
+        return next();
+      }
+    } catch {
+      // fall through
+    }
+  }
+  return res.status(401).json({ ok: false, error: "unauthorized" });
+}
+
 /* -------------------------------- Middleware -------------------------------- */
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
@@ -67,7 +87,6 @@ app.get("/__diag", async (_req, res) => {
 });
 
 /* ----------------------- Auth (username/password only) ----------------------- */
-// POST /api/auth/login -> sets HttpOnly cookie + returns {ok:true}
 app.post("/api/auth/login", async (req, res) => {
   try {
     const { username, password } = req.body || {};
@@ -80,29 +99,25 @@ app.post("/api/auth/login", async (req, res) => {
     if (String(username) !== String(u) || String(password) !== String(p)) {
       return res.status(401).json({ ok: false, error: "invalid credentials" });
     }
-    // 14d token by default
     const token = signJwt({ sub: "admin", role: "admin", u: username }, "14d");
     setAuthCookie(res, token);
     return res.json({ ok: true });
-  } catch (_e) {
+  } catch {
     return res.status(500).json({ ok: false, error: "login failed" });
   }
 });
 
-// GET /api/auth/verify -> reads cookie and verifies locally
 app.get("/api/auth/verify", (req, res) => {
   const token = getCookie(req, COOKIE_NAME);
   if (!token) return res.status(401).json({ ok: false, error: "no_cookie" });
-
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
     return res.json({ ok: true, user: { username: payload?.u || "admin" } });
-  } catch (_e) {
+  } catch {
     return res.status(401).json({ ok: false, error: "invalid_token" });
   }
 });
 
-// POST /api/auth/logout -> clears cookie
 app.post("/api/auth/logout", (_req, res) => {
   const parts = [`${COOKIE_NAME}=`, "Path=/", "HttpOnly", "SameSite=Lax", "Max-Age=0"];
   if (isProd) parts.push("Secure");
@@ -111,7 +126,6 @@ app.post("/api/auth/logout", (_req, res) => {
 });
 
 /* ------------------------- Stats (for DashboardHome) ------------------------- */
-// keep this open for now; guard later if needed
 app.get("/api/stats", async (_req, res) => {
   const safeCount = async (sql) => {
     try {
@@ -126,7 +140,6 @@ app.get("/api/stats", async (_req, res) => {
   const new7d = await safeCount(
     `SELECT COUNT(*) FROM hr_leads WHERE created_at >= NOW() - INTERVAL '7 days'`
   );
-  // Outreach approximation (tweak if you have an outreach table)
   const outreach = await safeCount(
     `SELECT COUNT(*) FROM hr_leads WHERE status ILIKE 'contacted' OR status ILIKE 'outreach%'`
   );
@@ -154,9 +167,8 @@ app.use("/api/companies", companiesRouter);
 app.use("/api/hr-leads", hrLeadsRouter);
 app.use("/api/news", newsRouter);
 
-// Keep /api/enrich/status OPEN, but protect everything else under /api/enrich/*.
+// Keep /api/enrich/status OPEN, guard all other enrich endpoints
 function protectEnrich(req, res, next) {
-  // Allow status endpoint without auth
   if (req.path === "/status") return next();
   return authAny(req, res, next);
 }
@@ -224,13 +236,11 @@ async function diagPayload() {
   };
 }
 
-// /api/__diag_full returns JSON
 app.get("/api/__diag_full", async (_req, res) => {
   const payload = await diagPayload();
   res.json(payload);
 });
 
-// root /__diag_full mirrors /api/__diag_full
 app.get("/__diag_full", async (_req, res) => {
   const payload = await diagPayload();
   res.json(payload);
