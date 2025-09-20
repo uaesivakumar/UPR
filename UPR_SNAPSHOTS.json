@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-20T12:06:33Z",
-  "generated_human": "Sat, 20 Sep 2025 12:06:33 GMT",
+  "generated": "2025-09-20T12:11:09Z",
+  "generated_human": "Sat, 20 Sep 2025 12:11:09 GMT",
   "branch": "main",
-  "commit": "960ecca",
+  "commit": "cc4143c",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -407,17 +407,22 @@
     },
     {
       "path": "routes/enrich/search.js",
-      "size": 11125,
-      "mtime": "2025-09-20T12:06:24.113Z",
-      "sha256": "9a741f3aa1349c01d14e9659b65ff4453080f0602e30767c110ed42073860482",
+      "size": 2188,
+      "mtime": "2025-09-20T12:10:55.713Z",
+      "sha256": "5440f3ffcc53835648d0be8a79d123e52369e8499cea09dcaf65c0ebf33f8aee",
       "imports": [
-        "import { performance } from \"node:perf_hooks\";"
+        "import express from \"express\";",
+        "import * as apollo from \"./lib/apollo.js\";",
+        "import * as llm from \"./lib/llm.js\";",
+        "import * as geo from \"./lib/geo.js\";",
+        "import * as email from \"./lib/email.js\";",
+        "import * as quality from \"./lib/quality.js\";"
       ],
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "// routes/enrich/search.js\nimport { performance } from \"node:perf_hooks\";\n\n/* -------------------- tiny local utils + safe fallbacks -------------------- */\nconst EMAIL_RE = /^[^@\\s]+@([^\\s@]+\\.[^\\s@]+)$/i;\nconst NOT_UNLOCKED_RE = /not[_-]?unlocked/i;\n\nconst stripProtoHost = (s = \"\") =>\n  String(s).trim().replace(/^https?:\\/\\//i, \"\").replace(/^www\\./i, \"\").replace(/\\/.*$/, \"\").toLowerCase();\n\nconst emailDomain = (email) => {\n  const m = EMAIL_RE.exec(email || \"\");\n  return m ? m[1].toLowerCase() : null;\n};\n\nconst tc = (s = \"\") => {\n  if (!s) return s;\n  if (s === s.toUpperCase()) return s; // keep acronyms like ADGM\n  return s.split(/\\s+/).map(w => (w ? w[0].toUpperCase() + w.slice(1).toLowerCase() : w)).join(\" \");\n};\n\nconst normalizeContactsFallback = (arr = []) => {\n  if (!Array.isArray(arr)) return [];\n  return arr.map((c) => {\n    let email = c.email ?? c.work_email ?? c.contact_email ?? null;\n    let email_status = c.email_status ?? c.verification ?? undefined;\n    if (email && NOT_UNLOCKED_RE.test(email)) {\n      email = null;\n      email_status = \"locked\";\n    }\n    return {\n      name: c.name ?? c.full_name ?? c.person ?? \"—\",\n      designation: c.designation ?? c.title ?? c.role ?? undefined,\n      title: c.title ?? c.designation ?? c.role ?? undefined,\n      email,\n      linkedin_url: c.linkedin_url ?? c.linkedin ?? c.linkedinProfile ?? undefined,\n      emirate: c.emirate ?? c.location ?? undefined,\n      confidence: typeof c.confidence === \"number\" ? c.confidence : undefined,\n      email_status,\n      company_name: c.company_name ?? c.company ?? c.org ?? undefined,",
-      "tail": "      summary.quality = quality.scoreFor({\n        results,\n        provider: summary.provider,\n        guess: summary.company_guess,\n      });\n    } catch (e) {\n      // keep fallback\n    }\n  } else {\n    const n = results.length;\n    summary.quality = {\n      score: Math.max(0.3, Math.min(0.95, n >= 8 ? 0.9 : n >= 3 ? 0.7 : 0.5)),\n      explanation: n ? `Found ${n} candidates from ${summary.provider}.` : \"No matches found.\",\n    };\n  }\n\n  console.log(\n    `[${rid}] enrich/search → provider=${summary.provider} count=${results.length} timings=${JSON.stringify(\n      summary.timings\n    )} guess=${JSON.stringify(summary.company_guess)}`\n  );\n\n  return res.status(200).json({ ok: true, data: { results, summary } });\n}\n"
+      "head": "// server/routes/enrich/search.js\nimport express from \"express\";\nimport * as apollo from \"./lib/apollo.js\";\nimport * as llm from \"./lib/llm.js\";\nimport * as geo from \"./lib/geo.js\";\nimport * as email from \"./lib/email.js\";\nimport * as quality from \"./lib/quality.js\";\n\nconst router = express.Router();\n\n/**\n * GET /api/enrich/search?q=company\n */\nrouter.get(\"/search\", async (req, res) => {\n  const q = req.query.q || \"\";\n  const t0 = Date.now();\n\n  const timings = {};\n  let company = null;\n  let candidates = [];\n  let error = null;\n\n  try {\n    // --- 1. Guess company (name + domain) ---\n    const t1 = Date.now();\n    try {\n      company = await llm.guessCompany(q);\n    } catch (err) {\n      error = `llm.guessCompany failed: ${err.message}`;\n      company = { name: q, domain: null };\n    }\n    timings.llm_ms = Date.now() - t1;\n\n    // --- 2. Apollo search ---\n    const t2 = Date.now();\n    try {\n      if (company?.name) {\n        candidates = await apollo.searchPeopleByCompany(company.name, company.domain);\n      }\n    } catch (err) {",
+      "tail": "    } catch (err) {\n      error = `quality.score failed: ${err.message}`;\n    }\n    timings.quality_ms = Date.now() - t5;\n\n  } catch (err) {\n    error = err.message;\n  }\n\n  const totalMs = Date.now() - t0;\n  timings.total_ms = totalMs;\n\n  return res.json({\n    ok: !error,\n    error,\n    query: q,\n    company,\n    candidates,\n    timings,\n    provider: \"apollo+llm+geo+email+quality\"\n  });\n});\n\nexport default router;\n"
     },
     {
       "path": "routes/hrLeads.js",
