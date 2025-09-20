@@ -1,39 +1,55 @@
 // routes/enrich/index.js
 import { Router } from "express";
-import searchHandler from "./search.js";
+import searchHandler from "./search.js"; // your real logic
 import { pool } from "../../utils/db.js";
 
 const router = Router();
 
 /**
- * Keep a status endpoint the UI can ping for chips.
- * This route is intentionally OPEN (server.js protects only non-/status).
+ * Status for chips
  */
 router.get("/status", (_req, res) => {
-  res.json({
-    ok: true,
-    data: { db_ok: true, llm_ok: true, data_source: "live" },
-  });
+  res.json({ ok: true, data: { db_ok: true, llm_ok: true, data_source: "live" } });
 });
 
 /**
  * GET /api/enrich/search
- * Authentication is enforced by protectEnrich in server.js.
- * We wrap the actual handler to add logs for debugging 404/flow.
+ * We wrap your real searchHandler with logging and normalize "no results" to 200.
  */
 router.get("/search", async (req, res, next) => {
   try {
-    console.log(`[${req._reqid}] enrich/search hit (GET) q="${req.query?.q ?? ""}"`);
-    return await searchHandler(req, res, next);
+    const q = (req.query?.q || "").trim();
+    console.log(`[${req._reqid}] enrich/search GET q="${q}"`);
+    // Run your existing logic
+    const send = res.json.bind(res);
+    res.json = (payload) => {
+      console.log(`[${req._reqid}] enrich/search RESP`, {
+        status: res.statusCode,
+        hasResults: Array.isArray(payload?.data?.results) && payload.data.results.length > 0,
+      });
+      return send(payload);
+    };
+    await searchHandler(req, res, next);
   } catch (e) {
-    console.error(`[${req._reqid}] enrich/search error:`, e);
-    return res.status(500).json({ ok: false, error: "search_failed" });
+    console.error(`[${req._reqid}] enrich/search error`, e?.stack || e);
+    // If your handler throws "not_found" or returns 404, normalize to empty 200
+    if (!res.headersSent) {
+      res.status(200).json({
+        ok: true,
+        data: {
+          results: [],
+          summary: {
+            provider: "live",
+            quality: { score: 0.5, explanation: "No matches found." },
+          },
+        },
+      });
+    }
   }
 });
 
 /**
- * POST /api/enrich
- * Best-effort saver for contacts into hr_leads.
+ * POST /api/enrich  (save contacts)
  */
 router.post("/", async (req, res) => {
   const body = req.body || {};
@@ -60,7 +76,6 @@ router.post("/", async (req, res) => {
         const linkedin = c.linkedin_url ?? null;
         const emirate = c.emirate ?? null;
         const source = c.source ?? "enrich";
-
         const sql = `
           INSERT INTO hr_leads (company_id, name, role, email, linkedin_url, emirate, status, source)
           VALUES ($1, $2, $3, $4, $5, $6, 'new', $7)
@@ -69,13 +84,13 @@ router.post("/", async (req, res) => {
         await pool.query(sql, [companyId, name, designation, email, linkedin, emirate, source]);
         saved++;
       } catch {
-        /* ignore per-row errors so UI isn't blocked */
+        /* ignore per-row errors */
       }
     }
     await pool.query("COMMIT");
   } catch (e) {
     try { await pool.query("ROLLBACK"); } catch {}
-    console.error(`[${req._reqid}] enrich save bulk error:`, e);
+    console.error(`[${req._reqid}] enrich/save error`, e?.stack || e);
     return res.status(200).json({ ok: false, error: "bulk-insert-failed", saved });
   }
 

@@ -26,7 +26,7 @@ const isProd = process.env.NODE_ENV === "production";
 function getCookie(req, name) {
   const str = req.headers?.cookie || "";
   if (!str) return null;
-  const pairs = str.split(";").map((s) => s.trim().split("="));
+  const pairs = str.split(";").map(s => s.trim().split("="));
   const map = Object.fromEntries(pairs);
   const v = map[name];
   return v ? decodeURIComponent(v) : null;
@@ -46,15 +46,12 @@ function setAuthCookie(res, token) {
 
 /* ------------------------------ request logger ------------------------------ */
 app.use((req, res, next) => {
-  const t0 = Date.now();
   const id = Math.random().toString(36).slice(2, 8);
   req._reqid = id;
   const started = `${req.method} ${req.originalUrl}`;
   console.log(`[${id}] → ${started}`);
   res.on("finish", () => {
-    console.log(
-      `[${id}] ← ${res.statusCode} ${started} (${Date.now() - t0}ms)`
-    );
+    console.log(`[${id}] ← ${res.statusCode} ${started}`);
   });
   next();
 });
@@ -187,45 +184,38 @@ app.use("/api/companies", companiesRouter);
 app.use("/api/hr-leads", hrLeadsRouter);
 app.use("/api/news", newsRouter);
 
-// Log every /api/enrich request early (helps with 404 debugging)
+// Log all /api/enrich entries (path + auth presence)
 app.use("/api/enrich", (req, _res, next) => {
-  console.log(`[${req._reqid}] /api/enrich pre → path=${req.path} auth=${!!req.headers.authorization}`);
+  console.log(`[${req._reqid}] /api/enrich pre path=${req.path} auth=${!!req.headers.authorization}`);
   next();
 });
 
-// Keep /api/enrich/status OPEN; guard others; promote cookie->bearer.
+// Keep /api/enrich/status open; guard others; promote cookie->bearer
 function protectEnrich(req, res, next) {
   if (req.path === "/status") return next();
   return authAny(req, res, next);
 }
 app.use("/api/enrich", cookieToBearer, protectEnrich, enrichRouter);
 
-// After the router, trap any unmatched /api/enrich/* and log available routes
+// Fallback 404 trap for /api/enrich/*
 app.all("/api/enrich/*", (req, res) => {
-  console.warn(`[${req._reqid}] /api/enrich 404 trap for path=${req.path}`);
-  res.status(404).json({
-    ok: false,
-    error: "not_found",
-    path: req.path,
-    hint: "If you expected /search, ensure routes/enrich/index.js defines router.get('/search') and this file mounts it.",
-  });
+  console.warn(`[${req._reqid}] /api/enrich 404 trap path=${req.path}`);
+  res.status(404).json({ ok: false, error: "not_found", path: req.path });
 });
 
 /* ----------------------------- Diagnostics (full) ----------------------------- */
 function listRoutes(appOrRouter) {
   const out = [];
-  const stack =
-    (appOrRouter && appOrRouter._router ? appOrRouter._router.stack : appOrRouter.stack) ||
-    [];
+  const stack = (appOrRouter && appOrRouter._router ? appOrRouter._router.stack : appOrRouter.stack) || [];
   for (const layer of stack) {
     if (layer.route && layer.route.path) {
-      const methods = Object.keys(layer.route.methods || {}).map((m) => m.toUpperCase());
-      out.push(...methods.map((m) => `${m} ${layer.route.path}`));
+      const methods = Object.keys(layer.route.methods || {}).map(m => m.toUpperCase());
+      out.push(...methods.map(m => `${m} ${layer.route.path}`));
     } else if (layer.name === "router" && layer.handle && layer.handle.stack) {
       for (const l2 of layer.handle.stack) {
         if (l2.route && l2.route.path) {
-          const methods = Object.keys(l2.route.methods || {}).map((m) => m.toUpperCase());
-          out.push(...methods.map((m) => `${m} ${l2.route.path}`));
+          const methods = Object.keys(l2.route.methods || {}).map(m => m.toUpperCase());
+          out.push(...methods.map(m => `${m} ${l2.route.path}`));
         }
       }
     }
@@ -233,55 +223,14 @@ function listRoutes(appOrRouter) {
   return out;
 }
 
-function envFlags() {
-  const keys = [
-    "DATABASE_URL",
-    "UPR_ADMIN_USER","UPR_ADMIN_PASS","ADMIN_USERNAME","ADMIN_PASSWORD",
-    "JWT_SECRET",
-    "APOLLO_API_KEY",
-    "OPENAI_API_KEY",
-    "NEVERBOUNCE_API_KEY",
-    "ZEROBOUNCE_API_KEY",
-  ];
-  const o = {};
-  for (const k of keys) o[k] = !!process.env[k];
-  return o;
-}
-
-async function dbPing() {
-  try {
-    await pool.query("SELECT 1");
-    return { ok: true, error: null };
-  } catch (e) {
-    return { ok: false, error: String(e?.message || e) };
-  }
-}
-
-async function diagPayload() {
-  const db = await dbPing();
-  return {
-    ok: true,
-    db_ok: db.ok,
-    db_error: db.error,
-    node: process.version,
-    platform: `${os.platform()} ${os.release()}`,
-    routesMounted: listRoutes(app),
-    env: envFlags(),
-  };
-}
-
-app.get("/api/__diag_full", async (_req, res) => {
-  const payload = await diagPayload();
-  res.json(payload);
-});
-
-app.get("/api/__diag_full/routes", async (_req, res) => {
+app.get("/api/__diag_full/routes", (_req, res) => {
   res.json({ ok: true, routes: listRoutes(app) });
 });
 
-app.get("/__diag_full", async (_req, res) => {
-  const payload = await diagPayload();
-  res.json(payload);
+/* -------------------------- Error logger (last) -------------------------- */
+app.use((err, req, res, _next) => {
+  console.error(`[${req._reqid}] ERROR ${req.method} ${req.originalUrl}`, err?.stack || err);
+  res.status(500).json({ ok: false, error: "internal_error" });
 });
 
 /* -------------------------- Static (dashboard SPA) --------------------------- */
@@ -300,7 +249,6 @@ if (fs.existsSync(dashboardDist)) {
 
   const indexFile = path.join(dashboardDist, "index.html");
 
-  // SPA fallback: anything not under /api/* returns index.html with no-store
   app.get(/^(?!\/api\/).*/, (_req, res) => {
     res.setHeader("Cache-Control", "no-store, must-revalidate");
     res.sendFile(indexFile);
