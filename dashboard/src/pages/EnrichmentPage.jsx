@@ -1,3 +1,4 @@
+// dashboard/src/pages/EnrichmentPage.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { authFetch } from "../utils/auth";
 
@@ -37,7 +38,7 @@ export default function EnrichmentPage() {
   const [dbOk, setDbOk] = useState(true);
   const [llmOk, setLlmOk] = useState(true);
   const [dataSource, setDataSource] = useState("live");
-  const [statusTimings, setStatusTimings] = useState({}); // optional timings if you return them
+  const [statusTimings, setStatusTimings] = useState({});
 
   // disambiguation modal state
   const [fixOpen, setFixOpen] = useState(false);
@@ -83,21 +84,15 @@ export default function EnrichmentPage() {
           noRedirect: true,
           headers: { Accept: "application/json" },
         });
-        if (res.status === 401) {
-          // Don't force logout; just show inline message later on first action
-          return;
-        }
+        if (res.status === 401) return;
         const j = await res.json().catch(() => ({}));
         if (!cancelled && j?.ok) {
           setDbOk(!!j.data?.db_ok);
           setLlmOk(!!j.data?.llm_ok);
           setDataSource(j.data?.data_source || "live");
-          // if you ever add timings, set them here:
           // setStatusTimings({ provider_ms: j.data?.provider_ms, llm_ms: j.data?.llm_ms })
         }
-      } catch {
-        // ignore; keep defaults
-      }
+      } catch {}
     })();
     return () => {
       cancelled = true;
@@ -130,10 +125,11 @@ export default function EnrichmentPage() {
       if (overrides.linkedin_url) sp.set("linkedin_url", overrides.linkedin_url.trim());
       if (overrides.parent) sp.set("parent", overrides.parent.trim());
 
-      const url = `/api/enrich/search?${sp.toString()}`;
-      console.log("[Enrichment] GET", url);
-      const res = await fetchWithTimeout(
-        url,
+      // --- 1) Try GET first ---
+      const getUrl = `/api/enrich/search?${sp.toString()}`;
+      console.log("[Enrichment] GET", getUrl);
+      let res = await fetchWithTimeout(
+        getUrl,
         { method: "GET", noRedirect: true, headers: { Accept: "application/json" } },
         25000
       );
@@ -145,14 +141,39 @@ export default function EnrichmentPage() {
         return;
       }
 
-      let json = null;
-      try {
-        json = await res.json();
-      } catch (e) {
-        throw new Error(`Invalid JSON from server (${res.status})`);
-      }
+      let json = await res.json().catch(() => ({}));
 
-      console.log("[Enrichment] Response", res.status, json);
+      // --- 2) If GET returns ok but empty results, fallback to POST body ---
+      const emptyOk =
+        res.ok &&
+        json?.ok &&
+        json?.data &&
+        Array.isArray(json.data.results) &&
+        json.data.results.length === 0;
+
+      if (emptyOk) {
+        const postBody = {
+          q: q.trim(),
+          name: overrides.name || undefined,
+          domain: overrides.domain
+            ? overrides.domain.trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "")
+            : undefined,
+          linkedin_url: overrides.linkedin_url || undefined,
+          parent: overrides.parent || undefined,
+        };
+        console.log("[Enrichment] POST /api/enrich/search (fallback)", postBody);
+        res = await fetchWithTimeout(
+          "/api/enrich/search",
+          {
+            method: "POST",
+            noRedirect: true,
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify(postBody),
+          },
+          25000
+        );
+        json = await res.json().catch(() => ({}));
+      }
 
       if (!res.ok || !json?.ok) {
         throw new Error(json?.error || `Search failed (${res.status})`);
@@ -169,10 +190,7 @@ export default function EnrichmentPage() {
       setFixLinkedIn(g.linkedin_url || "");
       setFixParent("");
     } catch (e) {
-      if (e?.name === "AbortError") {
-        // silently ignore, a new search started
-        return;
-      }
+      if (e?.name === "AbortError") return;
       setErr(e?.message || "Search failed");
       setRows([]);
       setSummary(null);
@@ -186,7 +204,6 @@ export default function EnrichmentPage() {
     const useNow = (e) => {
       const c = e?.detail;
       if (!c) return;
-      // auto-fill domain override and re-run search so emails use the right pattern
       setFixDomain(c.domain || "");
       run({ domain: c.domain, name: c.name, linkedin_url: c.linkedin_url });
     };
@@ -214,7 +231,7 @@ export default function EnrichmentPage() {
 
     const res = await authFetch("/api/enrich", {
       method: "POST",
-      noRedirect: true, // prevent forced logout on any 401
+      noRedirect: true,
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify(body),
     });

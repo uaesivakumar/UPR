@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-20T10:22:07Z",
-  "generated_human": "Sat, 20 Sep 2025 10:22:07 GMT",
+  "generated": "2025-09-20T10:37:57Z",
+  "generated_human": "Sat, 20 Sep 2025 10:37:57 GMT",
   "branch": "main",
-  "commit": "d69ade5",
+  "commit": "8bb7bec",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -131,9 +131,9 @@
     },
     {
       "path": "dashboard/src/pages/EnrichmentPage.jsx",
-      "size": 16584,
-      "mtime": "2025-09-20T09:55:58.328Z",
-      "sha256": "719e23d5e9f1a75003fe066f24c5bb840bca8214b7cc70c25218ed53c762fe81",
+      "size": 17156,
+      "mtime": "2025-09-20T10:37:47.541Z",
+      "sha256": "4efd5aecca1031d8023512641c6dc5832ec797bb855b863eca27481460916df9",
       "imports": [
         "import { useEffect, useMemo, useRef, useState } from \"react\";",
         "import { authFetch } from \"../utils/auth\";"
@@ -141,7 +141,7 @@
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "import { useEffect, useMemo, useRef, useState } from \"react\";\nimport { authFetch } from \"../utils/auth\";\n\nfunction Pill({ ok = true, label, ms }) {\n  return (\n    <span\n      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${\n        ok\n          ? \"border-green-200 bg-green-50 text-green-700\"\n          : \"border-gray-200 bg-gray-50 text-gray-600\"\n      }`}\n    >\n      <span className={`h-2 w-2 rounded-full ${ok ? \"bg-green-500\" : \"bg-gray-400\"}`} />\n      {label}\n      {typeof ms === \"number\" ? ` • ${ms}ms` : \"\"}\n    </span>\n  );\n}\n\nfunction Field({ label, children }) {\n  return (\n    <div>\n      <div className=\"mb-1 text-sm text-gray-700\">{label}</div>\n      {children}\n    </div>\n  );\n}\n\nexport default function EnrichmentPage() {\n  const [q, setQ] = useState(\"\");\n  const [rows, setRows] = useState([]);\n  const [err, setErr] = useState(\"\");\n  const [loading, setLoading] = useState(false);\n  const [summary, setSummary] = useState(null); // timings, provider, company_guess, quality\n\n  // service status lights\n  const [dbOk, setDbOk] = useState(true);\n  const [llmOk, setLlmOk] = useState(true);\n  const [dataSource, setDataSource] = useState(\"live\");\n  const [statusTimings, setStatusTimings] = useState({}); // optional timings if you return them",
+      "head": "// dashboard/src/pages/EnrichmentPage.jsx\nimport { useEffect, useMemo, useRef, useState } from \"react\";\nimport { authFetch } from \"../utils/auth\";\n\nfunction Pill({ ok = true, label, ms }) {\n  return (\n    <span\n      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${\n        ok\n          ? \"border-green-200 bg-green-50 text-green-700\"\n          : \"border-gray-200 bg-gray-50 text-gray-600\"\n      }`}\n    >\n      <span className={`h-2 w-2 rounded-full ${ok ? \"bg-green-500\" : \"bg-gray-400\"}`} />\n      {label}\n      {typeof ms === \"number\" ? ` • ${ms}ms` : \"\"}\n    </span>\n  );\n}\n\nfunction Field({ label, children }) {\n  return (\n    <div>\n      <div className=\"mb-1 text-sm text-gray-700\">{label}</div>\n      {children}\n    </div>\n  );\n}\n\nexport default function EnrichmentPage() {\n  const [q, setQ] = useState(\"\");\n  const [rows, setRows] = useState([]);\n  const [err, setErr] = useState(\"\");\n  const [loading, setLoading] = useState(false);\n  const [summary, setSummary] = useState(null); // timings, provider, company_guess, quality\n\n  // service status lights\n  const [dbOk, setDbOk] = useState(true);\n  const [llmOk, setLlmOk] = useState(true);\n  const [dataSource, setDataSource] = useState(\"live\");",
       "tail": "                  Cancel\n                </button>\n                <button\n                  className=\"rounded bg-gray-900 px-4 py-2 font-medium text-white\"\n                  onClick={() => {\n                    setFixOpen(false);\n                    run({\n                      name: fixName,\n                      domain: fixDomain,\n                      linkedin_url: fixLinkedIn,\n                      parent: fixParent,\n                    });\n                  }}\n                >\n                  Apply &amp; Re-run\n                </button>\n              </div>\n            </div>\n          </div>\n        </div>\n      )}\n    </div>\n  );\n}\n"
     },
     {
@@ -488,45 +488,18 @@
     },
     {
       "path": "server.js",
-      "size": 9385,
-      "mtime": "2025-09-20T10:21:03.713Z",
-      "sha256": "928d8e0f9f53d43e3639d46092972cbb5b1bfdbe68d26be35e562f88ca2b8dac",
+      "size": 17578,
+      "mtime": "2025-09-20T10:36:46.425Z",
+      "sha256": "1f1a9e84251870ed6a92fb93c0850a9db9eec990b4a280dc5aa8589ad8bf3284",
       "imports": [
-        "import express from \"express\";",
-        "import path from \"path\";",
-        "import fs from \"fs\";",
-        "import os from \"os\";",
-        "import jwt from \"jsonwebtoken\";",
-        "import { fileURLToPath } from \"url\";",
-        "\nimport { pool } from \"./utils/db.js\";",
-        "import companiesRouter from \"./routes/companies.js\";",
-        "import hrLeadsRouter from \"./routes/hrLeads.js\";",
-        "import newsRouter from \"./routes/news.js\";",
-        "import enrichRouter from \"./routes/enrich/index.js\";",
-        "import { signJwt } from \"./utils/jwt.js\";"
+        "import { useEffect, useMemo, useRef, useState } from \"react\";",
+        "import { authFetch } from \"../utils/auth\";"
       ],
-      "envs": [
-        "ADMIN_PASSWORD",
-        "ADMIN_USERNAME",
-        "JWT_SECRET",
-        "NODE_ENV",
-        "PORT",
-        "UPR_ADMIN_PASS",
-        "UPR_ADMIN_USER"
-      ],
-      "appUses": [
-        "app.use(express.json({ limit: \"2mb\" }));",
-        "app.use(express.urlencoded({ extended: true }));",
-        "app.use(\"/api/companies\", companiesRouter);",
-        "app.use(\"/api/hr-leads\", hrLeadsRouter);",
-        "app.use(\"/api/news\", newsRouter);",
-        "app.use(\"/api/enrich\", cookieToBearer, protectEnrich, enrichRouter);"
-      ],
-      "endpoints": [
-        "app.get(\"/health\", (_req, res) => res.json({ ok: true }));"
-      ],
-      "head": "// server.js\nimport express from \"express\";\nimport path from \"path\";\nimport fs from \"fs\";\nimport os from \"os\";\nimport jwt from \"jsonwebtoken\";\nimport { fileURLToPath } from \"url\";\n\nimport { pool } from \"./utils/db.js\";\nimport companiesRouter from \"./routes/companies.js\";\nimport hrLeadsRouter from \"./routes/hrLeads.js\";\nimport newsRouter from \"./routes/news.js\";\nimport enrichRouter from \"./routes/enrich/index.js\"; // index re-exports status/search/etc.\nimport { signJwt } from \"./utils/jwt.js\";\n\nconst __filename = fileURLToPath(import.meta.url);\nconst __dirname = path.dirname(__filename);\n\nconst app = express();\nconst PORT = process.env.PORT || 10000;\n\n/* ------------------------------ helpers (auth) ------------------------------ */\nconst COOKIE_NAME = \"upr_jwt\";\nconst isProd = process.env.NODE_ENV === \"production\";\n\n// tiny cookie reader (no extra deps)\nfunction getCookie(req, name) {\n  const str = req.headers?.cookie || \"\";\n  if (!str) return null;\n  const pairs = str.split(\";\").map((s) => s.trim().split(\"=\"));\n  const map = Object.fromEntries(pairs);\n  const v = map[name];\n  return v ? decodeURIComponent(v) : null;\n}\n\nfunction setAuthCookie(res, token) {\n  const parts = [\n    `${COOKIE_NAME}=${encodeURIComponent(token)}`,\n    \"Path=/\",\n    \"HttpOnly\",",
-      "tail": "if (fs.existsSync(dashboardDist)) {\n  app.use(\n    express.static(dashboardDist, {\n      setHeaders: (res, filePath) => {\n        if (filePath.endsWith(\".html\")) {\n          res.setHeader(\"Cache-Control\", \"no-store, must-revalidate\");\n        }\n      },\n    })\n  );\n\n  const indexFile = path.join(dashboardDist, \"index.html\");\n\n  // SPA fallback: anything not under /api/* returns index.html with no-store\n  app.get(/^(?!\\/api\\/).*/, (_req, res) => {\n    res.setHeader(\"Cache-Control\", \"no-store, must-revalidate\");\n    res.sendFile(indexFile);\n  });\n}\n\n/* ---------------------------------- Start ---------------------------------- */\napp.listen(PORT, () => {\n  console.log(`UPR backend listening on ${PORT}`);\n});\n"
+      "envs": [],
+      "appUses": [],
+      "endpoints": [],
+      "head": "// dashboard/src/pages/EnrichmentPage.jsx\nimport { useEffect, useMemo, useRef, useState } from \"react\";\nimport { authFetch } from \"../utils/auth\";\n\nfunction Pill({ ok = true, label, ms }) {\n  return (\n    <span\n      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${\n        ok\n          ? \"border-green-200 bg-green-50 text-green-700\"\n          : \"border-gray-200 bg-gray-50 text-gray-600\"\n      }`}\n    >\n      <span className={`h-2 w-2 rounded-full ${ok ? \"bg-green-500\" : \"bg-gray-400\"}`} />\n      {label}\n      {typeof ms === \"number\" ? ` • ${ms}ms` : \"\"}\n    </span>\n  );\n}\n\nfunction Field({ label, children }) {\n  return (\n    <div>\n      <div className=\"mb-1 text-sm text-gray-700\">{label}</div>\n      {children}\n    </div>\n  );\n}\n\nexport default function EnrichmentPage() {\n  const [q, setQ] = useState(\"\");\n  const [rows, setRows] = useState([]);\n  const [err, setErr] = useState(\"\");\n  const [loading, setLoading] = useState(false);\n  const [summary, setSummary] = useState(null); // timings, provider, company_guess, quality\n\n  // service status lights\n  const [dbOk, setDbOk] = useState(true);\n  const [llmOk, setLlmOk] = useState(true);\n  const [dataSource, setDataSource] = useState(\"live\");",
+      "tail": "                  Cancel\n                </button>\n                <button\n                  className=\"rounded bg-gray-900 px-4 py-2 font-medium text-white\"\n                  onClick={() => {\n                    setFixOpen(false);\n                    run({\n                      name: fixName,\n                      domain: fixDomain,\n                      linkedin_url: fixLinkedIn,\n                      parent: fixParent,\n                    });\n                  }}\n                >\n                  Apply &amp; Re-run\n                </button>\n              </div>\n            </div>\n          </div>\n        </div>\n      )}\n    </div>\n  );\n}\n"
     },
     {
       "path": "utils/adminOnly.js",
