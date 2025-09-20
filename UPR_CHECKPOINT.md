@@ -1,8 +1,8 @@
 # UPR — Project Checkpoint (auto)
 
-**Generated:** 2025-09-20T10:13:48Z  
+**Generated:** 2025-09-20T10:17:30Z  
 **Branch:** main  
-**Commit:** 426587f
+**Commit:** ed9238f
 **Package:** upr-dashboard
 
 ---
@@ -17,7 +17,7 @@
 <details><summary>Click to expand</summary>
 
 ```
-# Generated: 2025-09-20T10:13:48Z
+# Generated: 2025-09-20T10:17:30Z
 .DS_Store
 .dockerignore
 .githooks/pre-commit

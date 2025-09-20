@@ -46,25 +46,40 @@ function setAuthCookie(res, token) {
 }
 
 /* ----------------------- authAny (inline middleware) ----------------------- */
-// Accept cookie-session (future) OR Bearer JWT
+// Accept session user, or JWT from HttpOnly cookie (upr_jwt), or Authorization: Bearer
 function authAny(req, res, next) {
+  // 1) Session (future-friendly if express-session is added later)
   if (req?.session?.user) {
     req.user = req.session.user;
     return next();
   }
+
+  // 2) HttpOnly cookie JWT
+  const cookieToken = getCookie(req, COOKIE_NAME);
+  if (cookieToken) {
+    try {
+      const payload = jwt.verify(cookieToken, process.env.JWT_SECRET);
+      req.user = { id: payload.sub, role: payload.role, ...payload };
+      return next();
+    } catch {
+      // fall through to bearer
+    }
+  }
+
+  // 3) Authorization: Bearer <token>
   const h = req.headers.authorization || "";
   const m = h.match(/^Bearer\s+(.+)$/i);
   if (m) {
     try {
       const payload = jwt.verify(m[1], process.env.JWT_SECRET);
-      if (payload) {
-        req.user = { id: payload.sub, role: payload.role, ...payload };
-        return next();
-      }
+      req.user = { id: payload.sub, role: payload.role, ...payload };
+      return next();
     } catch {
       // fall through
     }
   }
+
+  // 4) Unauthorized
   return res.status(401).json({ ok: false, error: "unauthorized" });
 }
 

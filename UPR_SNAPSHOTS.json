@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-20T10:13:48Z",
-  "generated_human": "Sat, 20 Sep 2025 10:13:48 GMT",
+  "generated": "2025-09-20T10:17:30Z",
+  "generated_human": "Sat, 20 Sep 2025 10:17:30 GMT",
   "branch": "main",
-  "commit": "426587f",
+  "commit": "ed9238f",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -488,9 +488,9 @@
     },
     {
       "path": "server.js",
-      "size": 8463,
-      "mtime": "2025-09-20T10:13:40.879Z",
-      "sha256": "e9a0d09758ff070e8edc6f3da60209dfa55c1b5bd50c6471e12b5c45d72ed496",
+      "size": 8928,
+      "mtime": "2025-09-20T10:17:26.329Z",
+      "sha256": "53e2cfcad8a6a1b2a1a8a61590c1263b35d365c4f42062a709e5ba7600fcc82c",
       "imports": [
         "import express from \"express\";",
         "import path from \"path\";",
