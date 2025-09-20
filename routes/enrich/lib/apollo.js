@@ -15,12 +15,11 @@ function apolloHeaders() {
   return {
     "Content-Type": "application/json",
     Accept: "application/json",
-    "X-Api-Key": key, // IMPORTANT: header (not query string)
+    "X-Api-Key": key,
   };
 }
 
 function roleFiltersToQuery(roleFilters = ["hr", "admin", "finance"]) {
-  // Titles we care about (high recall but focused)
   const titles = [
     "hr", "human resources", "talent", "recruit", "people", "people operations", "people & culture",
     "admin", "office manager", "operations",
@@ -104,10 +103,12 @@ export async function enrichWithApollo(query = {}) {
       email: p.email || null,
       linkedin_url: p.linkedin_url || null,
       emirate: deriveLocation(p),
-      confidence: 0.7, // Apollo doesn’t provide confidence; static baseline
+      confidence: 0.7, // baseline since Apollo doesn’t provide this
+      status: p.email_status || "unknown",
       source: "apollo",
     }));
 
+    console.log(`[enrichWithApollo] got ${results.length} candidates in ${ms}ms`);
     return { ok: true, results, provider: "apollo", ms };
   } catch (e) {
     console.error("Apollo enrichment failed", e);
@@ -115,7 +116,7 @@ export async function enrichWithApollo(query = {}) {
   }
 }
 
-// keep default export so older code works
+// keep default export for compatibility
 export default {
   searchPeopleByCompany,
   apolloPeopleByDomain,
