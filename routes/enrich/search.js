@@ -1,90 +1,78 @@
-// server/routes/enrich/search.js
-import express from "express";
-import * as apollo from "./lib/apollo.js";
-import * as llm from "./lib/llm.js";
-import * as geo from "./lib/geo.js";
-import * as email from "./lib/email.js";
-import * as quality from "./lib/quality.js";
-
-const router = express.Router();
+// routes/enrich/search.js
+import { pool } from "../../utils/db.js";
+import { enrichWithApollo } from "./lib/apollo.js";
+import { enrichWithGeo } from "./lib/geo.js";
+import { enrichWithEmail } from "./lib/email.js";
+import { enrichWithLLM } from "./lib/llm.js";
+import { computeQuality } from "./lib/quality.js";
 
 /**
- * GET /api/enrich/search?q=company
+ * GET or POST /api/enrich/search
+ * Orchestrates enrichment pipeline using modular libs.
  */
-router.get("/search", async (req, res) => {
-  const q = req.query.q || "";
-  const t0 = Date.now();
+export default async function searchHandler(req, res) {
+  const started = Date.now();
+  const q = (req.query.q || req.body.q || "").trim();
+  const name = req.query.name || req.body.name || q;
+  const domain = req.query.domain || req.body.domain || null;
+  const linkedin_url = req.query.linkedin_url || req.body.linkedin_url || null;
+  const parent = req.query.parent || req.body.parent || null;
 
-  const timings = {};
-  let company = null;
-  let candidates = [];
-  let error = null;
-
-  try {
-    // --- 1. Guess company (name + domain) ---
-    const t1 = Date.now();
-    try {
-      company = await llm.guessCompany(q);
-    } catch (err) {
-      error = `llm.guessCompany failed: ${err.message}`;
-      company = { name: q, domain: null };
-    }
-    timings.llm_ms = Date.now() - t1;
-
-    // --- 2. Apollo search ---
-    const t2 = Date.now();
-    try {
-      if (company?.name) {
-        candidates = await apollo.searchPeopleByCompany(company.name, company.domain);
-      }
-    } catch (err) {
-      error = `apollo.searchPeopleByCompany failed: ${err.message}`;
-    }
-    timings.apollo_ms = Date.now() - t2;
-
-    // --- 3. Geo enrichment ---
-    const t3 = Date.now();
-    try {
-      candidates = await geo.enrich(candidates);
-    } catch (err) {
-      error = `geo.enrich failed: ${err.message}`;
-    }
-    timings.geo_ms = Date.now() - t3;
-
-    // --- 4. Email enrichment ---
-    const t4 = Date.now();
-    try {
-      candidates = await email.enrich(candidates);
-    } catch (err) {
-      error = `email.enrich failed: ${err.message}`;
-    }
-    timings.email_ms = Date.now() - t4;
-
-    // --- 5. Quality scoring ---
-    const t5 = Date.now();
-    try {
-      candidates = quality.score(candidates, company);
-    } catch (err) {
-      error = `quality.score failed: ${err.message}`;
-    }
-    timings.quality_ms = Date.now() - t5;
-
-  } catch (err) {
-    error = err.message;
+  if (!name && !domain && !linkedin_url) {
+    return res.status(400).json({ ok: false, error: "missing_query" });
   }
 
-  const totalMs = Date.now() - t0;
-  timings.total_ms = totalMs;
+  const timings = {};
+  let candidates = [];
+  let companyGuess = { name, domain, linkedin_url, parent };
 
-  return res.json({
-    ok: !error,
-    error,
-    query: q,
-    company,
-    candidates,
-    timings,
-    provider: "apollo+llm+geo+email+quality"
-  });
-});
+  try {
+    // Apollo (contacts)
+    let t0 = Date.now();
+    candidates = await enrichWithApollo({ name, domain, linkedin_url });
+    timings.apollo_ms = Date.now() - t0;
 
-export default router;
+    // Geo enrichment
+    t0 = Date.now();
+    candidates = await enrichWithGeo(candidates);
+    timings.geo_ms = Date.now() - t0;
+
+    // Email enrichment
+    t0 = Date.now();
+    candidates = await enrichWithEmail(candidates, domain);
+    timings.email_ms = Date.now() - t0;
+
+    // LLM enrichment (summary / company guess refinement)
+    t0 = Date.now();
+    const llmOut = await enrichWithLLM({ name, domain, linkedin_url, candidates });
+    timings.llm_ms = Date.now() - t0;
+    if (llmOut?.company_guess) {
+      companyGuess = { ...companyGuess, ...llmOut.company_guess };
+    }
+
+    // Quality scoring
+    t0 = Date.now();
+    const quality = await computeQuality(candidates, companyGuess);
+    timings.quality_ms = Date.now() - t0;
+
+    const summary = {
+      provider: "enrich",
+      company_guess: companyGuess,
+      quality,
+      timings,
+    };
+
+    return res.json({
+      ok: true,
+      data: { results: candidates, summary },
+      took_ms: Date.now() - started,
+    });
+  } catch (err) {
+    console.error("[enrich/search] error:", err);
+    return res.status(500).json({
+      ok: false,
+      error: err.message || "internal_error",
+      took_ms: Date.now() - started,
+    });
+  }
+}

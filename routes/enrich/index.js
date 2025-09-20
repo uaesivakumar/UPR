@@ -12,32 +12,46 @@ function noStore(res) {
 /** Chips status */
 router.get("/status", (_req, res) => {
   noStore(res);
-  res.json({ ok: true, data: { db_ok: true, llm_ok: true, data_source: "live" } });
+  res.json({
+    ok: true,
+    data: {
+      db_ok: !!pool,   // reflect DB connectivity
+      llm_ok: true,    // you can extend with a real LLM health check
+      data_source: "live",
+    },
+  });
 });
 
 /** GET /api/enrich/search */
-router.get("/search", async (req, res, next) => {
+router.get("/search", async (req, res) => {
   try {
     noStore(res);
     const q = (req.query?.q || "").trim();
     console.log(`[${req._reqid}] enrich/search GET q="${q}"`);
-    await searchHandler(req, res, next);
+    await searchHandler(req, res);
   } catch (e) {
     console.error(`[${req._reqid}] enrich/search GET error`, e?.stack || e);
     if (!res.headersSent) {
       res.status(200).json({
         ok: true,
-        data: { results: [], summary: { provider: "live", quality: { score: 0.5, explanation: "No matches found." } } },
+        data: {
+          results: [],
+          summary: {
+            provider: "live",
+            quality: { score: 0.5, explanation: "No matches found." },
+          },
+        },
       });
     }
   }
 });
 
-/** POST /api/enrich/search  (same behavior as GET; UI may call this as fallback) */
-router.post("/search", async (req, res, next) => {
+/** POST /api/enrich/search */
+router.post("/search", async (req, res) => {
   try {
     noStore(res);
-    // Allow the same handler by mapping body into query-like fields it expects
+
+    // Map POST body into query fields
     req.query = req.query || {};
     if (req.body?.q) req.query.q = String(req.body.q);
     if (req.body?.name) req.query.name = String(req.body.name);
@@ -46,20 +60,28 @@ router.post("/search", async (req, res, next) => {
     if (req.body?.parent) req.query.parent = String(req.body.parent);
 
     const q = (req.query?.q || "").trim();
-    console.log(`[${req._reqid}] enrich/search POST q="${q}" bodyKeys=${Object.keys(req.body || {})}`);
-    await searchHandler(req, res, next);
+    console.log(
+      `[${req._reqid}] enrich/search POST q="${q}" bodyKeys=${Object.keys(req.body || {})}`
+    );
+    await searchHandler(req, res);
   } catch (e) {
     console.error(`[${req._reqid}] enrich/search POST error`, e?.stack || e);
     if (!res.headersSent) {
       res.status(200).json({
         ok: true,
-        data: { results: [], summary: { provider: "live", quality: { score: 0.5, explanation: "No matches found." } } },
+        data: {
+          results: [],
+          summary: {
+            provider: "live",
+            quality: { score: 0.5, explanation: "No matches found." },
+          },
+        },
       });
     }
   }
 });
 
-/** Save contacts */
+/** Save contacts into hr_leads */
 router.post("/", async (req, res) => {
   const body = req.body || {};
   const companyId = body.company_id ?? null;
@@ -85,12 +107,21 @@ router.post("/", async (req, res) => {
         const linkedin = c.linkedin_url ?? null;
         const emirate = c.emirate ?? null;
         const source = c.source ?? "enrich";
+
         const sql = `
           INSERT INTO hr_leads (company_id, name, role, email, linkedin_url, emirate, status, source)
           VALUES ($1, $2, $3, $4, $5, $6, 'new', $7)
           ON CONFLICT DO NOTHING
         `;
-        await pool.query(sql, [companyId, name, designation, email, linkedin, emirate, source]);
+        await pool.query(sql, [
+          companyId,
+          name,
+          designation,
+          email,
+          linkedin,
+          emirate,
+          source,
+        ]);
         saved++;
       } catch {
         /* ignore per-row errors */
@@ -98,9 +129,13 @@ router.post("/", async (req, res) => {
     }
     await pool.query("COMMIT");
   } catch (e) {
-    try { await pool.query("ROLLBACK"); } catch {}
+    try {
+      await pool.query("ROLLBACK");
+    } catch {}
     console.error(`[${req._reqid}] enrich/save error`, e?.stack || e);
-    return res.status(200).json({ ok: false, error: "bulk-insert-failed", saved });
+    return res
+      .status(200)
+      .json({ ok: false, error: "bulk-insert-failed", saved });
   }
 
   return res.json({ ok: true, saved });

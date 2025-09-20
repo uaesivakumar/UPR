@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-20T12:14:39Z",
-  "generated_human": "Sat, 20 Sep 2025 12:14:39 GMT",
+  "generated": "2025-09-20T12:23:09Z",
+  "generated_human": "Sat, 20 Sep 2025 12:23:09 GMT",
   "branch": "main",
-  "commit": "7cd14f5",
+  "commit": "2a113b2",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -326,9 +326,9 @@
     },
     {
       "path": "routes/enrich/index.js",
-      "size": 3755,
-      "mtime": "2025-09-20T11:21:07.571Z",
-      "sha256": "d80951bbe8ac4f0aa5b071e8000001195db9a7a2fa74c6b2c456bb38bb09add2",
+      "size": 4012,
+      "mtime": "2025-09-20T12:22:39.227Z",
+      "sha256": "0b3aaa17ee64fa273122ae84e49cf483a8a7e3a0fbe83a58571288a836ca42ff",
       "imports": [
         "import { Router } from \"express\";",
         "import searchHandler from \"./search.js\";",
@@ -337,8 +337,8 @@
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "// routes/enrich/index.js\nimport { Router } from \"express\";\nimport searchHandler from \"./search.js\";\nimport { pool } from \"../../utils/db.js\";\n\nconst router = Router();\n\nfunction noStore(res) {\n  res.setHeader(\"Cache-Control\", \"no-store, must-revalidate\");\n}\n\n/** Chips status */\nrouter.get(\"/status\", (_req, res) => {\n  noStore(res);\n  res.json({ ok: true, data: { db_ok: true, llm_ok: true, data_source: \"live\" } });\n});\n\n/** GET /api/enrich/search */\nrouter.get(\"/search\", async (req, res, next) => {\n  try {\n    noStore(res);\n    const q = (req.query?.q || \"\").trim();\n    console.log(`[${req._reqid}] enrich/search GET q=\"${q}\"`);\n    await searchHandler(req, res, next);\n  } catch (e) {\n    console.error(`[${req._reqid}] enrich/search GET error`, e?.stack || e);\n    if (!res.headersSent) {\n      res.status(200).json({\n        ok: true,\n        data: { results: [], summary: { provider: \"live\", quality: { score: 0.5, explanation: \"No matches found.\" } } },\n      });\n    }\n  }\n});\n\n/** POST /api/enrich/search  (same behavior as GET; UI may call this as fallback) */\nrouter.post(\"/search\", async (req, res, next) => {\n  try {\n    noStore(res);\n    // Allow the same handler by mapping body into query-like fields it expects",
-      "tail": "        const emirate = c.emirate ?? null;\n        const source = c.source ?? \"enrich\";\n        const sql = `\n          INSERT INTO hr_leads (company_id, name, role, email, linkedin_url, emirate, status, source)\n          VALUES ($1, $2, $3, $4, $5, $6, 'new', $7)\n          ON CONFLICT DO NOTHING\n        `;\n        await pool.query(sql, [companyId, name, designation, email, linkedin, emirate, source]);\n        saved++;\n      } catch {\n        /* ignore per-row errors */\n      }\n    }\n    await pool.query(\"COMMIT\");\n  } catch (e) {\n    try { await pool.query(\"ROLLBACK\"); } catch {}\n    console.error(`[${req._reqid}] enrich/save error`, e?.stack || e);\n    return res.status(200).json({ ok: false, error: \"bulk-insert-failed\", saved });\n  }\n\n  return res.json({ ok: true, saved });\n});\n\nexport default router;\n"
+      "head": "// routes/enrich/index.js\nimport { Router } from \"express\";\nimport searchHandler from \"./search.js\";\nimport { pool } from \"../../utils/db.js\";\n\nconst router = Router();\n\nfunction noStore(res) {\n  res.setHeader(\"Cache-Control\", \"no-store, must-revalidate\");\n}\n\n/** Chips status */\nrouter.get(\"/status\", (_req, res) => {\n  noStore(res);\n  res.json({\n    ok: true,\n    data: {\n      db_ok: !!pool,   // reflect DB connectivity\n      llm_ok: true,    // you can extend with a real LLM health check\n      data_source: \"live\",\n    },\n  });\n});\n\n/** GET /api/enrich/search */\nrouter.get(\"/search\", async (req, res) => {\n  try {\n    noStore(res);\n    const q = (req.query?.q || \"\").trim();\n    console.log(`[${req._reqid}] enrich/search GET q=\"${q}\"`);\n    await searchHandler(req, res);\n  } catch (e) {\n    console.error(`[${req._reqid}] enrich/search GET error`, e?.stack || e);\n    if (!res.headersSent) {\n      res.status(200).json({\n        ok: true,\n        data: {\n          results: [],\n          summary: {\n            provider: \"live\",",
+      "tail": "          linkedin,\n          emirate,\n          source,\n        ]);\n        saved++;\n      } catch {\n        /* ignore per-row errors */\n      }\n    }\n    await pool.query(\"COMMIT\");\n  } catch (e) {\n    try {\n      await pool.query(\"ROLLBACK\");\n    } catch {}\n    console.error(`[${req._reqid}] enrich/save error`, e?.stack || e);\n    return res\n      .status(200)\n      .json({ ok: false, error: \"bulk-insert-failed\", saved });\n  }\n\n  return res.json({ ok: true, saved });\n});\n\nexport default router;\n"
     },
     {
       "path": "routes/enrich/lib/apollo.js",
@@ -407,22 +407,22 @@
     },
     {
       "path": "routes/enrich/search.js",
-      "size": 2188,
-      "mtime": "2025-09-20T12:10:55.713Z",
-      "sha256": "5440f3ffcc53835648d0be8a79d123e52369e8499cea09dcaf65c0ebf33f8aee",
+      "size": 2419,
+      "mtime": "2025-09-20T12:21:01.708Z",
+      "sha256": "44b8997bb51c64aa526532e03b5f32648aad87528e19a03cb44a0c5eab272d32",
       "imports": [
-        "import express from \"express\";",
-        "import * as apollo from \"./lib/apollo.js\";",
-        "import * as llm from \"./lib/llm.js\";",
-        "import * as geo from \"./lib/geo.js\";",
-        "import * as email from \"./lib/email.js\";",
-        "import * as quality from \"./lib/quality.js\";"
+        "import { pool } from \"../../utils/db.js\";",
+        "import { enrichWithApollo } from \"./lib/apollo.js\";",
+        "import { enrichWithGeo } from \"./lib/geo.js\";",
+        "import { enrichWithEmail } from \"./lib/email.js\";",
+        "import { enrichWithLLM } from \"./lib/llm.js\";",
+        "import { computeQuality } from \"./lib/quality.js\";"
       ],
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "// server/routes/enrich/search.js\nimport express from \"express\";\nimport * as apollo from \"./lib/apollo.js\";\nimport * as llm from \"./lib/llm.js\";\nimport * as geo from \"./lib/geo.js\";\nimport * as email from \"./lib/email.js\";\nimport * as quality from \"./lib/quality.js\";\n\nconst router = express.Router();\n\n/**\n * GET /api/enrich/search?q=company\n */\nrouter.get(\"/search\", async (req, res) => {\n  const q = req.query.q || \"\";\n  const t0 = Date.now();\n\n  const timings = {};\n  let company = null;\n  let candidates = [];\n  let error = null;\n\n  try {\n    // --- 1. Guess company (name + domain) ---\n    const t1 = Date.now();\n    try {\n      company = await llm.guessCompany(q);\n    } catch (err) {\n      error = `llm.guessCompany failed: ${err.message}`;\n      company = { name: q, domain: null };\n    }\n    timings.llm_ms = Date.now() - t1;\n\n    // --- 2. Apollo search ---\n    const t2 = Date.now();\n    try {\n      if (company?.name) {\n        candidates = await apollo.searchPeopleByCompany(company.name, company.domain);\n      }\n    } catch (err) {",
-      "tail": "    } catch (err) {\n      error = `quality.score failed: ${err.message}`;\n    }\n    timings.quality_ms = Date.now() - t5;\n\n  } catch (err) {\n    error = err.message;\n  }\n\n  const totalMs = Date.now() - t0;\n  timings.total_ms = totalMs;\n\n  return res.json({\n    ok: !error,\n    error,\n    query: q,\n    company,\n    candidates,\n    timings,\n    provider: \"apollo+llm+geo+email+quality\"\n  });\n});\n\nexport default router;\n"
+      "head": "// routes/enrich/search.js\nimport { pool } from \"../../utils/db.js\";\nimport { enrichWithApollo } from \"./lib/apollo.js\";\nimport { enrichWithGeo } from \"./lib/geo.js\";\nimport { enrichWithEmail } from \"./lib/email.js\";\nimport { enrichWithLLM } from \"./lib/llm.js\";\nimport { computeQuality } from \"./lib/quality.js\";\n\n/**\n * GET or POST /api/enrich/search\n * Orchestrates enrichment pipeline using modular libs.\n */\nexport default async function searchHandler(req, res) {\n  const started = Date.now();\n  const q = (req.query.q || req.body.q || \"\").trim();\n  const name = req.query.name || req.body.name || q;\n  const domain = req.query.domain || req.body.domain || null;\n  const linkedin_url = req.query.linkedin_url || req.body.linkedin_url || null;\n  const parent = req.query.parent || req.body.parent || null;\n\n  if (!name && !domain && !linkedin_url) {\n    return res.status(400).json({ ok: false, error: \"missing_query\" });\n  }\n\n  const timings = {};\n  let candidates = [];\n  let companyGuess = { name, domain, linkedin_url, parent };\n\n  try {\n    // Apollo (contacts)\n    let t0 = Date.now();\n    candidates = await enrichWithApollo({ name, domain, linkedin_url });\n    timings.apollo_ms = Date.now() - t0;\n\n    // Geo enrichment\n    t0 = Date.now();\n    candidates = await enrichWithGeo(candidates);\n    timings.geo_ms = Date.now() - t0;\n\n    // Email enrichment",
+      "tail": "    const quality = await computeQuality(candidates, companyGuess);\n    timings.quality_ms = Date.now() - t0;\n\n    const summary = {\n      provider: \"enrich\",\n      company_guess: companyGuess,\n      quality,\n      timings,\n    };\n\n    return res.json({\n      ok: true,\n      data: { results: candidates, summary },\n      took_ms: Date.now() - started,\n    });\n  } catch (err) {\n    console.error(\"[enrich/search] error:\", err);\n    return res.status(500).json({\n      ok: false,\n      error: err.message || \"internal_error\",\n      took_ms: Date.now() - started,\n    });\n  }\n}\n"
     },
     {
       "path": "routes/hrLeads.js",
