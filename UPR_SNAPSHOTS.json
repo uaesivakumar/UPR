@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-20T10:17:30Z",
-  "generated_human": "Sat, 20 Sep 2025 10:17:30 GMT",
+  "generated": "2025-09-20T10:22:07Z",
+  "generated_human": "Sat, 20 Sep 2025 10:22:07 GMT",
   "branch": "main",
-  "commit": "ed9238f",
+  "commit": "d69ade5",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -488,9 +488,9 @@
     },
     {
       "path": "server.js",
-      "size": 8928,
-      "mtime": "2025-09-20T10:17:26.329Z",
-      "sha256": "53e2cfcad8a6a1b2a1a8a61590c1263b35d365c4f42062a709e5ba7600fcc82c",
+      "size": 9385,
+      "mtime": "2025-09-20T10:21:03.713Z",
+      "sha256": "928d8e0f9f53d43e3639d46092972cbb5b1bfdbe68d26be35e562f88ca2b8dac",
       "imports": [
         "import express from \"express\";",
         "import path from \"path\";",
@@ -520,7 +520,7 @@
         "app.use(\"/api/companies\", companiesRouter);",
         "app.use(\"/api/hr-leads\", hrLeadsRouter);",
         "app.use(\"/api/news\", newsRouter);",
-        "app.use(\"/api/enrich\", protectEnrich, enrichRouter);"
+        "app.use(\"/api/enrich\", cookieToBearer, protectEnrich, enrichRouter);"
       ],
       "endpoints": [
         "app.get(\"/health\", (_req, res) => res.json({ ok: true }));"

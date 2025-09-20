@@ -45,7 +45,7 @@ function setAuthCookie(res, token) {
   res.setHeader("Set-Cookie", parts.join("; "));
 }
 
-/* ----------------------- authAny (inline middleware) ----------------------- */
+/* ----------------------- auth middlewares (inline) ----------------------- */
 // Accept session user, or JWT from HttpOnly cookie (upr_jwt), or Authorization: Bearer
 function authAny(req, res, next) {
   // 1) Session (future-friendly if express-session is added later)
@@ -81,6 +81,18 @@ function authAny(req, res, next) {
 
   // 4) Unauthorized
   return res.status(401).json({ ok: false, error: "unauthorized" });
+}
+
+// If a valid cookie exists but no Authorization header, add one so
+// downstream middleware/routers that only look at Bearer still work.
+function cookieToBearer(req, _res, next) {
+  if (!req.headers.authorization) {
+    const cookieToken = getCookie(req, COOKIE_NAME);
+    if (cookieToken) {
+      req.headers.authorization = `Bearer ${cookieToken}`;
+    }
+  }
+  next();
 }
 
 /* -------------------------------- Middleware -------------------------------- */
@@ -182,12 +194,13 @@ app.use("/api/companies", companiesRouter);
 app.use("/api/hr-leads", hrLeadsRouter);
 app.use("/api/news", newsRouter);
 
-// Keep /api/enrich/status OPEN, guard all other enrich endpoints
+// Keep /api/enrich/status OPEN, guard all other enrich endpoints.
+// Also promote cookie -> bearer before handing off to the router.
 function protectEnrich(req, res, next) {
   if (req.path === "/status") return next();
   return authAny(req, res, next);
 }
-app.use("/api/enrich", protectEnrich, enrichRouter);
+app.use("/api/enrich", cookieToBearer, protectEnrich, enrichRouter);
 
 /* ----------------------------- Diagnostics (full) ----------------------------- */
 function listRoutes(appOrRouter) {
