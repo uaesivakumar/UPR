@@ -1,12 +1,28 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { authFetch } from "../utils/auth";
 
-function Pill({ ok=true, label, ms }) {
+function Pill({ ok = true, label, ms }) {
   return (
-    <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${ok ? "border-green-200 bg-green-50 text-green-700" : "border-gray-200 bg-gray-50 text-gray-600"}`}>
-      <span className={`h-2 w-2 rounded-full ${ok ? "bg-green-500" : "bg-gray-400"}`}></span>
-      {label}{typeof ms === "number" ? ` • ${ms}ms` : ""}
+    <span
+      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${
+        ok
+          ? "border-green-200 bg-green-50 text-green-700"
+          : "border-gray-200 bg-gray-50 text-gray-600"
+      }`}
+    >
+      <span className={`h-2 w-2 rounded-full ${ok ? "bg-green-500" : "bg-gray-400"}`} />
+      {label}
+      {typeof ms === "number" ? ` • ${ms}ms` : ""}
     </span>
+  );
+}
+
+function Field({ label, children }) {
+  return (
+    <div>
+      <div className="mb-1 text-sm text-gray-700">{label}</div>
+      {children}
+    </div>
   );
 }
 
@@ -24,22 +40,76 @@ export default function EnrichmentPage() {
   const [fixLinkedIn, setFixLinkedIn] = useState("");
   const [fixParent, setFixParent] = useState("");
 
+  const [pickedCompanyId, setPickedCompanyId] = useState("");
+  const [picked, setPicked] = useState({}); // idx -> true
+  const pickedIdxs = useMemo(
+    () => Object.keys(picked).filter((k) => picked[k]).map((n) => Number(n)),
+    [picked]
+  );
+
+  const inFlight = useRef(null); // AbortController for current request
+
   const companyGuess = summary?.company_guess;
 
-  const run = async (overrides={}) => {
+  // ----- Fetch with abort + hard timeout so UI never stays stuck -----
+  async function fetchWithTimeout(url, options = {}, ms = 25000) {
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort("timeout"), ms);
+    options.signal = controller.signal;
+    inFlight.current = controller;
+
+    try {
+      const res = await authFetch(url, options);
+      return res;
+    } finally {
+      clearTimeout(t);
+      inFlight.current = null;
+    }
+  }
+
+  const run = async (overrides = {}) => {
+    if (!q.trim() && !overrides.name && !overrides.domain && !overrides.linkedin_url) {
+      setErr("Type a company name first.");
+      return;
+    }
+
     setLoading(true);
     setErr("");
+
+    // Cancel any prior request
+    try {
+      if (inFlight.current) inFlight.current.abort("new-search");
+    } catch {}
+
     try {
       const sp = new URLSearchParams();
       sp.set("q", q.trim());
       if (overrides.name) sp.set("name", overrides.name.trim());
-      if (overrides.domain) sp.set("domain", overrides.domain.trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, ""));
+      if (overrides.domain)
+        sp.set(
+          "domain",
+          overrides.domain.trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "")
+        );
       if (overrides.linkedin_url) sp.set("linkedin_url", overrides.linkedin_url.trim());
       if (overrides.parent) sp.set("parent", overrides.parent.trim());
 
-      const res = await authFetch(`/api/enrich/search?${sp.toString()}`);
-      const json = await res.json();
-      if (!res.ok || !json.ok) throw new Error(json.error || "Search failed");
+      const url = `/api/enrich/search?${sp.toString()}`;
+      console.log("[Enrichment] GET", url);
+      const res = await fetchWithTimeout(url, { method: "GET" }, 25000);
+
+      let json = null;
+      try {
+        json = await res.json();
+      } catch (e) {
+        throw new Error(`Invalid JSON from server (${res.status})`);
+      }
+
+      console.log("[Enrichment] Response", res.status, json);
+
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || `Search failed (${res.status})`);
+      }
+
       const data = json.data || {};
       setRows(Array.isArray(data.results) ? data.results : []);
       setSummary(data.summary || null);
@@ -51,32 +121,16 @@ export default function EnrichmentPage() {
       setFixLinkedIn(g.linkedin_url || "");
       setFixParent("");
     } catch (e) {
-      setErr(e.message || "Search failed");
+      if (e?.name === "AbortError") {
+        // silently ignore, a new search started
+        return;
+      }
+      setErr(e?.message || "Search failed");
       setRows([]);
       setSummary(null);
     } finally {
       setLoading(false);
     }
-  };
-
-  const addToHR = async (companyId, selectedIdxs) => {
-    if (!companyId) return;
-    const toSave = selectedIdxs.length
-      ? selectedIdxs.map((i) => rows[i])
-      : null; // backend will auto-pick if null
-
-    const body = toSave
-      ? { company_id: companyId, contacts: toSave }
-      : { company_id: companyId, max_contacts: 3 };
-
-    const res = await authFetch("/api/enrich", {
-      method: "POST",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify(body),
-    });
-    const json = await res.json();
-    if (!res.ok || !json.ok) throw new Error(json.error || "Save failed");
-    return json;
   };
 
   // listen to company selection from sidebar/companies page
@@ -90,67 +144,117 @@ export default function EnrichmentPage() {
     };
     window.addEventListener("upr:companyUseNow", useNow);
     return () => window.removeEventListener("upr:companyUseNow", useNow);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q]);
 
-  const [pickedCompanyId, setPickedCompanyId] = useState("");
-  const [picked, setPicked] = useState({}); // idx -> true
-  const pickedIdxs = useMemo(() => Object.keys(picked).filter(k => picked[k]).map(n => Number(n)), [picked]);
+  // clean up on unmount
+  useEffect(() => {
+    return () => {
+      try {
+        if (inFlight.current) inFlight.current.abort("unmount");
+      } catch {}
+    };
+  }, []);
+
+  const addToHR = async (companyId, selectedIdxs) => {
+    if (!companyId) return;
+    const toSave = selectedIdxs.length ? selectedIdxs.map((i) => rows[i]) : null; // backend will auto-pick if null
+
+    const body = toSave
+      ? { company_id: companyId, contacts: toSave }
+      : { company_id: companyId, max_contacts: 3 };
+
+    const res = await authFetch("/api/enrich", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const json = await res.json();
+    if (!res.ok || !json.ok) throw new Error(json.error || "Save failed");
+    return json;
+  };
 
   return (
     <div className="p-6">
       {/* Header status chips (always on) */}
-      <div className="flex items-center justify-end gap-2 mb-4">
+      <div className="mb-4 flex items-center justify-end gap-2">
         <Pill label={`Data Source: ${summary?.provider || "live"}`} ok />
         <Pill label="DB" ok />
         <Pill label="LLM" ok />
       </div>
 
-      <h1 className="mb-1 text-3xl font-semibold tracking-tight text-gray-900">Enrichment</h1>
-      <p className="mb-4 text-sm text-gray-500">No company selected — search by company name.</p>
+      <h1 className="mb-1 text-3xl font-semibold tracking-tight text-gray-900">
+        Enrichment
+      </h1>
+      <p className="mb-4 text-sm text-gray-500">
+        No company selected — search by company name.
+      </p>
 
       {/* Search bar + actions */}
       <div className="mb-3 flex items-center gap-2">
         <input
           className="flex-1 rounded-xl border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-gray-900/10"
-          placeholder="Type company name (e.g., “First Abu Dhabi Bank”)"
+          placeholder='Type company name (e.g., “First Abu Dhabi Bank”)'
           value={q}
           onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") run();
+          }}
         />
-        <button className="rounded-xl bg-gray-900 px-4 py-2 font-medium text-white disabled:opacity-50" disabled={loading} onClick={() => run()}>
+        <button
+          className="rounded-xl bg-gray-900 px-4 py-2 font-medium text-white disabled:opacity-50"
+          disabled={loading}
+          onClick={() => run()}
+        >
           {loading ? "Loading…" : "Enrich"}
         </button>
       </div>
 
       {/* per-run timings */}
-      <div className="mb-3 flex items-center gap-2">
-        <Pill label={`Data Source: ${summary?.provider || "live"}`} ok ms={summary?.timings?.provider_ms} />
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <Pill
+          label={`Data Source: ${summary?.provider || "live"}`}
+          ok
+          ms={summary?.timings?.provider_ms}
+        />
         <Pill label="DB" ok />
         <Pill label="LLM" ok ms={summary?.timings?.llm_ms} />
-        {companyGuess?.name && (
+        {summary?.company_guess?.name && (
           <span className="ml-2 text-sm text-gray-600">
-            Guess: <span className="font-medium">{companyGuess.name}</span>{" "}
-            <button className="ml-2 text-blue-600 underline" onClick={() => setFixOpen(true)}>Not right? Fix</button>
+            Guess: <span className="font-medium">{summary.company_guess.name}</span>{" "}
+            <button className="ml-2 text-blue-600 underline" onClick={() => setFixOpen(true)}>
+              Not right? Fix
+            </button>
           </span>
         )}
       </div>
 
       {/* error */}
-      {err && <div className="mb-3 text-red-600">{err}</div>}
+      {err && (
+        <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {err}
+        </div>
+      )}
 
       {/* Results */}
       <div className="overflow-hidden rounded-2xl border">
         <div className="min-w-full">
-          <div className="flex items-center justify-between px-3 py-2 border-b bg-gray-50">
+          <div className="flex items-center justify-between border-b bg-gray-50 px-3 py-2">
             <div className="text-sm text-gray-700">Candidates: {rows.length || 0}</div>
             <div className="flex items-center gap-2">
-              <select className="rounded-lg border px-3 py-2 text-sm" value={pickedCompanyId} onChange={(e) => setPickedCompanyId(e.target.value)}>
+              <select
+                className="rounded-lg border px-3 py-2 text-sm"
+                value={pickedCompanyId}
+                onChange={(e) => setPickedCompanyId(e.target.value)}
+              >
                 <option value="">— Choose company —</option>
-                {/* This is a lightweight list; a full selector can be wired if you prefer */}
-                {companyGuess?.name && <option value="__guess__">Use guessed: {companyGuess.name}</option>}
+                {summary?.company_guess?.name && (
+                  <option value="__guess__">Use guessed: {summary.company_guess.name}</option>
+                )}
               </select>
               <button
                 className="rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-                disabled={!pickedCompanyId || (pickedIdxs.length===0 && rows.length===0)}
+                disabled={!pickedCompanyId || (pickedIdxs.length === 0 && rows.length === 0)}
                 onClick={async () => {
                   const company_id = pickedCompanyId === "__guess__" ? null : pickedCompanyId;
                   try {
@@ -170,7 +274,7 @@ export default function EnrichmentPage() {
           <table className="w-full">
             <thead className="bg-white">
               <tr className="text-xs uppercase text-gray-500">
-                <th className="px-3 py-2 w-8"></th>
+                <th className="w-8 px-3 py-2" />
                 <th className="px-3 py-2 text-left">Name</th>
                 <th className="px-3 py-2 text-left">Emirate</th>
                 <th className="px-3 py-2 text-left">Title</th>
@@ -185,24 +289,46 @@ export default function EnrichmentPage() {
               {rows.map((r, i) => (
                 <tr key={i} className="hover:bg-gray-50">
                   <td className="px-3 py-2">
-                    <input type="checkbox" checked={!!picked[i]} onChange={(e) => setPicked(p => ({...p, [i]: e.target.checked}))} />
+                    <input
+                      type="checkbox"
+                      checked={!!picked[i]}
+                      onChange={(e) => setPicked((p) => ({ ...p, [i]: e.target.checked }))}
+                    />
                   </td>
-                  <td className="px-3 py-2">{r.name}</td>
+                  <td className="px-3 py-2">{r.name || "—"}</td>
                   <td className="px-3 py-2">{r.emirate || "—"}</td>
                   <td className="px-3 py-2">{r.designation || r.title || "—"}</td>
                   <td className="px-3 py-2">
-                    {r.email ? <a className="underline" href={`mailto:${r.email}`}>{r.email}</a> : "—"}
+                    {r.email ? (
+                      <a className="underline" href={`mailto:${r.email}`}>
+                        {r.email}
+                      </a>
+                    ) : (
+                      "—"
+                    )}
                   </td>
                   <td className="px-3 py-2">
-                    {r.linkedin_url ? <a className="underline" href={r.linkedin_url} target="_blank" rel="noreferrer">LinkedIn</a> : "—"}
+                    {r.linkedin_url ? (
+                      <a className="underline" href={r.linkedin_url} target="_blank" rel="noreferrer">
+                        LinkedIn
+                      </a>
+                    ) : (
+                      "—"
+                    )}
                   </td>
-                  <td className="px-3 py-2">{typeof r.confidence === "number" ? r.confidence.toFixed(2) : "—"}</td>
+                  <td className="px-3 py-2">
+                    {typeof r.confidence === "number" ? r.confidence.toFixed(2) : "—"}
+                  </td>
                   <td className="px-3 py-2">{r.email_status || "—"}</td>
                   <td className="px-3 py-2">{r.source || "—"}</td>
                 </tr>
               ))}
               {rows.length === 0 && !loading && (
-                <tr><td className="px-3 py-6 text-center text-gray-500" colSpan={9}>No results.</td></tr>
+                <tr>
+                  <td className="px-3 py-6 text-center text-gray-500" colSpan={9}>
+                    No results.
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>
@@ -212,7 +338,8 @@ export default function EnrichmentPage() {
       {/* Quality note */}
       {summary?.quality?.score != null && (
         <div className="mt-2 text-sm text-gray-600">
-          Quality: {(summary.quality.score * 100).toFixed(0)}% — {summary.quality.explanation || "—"}
+          Quality: {(summary.quality.score * 100).toFixed(0)}% —{" "}
+          {summary.quality.explanation || "—"}
         </div>
       )}
 
@@ -222,19 +349,57 @@ export default function EnrichmentPage() {
           <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl">
             <div className="flex items-center justify-between border-b px-4 py-3">
               <div className="text-lg font-semibold">Correct Company</div>
-              <button className="text-gray-500" onClick={() => setFixOpen(false)}>✕</button>
+              <button className="text-gray-500" onClick={() => setFixOpen(false)}>
+                ✕
+              </button>
             </div>
-            <div className="p-4 space-y-3">
-              <Field label="Name"><input className="w-full rounded border px-3 py-2" value={fixName} onChange={(e)=>setFixName(e.target.value)} /></Field>
-              <Field label="Website / Domain"><input className="w-full rounded border px-3 py-2" placeholder="solutionsplus.ae" value={fixDomain} onChange={(e)=>setFixDomain(e.target.value)} /></Field>
-              <Field label="LinkedIn URL"><input className="w-full rounded border px-3 py-2" value={fixLinkedIn} onChange={(e)=>setFixLinkedIn(e.target.value)} /></Field>
-              <Field label="Parent / Group (optional)"><input className="w-full rounded border px-3 py-2" placeholder="Mubadala" value={fixParent} onChange={(e)=>setFixParent(e.target.value)} /></Field>
+            <div className="space-y-3 p-4">
+              <Field label="Name">
+                <input
+                  className="w-full rounded border px-3 py-2"
+                  value={fixName}
+                  onChange={(e) => setFixName(e.target.value)}
+                />
+              </Field>
+              <Field label="Website / Domain">
+                <input
+                  className="w-full rounded border px-3 py-2"
+                  placeholder="solutionsplus.ae"
+                  value={fixDomain}
+                  onChange={(e) => setFixDomain(e.target.value)}
+                />
+              </Field>
+              <Field label="LinkedIn URL">
+                <input
+                  className="w-full rounded border px-3 py-2"
+                  value={fixLinkedIn}
+                  onChange={(e) => setFixLinkedIn(e.target.value)}
+                />
+              </Field>
+              <Field label="Parent / Group (optional)">
+                <input
+                  className="w-full rounded border px-3 py-2"
+                  placeholder="Mubadala"
+                  value={fixParent}
+                  onChange={(e) => setFixParent(e.target.value)}
+                />
+              </Field>
 
               <div className="flex justify-end gap-2 pt-2">
-                <button className="rounded border px-4 py-2" onClick={()=>setFixOpen(false)}>Cancel</button>
+                <button className="rounded border px-4 py-2" onClick={() => setFixOpen(false)}>
+                  Cancel
+                </button>
                 <button
                   className="rounded bg-gray-900 px-4 py-2 font-medium text-white"
-                  onClick={() => { setFixOpen(false); run({ name: fixName, domain: fixDomain, linkedin_url: fixLinkedIn, parent: fixParent }); }}
+                  onClick={() => {
+                    setFixOpen(false);
+                    run({
+                      name: fixName,
+                      domain: fixDomain,
+                      linkedin_url: fixLinkedIn,
+                      parent: fixParent,
+                    });
+                  }}
                 >
                   Apply &amp; Re-run
                 </button>
@@ -243,16 +408,6 @@ export default function EnrichmentPage() {
           </div>
         </div>
       )}
-
-    </div>
-  );
-}
-
-function Field({label, children}) {
-  return (
-    <div>
-      <div className="mb-1 text-sm text-gray-700">{label}</div>
-      {children}
     </div>
   );
 }
