@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-19T19:30:22Z",
-  "generated_human": "Fri, 19 Sep 2025 19:30:22 GMT",
-  "branch": "main",
-  "commit": "366d2df",
+  "generated": "2025-09-20T08:58:06Z",
+  "generated_human": "Sat, 20 Sep 2025 08:58:06 GMT",
+  "branch": "fix/enrich-search-stability",
+  "commit": "f86bc72",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -70,7 +70,7 @@
     {
       "path": "dashboard/src/pages/Admin.jsx",
       "size": 6749,
-      "mtime": "2025-09-14T04:35:37.712Z",
+      "mtime": "2025-09-19T19:41:50.688Z",
       "sha256": "117cd39d4a05b474c4d2e63c4d5893a5a5a5be5fdadf2fd2c7f3c5bcfb712245",
       "imports": [
         "import { useEffect, useState } from \"react\";",
@@ -116,7 +116,7 @@
     {
       "path": "dashboard/src/pages/DashboardHome.jsx",
       "size": 7042,
-      "mtime": "2025-09-14T05:16:56.671Z",
+      "mtime": "2025-09-20T06:11:17.256Z",
       "sha256": "c7aabcad134edf5c87cf014212770d93ebbfc1bdaaaaa6035784391cca898540",
       "imports": [
         "import { useEffect, useState } from \"react\";",
@@ -131,18 +131,18 @@
     },
     {
       "path": "dashboard/src/pages/EnrichmentPage.jsx",
-      "size": 11584,
-      "mtime": "2025-09-19T19:20:34.296Z",
-      "sha256": "8b905c3f6eaeb510dce3dcfa62ff2cdb114cbd9ac0954a315af767b7fd41d964",
+      "size": 14780,
+      "mtime": "2025-09-20T08:47:38.758Z",
+      "sha256": "3913a93cd46dcb62326c6c66af4761ba8d3c722667bd523aa661e9fa6a1f760b",
       "imports": [
-        "import { useEffect, useMemo, useState } from \"react\";",
+        "import { useEffect, useMemo, useRef, useState } from \"react\";",
         "import { authFetch } from \"../utils/auth\";"
       ],
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "import { useEffect, useMemo, useState } from \"react\";\nimport { authFetch } from \"../utils/auth\";\n\nfunction Pill({ ok=true, label, ms }) {\n  return (\n    <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${ok ? \"border-green-200 bg-green-50 text-green-700\" : \"border-gray-200 bg-gray-50 text-gray-600\"}`}>\n      <span className={`h-2 w-2 rounded-full ${ok ? \"bg-green-500\" : \"bg-gray-400\"}`}></span>\n      {label}{typeof ms === \"number\" ? ` • ${ms}ms` : \"\"}\n    </span>\n  );\n}\n\nexport default function EnrichmentPage() {\n  const [q, setQ] = useState(\"\");\n  const [rows, setRows] = useState([]);\n  const [err, setErr] = useState(\"\");\n  const [loading, setLoading] = useState(false);\n  const [summary, setSummary] = useState(null); // timings, provider, company_guess, quality\n\n  // disambiguation modal state\n  const [fixOpen, setFixOpen] = useState(false);\n  const [fixName, setFixName] = useState(\"\");\n  const [fixDomain, setFixDomain] = useState(\"\");\n  const [fixLinkedIn, setFixLinkedIn] = useState(\"\");\n  const [fixParent, setFixParent] = useState(\"\");\n\n  const companyGuess = summary?.company_guess;\n\n  const run = async (overrides={}) => {\n    setLoading(true);\n    setErr(\"\");\n    try {\n      const sp = new URLSearchParams();\n      sp.set(\"q\", q.trim());\n      if (overrides.name) sp.set(\"name\", overrides.name.trim());\n      if (overrides.domain) sp.set(\"domain\", overrides.domain.trim().replace(/^https?:\\/\\//i, \"\").replace(/\\/.*$/, \"\"));\n      if (overrides.linkedin_url) sp.set(\"linkedin_url\", overrides.linkedin_url.trim());\n      if (overrides.parent) sp.set(\"parent\", overrides.parent.trim());\n\n      const res = await authFetch(`/api/enrich/search?${sp.toString()}`);",
-      "tail": "                <button\n                  className=\"rounded bg-gray-900 px-4 py-2 font-medium text-white\"\n                  onClick={() => { setFixOpen(false); run({ name: fixName, domain: fixDomain, linkedin_url: fixLinkedIn, parent: fixParent }); }}\n                >\n                  Apply &amp; Re-run\n                </button>\n              </div>\n            </div>\n          </div>\n        </div>\n      )}\n\n    </div>\n  );\n}\n\nfunction Field({label, children}) {\n  return (\n    <div>\n      <div className=\"mb-1 text-sm text-gray-700\">{label}</div>\n      {children}\n    </div>\n  );\n}\n"
+      "head": "import { useEffect, useMemo, useRef, useState } from \"react\";\nimport { authFetch } from \"../utils/auth\";\n\nfunction Pill({ ok = true, label, ms }) {\n  return (\n    <span\n      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${\n        ok\n          ? \"border-green-200 bg-green-50 text-green-700\"\n          : \"border-gray-200 bg-gray-50 text-gray-600\"\n      }`}\n    >\n      <span className={`h-2 w-2 rounded-full ${ok ? \"bg-green-500\" : \"bg-gray-400\"}`} />\n      {label}\n      {typeof ms === \"number\" ? ` • ${ms}ms` : \"\"}\n    </span>\n  );\n}\n\nfunction Field({ label, children }) {\n  return (\n    <div>\n      <div className=\"mb-1 text-sm text-gray-700\">{label}</div>\n      {children}\n    </div>\n  );\n}\n\nexport default function EnrichmentPage() {\n  const [q, setQ] = useState(\"\");\n  const [rows, setRows] = useState([]);\n  const [err, setErr] = useState(\"\");\n  const [loading, setLoading] = useState(false);\n  const [summary, setSummary] = useState(null); // timings, provider, company_guess, quality\n\n  // disambiguation modal state\n  const [fixOpen, setFixOpen] = useState(false);\n  const [fixName, setFixName] = useState(\"\");\n  const [fixDomain, setFixDomain] = useState(\"\");\n  const [fixLinkedIn, setFixLinkedIn] = useState(\"\");",
+      "tail": "                  Cancel\n                </button>\n                <button\n                  className=\"rounded bg-gray-900 px-4 py-2 font-medium text-white\"\n                  onClick={() => {\n                    setFixOpen(false);\n                    run({\n                      name: fixName,\n                      domain: fixDomain,\n                      linkedin_url: fixLinkedIn,\n                      parent: fixParent,\n                    });\n                  }}\n                >\n                  Apply &amp; Re-run\n                </button>\n              </div>\n            </div>\n          </div>\n        </div>\n      )}\n    </div>\n  );\n}\n"
     },
     {
       "path": "dashboard/src/pages/HRLeads.jsx",
@@ -326,19 +326,15 @@
     },
     {
       "path": "routes/enrich/index.js",
-      "size": 744,
-      "mtime": "2025-09-19T17:29:37.473Z",
-      "sha256": "5b4348ad4888c227b972cd0bc3ae9c00e5ee7f3711a2ae2cac79ec0fbde35ad6",
-      "imports": [
-        "import express from \"express\";",
-        "import searchRouter from \"./search.js\";",
-        "import enrichCompanyRouter from \"./enrichCompany.js\";"
-      ],
+      "size": 45,
+      "mtime": "2025-09-20T08:58:06.224Z",
+      "sha256": "f4ced0519f3b673e4689e53940596bc0ddd7702439f273fd889f602a283028c3",
+      "imports": [],
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "import express from \"express\";\nimport searchRouter from \"./search.js\";\nimport enrichCompanyRouter from \"./enrichCompany.js\";\n\n/**\n * /api/enrich router\n *   - POST /             -> enrichCompanyRouter (create enrichment from company_id)\n *   - GET  /status       -> enrichCompanyRouter (optional status endpoint, if present)\n *   - GET  /search       -> searchRouter (LLM + Apollo live search by query)\n */\nconst router = express.Router();\n\n// Mount the sub-routers as-is. They each define their own paths:\n// - enrichCompanyRouter should expose POST \"/\" (and maybe GET \"/status\")\n// - searchRouter should expose GET \"/\" which becomes \"/search\"\nrouter.use(\"/\", enrichCompanyRouter);\nrouter.use(\"/search\", searchRouter);\n\nexport default router;\n",
-      "tail": "import express from \"express\";\nimport searchRouter from \"./search.js\";\nimport enrichCompanyRouter from \"./enrichCompany.js\";\n\n/**\n * /api/enrich router\n *   - POST /             -> enrichCompanyRouter (create enrichment from company_id)\n *   - GET  /status       -> enrichCompanyRouter (optional status endpoint, if present)\n *   - GET  /search       -> searchRouter (LLM + Apollo live search by query)\n */\nconst router = express.Router();\n\n// Mount the sub-routers as-is. They each define their own paths:\n// - enrichCompanyRouter should expose POST \"/\" (and maybe GET \"/status\")\n// - searchRouter should expose GET \"/\" which becomes \"/search\"\nrouter.use(\"/\", enrichCompanyRouter);\nrouter.use(\"/search\", searchRouter);\n\nexport default router;\n"
+      "head": "[PASTE THE FULL index.js CONTENT FROM ABOVE]\n",
+      "tail": "[PASTE THE FULL index.js CONTENT FROM ABOVE]\n"
     },
     {
       "path": "routes/enrich/lib/apollo.js",
@@ -407,18 +403,15 @@
     },
     {
       "path": "routes/enrich/search.js",
-      "size": 8215,
-      "mtime": "2025-09-19T19:29:34.094Z",
-      "sha256": "726b66a7f6606164fdbe54bcc07af83f3884a9df33d70cfb5f14da6425e42c44",
-      "imports": [
-        "import { Router } from \"express\";",
-        "\nimport { guessCompany as llmGuessCompany } from \"./lib/llm.js\";"
-      ],
+      "size": 46,
+      "mtime": "2025-09-20T08:58:06.222Z",
+      "sha256": "51528e1e308db67044ab3a93b7a0a34b398a65ae508ef2493e6fda88c205b937",
+      "imports": [],
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "// routes/enrich/search.js\nimport { Router } from \"express\";\n\n// Data providers / helpers\nimport {\n  // flexible: any of these may be no-ops depending on your apollo.js\n  searchPeopleByCompany,\n  compactApolloKeywords,\n} from \"./lib/apollo.js\";\n\nimport {\n  qualityScore,\n  scoreCandidate,   // used per-row for confidence tweaks (safe if pass-through)\n} from \"./lib/quality.js\";\n\nimport {\n  emirateFromLocation,\n  tagEmirate,         // graceful if it just returns input.emirate internally\n  isUAE,\n} from \"./lib/geo.js\";\n\nimport {\n  inferPatternFromSamples,\n  applyPattern as applyEmailPattern,   // alias to what email.js exports\n  isProviderPlaceholderEmail,\n  loadPatternFromCache,\n  savePatternToCache,\n  verifyEmail,                          // may return { status:'unknown', reason:'no_verifier' }\n} from \"./lib/email.js\";\n\nimport { guessCompany as llmGuessCompany } from \"./lib/llm.js\";\n\nconst router = Router();\n\n/**\n * Normalize a person row to UI schema\n */\nfunction normalizeCandidate(raw, domainHint) {\n  const name = raw?.name || [raw?.first_name, raw?.last_name].filter(Boolean).join(\" \").trim();\n  const designation = raw?.designation || raw?.title || \"\";",
-      "tail": "    timings: {\n      llm_ms: llm.ms,\n      provider_ms: provider.ms,\n      smtp_ms: 0,\n    },\n    quality,\n  };\n\n  // Even if provider errored, return ok: true with empty results so UI never spins forever.\n  return res.json({\n    ok: true,\n    data: {\n      summary,\n      results: normalized,\n    },\n    // surface non-fatal provider/llm errors in debug field (not used by UI)\n    debug: {\n      llm_error: llm.error ? String(llm.error?.message || llm.error) : null,\n      provider_error: provider.error ? String(provider.error?.message || provider.error) : null,\n    },\n  });\n});\n\nexport default router;\n"
+      "head": "[PASTE THE FULL search.js CONTENT FROM ABOVE]\n",
+      "tail": "[PASTE THE FULL search.js CONTENT FROM ABOVE]\n"
     },
     {
       "path": "routes/hrLeads.js",
