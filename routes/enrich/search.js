@@ -1,13 +1,13 @@
 // routes/enrich/search.js
+// Keep this file as a thin orchestrator. All provider and helper logic lives
+// in ./lib/*.js. We import dynamically and call the “best available” function
+// to avoid breaking if a module’s export name changes.
+
 import { performance } from "node:perf_hooks";
 
-// ---------------------------- small utilities ----------------------------
-const NOT_UNLOCKED_RE = /not[_-]?unlocked/i;
+// ---------- tiny local fallbacks (used only if helper modules don't provide them)
 const EMAIL_RE = /^[^@\s]+@([^\s@]+\.[^\s@]+)$/i;
-
-function noStore(res) {
-  res.setHeader("Cache-Control", "no-store, must-revalidate");
-}
+const NOT_UNLOCKED_RE = /not[_-]?unlocked/i;
 
 function stripProtoHost(s = "") {
   return String(s)
@@ -17,23 +17,27 @@ function stripProtoHost(s = "") {
     .replace(/\/.*$/, "")
     .toLowerCase();
 }
-
-function extractDomainFromEmail(email) {
+function emailDomain(email) {
   const m = EMAIL_RE.exec(email || "");
   return m ? m[1].toLowerCase() : null;
 }
-
-function normalizeContacts(arr = []) {
+function titleCaseLoose(s = "") {
+  if (!s) return s;
+  if (s === s.toUpperCase()) return s;
+  return s
+    .split(/\s+/)
+    .map((w) => (w ? w[0].toUpperCase() + w.slice(1).toLowerCase() : w))
+    .join(" ");
+}
+function normalizeContactsFallback(arr = []) {
   if (!Array.isArray(arr)) return [];
   return arr.map((c) => {
-    // normalize email + status; redact "not unlocked" placeholders
     let email = c.email ?? c.work_email ?? c.contact_email ?? null;
     let email_status = c.email_status ?? c.verification ?? undefined;
     if (email && NOT_UNLOCKED_RE.test(email)) {
       email = null;
       email_status = "locked";
     }
-
     return {
       name: c.name ?? c.full_name ?? c.person ?? "—",
       designation: c.designation ?? c.title ?? c.role ?? undefined,
@@ -43,25 +47,40 @@ function normalizeContacts(arr = []) {
       emirate: c.emirate ?? c.location ?? undefined,
       confidence: typeof c.confidence === "number" ? c.confidence : undefined,
       email_status,
-      // we'll overwrite this to the provider used ("apollo"/"llm") later
-      source: c.provider ?? c.source ?? undefined,
-      // allow provider to pass through extra fields without breaking UI
       company_name: c.company_name ?? c.company ?? c.org ?? undefined,
       company_domain: c.company_domain ?? undefined,
       company_linkedin: c.company_linkedin ?? undefined,
+      source: c.provider ?? c.source ?? undefined,
     };
   });
 }
-
+function dominantDomain(rows = []) {
+  const counts = new Map();
+  for (const r of rows) {
+    const d1 = r.company_domain && stripProtoHost(r.company_domain);
+    const d2 = emailDomain(r.email);
+    const d = d1 || d2;
+    if (!d) continue;
+    counts.set(d, (counts.get(d) || 0) + 1);
+  }
+  let best = null;
+  let bestN = 0;
+  for (const [d, n] of counts) {
+    if (n > bestN) {
+      best = d;
+      bestN = n;
+    }
+  }
+  return best || undefined;
+}
 function filterToCompany(rows, { targetDomain, companyText }) {
   if (!rows.length) return rows;
-
   const domain = stripProtoHost(targetDomain || "");
   const text = (companyText || "").toLowerCase();
 
   const byDomain = domain
     ? rows.filter((r) => {
-        const emailDom = extractDomainFromEmail(r.email);
+        const emailDom = emailDomain(r.email);
         const rowDom =
           r.company_domain?.toLowerCase() ||
           (r.linkedin_url ? stripProtoHost(r.linkedin_url).split("/")[0] : null);
@@ -82,16 +101,13 @@ function filterToCompany(rows, { targetDomain, companyText }) {
     });
     if (byText.length) return byText;
   }
-
-  // fallback: return original if no heuristic match
   return rows;
 }
-
 function setProvider(rows, provider) {
   return rows.map((r) => ({ ...r, source: provider }));
 }
 
-// pick a function from a provider module by trying common names
+// ---------- utility to pick a function from a module by likely names
 function pickFn(mod, candidates) {
   if (!mod) return null;
   for (const name of candidates) {
@@ -101,9 +117,9 @@ function pickFn(mod, candidates) {
   return null;
 }
 
-// ------------------------------ main handler ------------------------------
-export default async function enrichSearchHandler(req, res) {
-  noStore(res);
+// ---------- main handler
+export default async function search(req, res) {
+  res.setHeader("Cache-Control", "no-store, must-revalidate");
 
   const rid = req._reqid || Math.random().toString(36).slice(2, 8);
   const tStart = performance.now();
@@ -115,47 +131,46 @@ export default async function enrichSearchHandler(req, res) {
     linkedin_url: (req.query?.linkedin_url ?? "").toString().trim() || undefined,
     parent: (req.query?.parent ?? "").toString().trim() || undefined,
   };
-  const userId = req.userId || req.user?.id || "anon";
+  const user = req.user?.id || "admin";
 
   console.log(
-    `[${rid}] enrich/search q=${JSON.stringify(q)} overrides=${JSON.stringify(
+    `[${rid}] enrich/search GET q=${JSON.stringify(q)} overrides=${JSON.stringify(
       overrides
-    )} user=${userId}`
+    )} user=${user}`
   );
 
+  // Load helper modules (optional)
+  let apollo, llm, email, geo, quality;
+  try { apollo = await import("./lib/apollo.js"); } catch {}
+  try { llm = await import("./lib/llm.js"); } catch {}
+  try { email = await import("./lib/email.js"); } catch {}
+  try { geo = await import("./lib/geo.js"); } catch {}
+  try { quality = await import("./lib/quality.js"); } catch {}
+
+  const normalizeContacts =
+    (email && typeof email.normalizeContacts === "function"
+      ? email.normalizeContacts
+      : normalizeContactsFallback);
+
+  const emailDomainFn =
+    (email && typeof email.emailDomain === "function" ? email.emailDomain : emailDomain);
+
+  let results = [];
   const summary = {
     provider: "live",
-    company_guess: undefined, // fill below
+    company_guess: {
+      name: titleCaseLoose(overrides.name || q || ""),
+      domain: overrides.domain || undefined,
+      linkedin_url: overrides.linkedin_url || undefined,
+      parent: overrides.parent || undefined,
+    },
     quality: { score: 0.5, explanation: "Heuristic guess based on input." },
     timings: {},
   };
 
-  // Seed company guess from overrides / q
-  summary.company_guess = {
-    name: overrides.name || q || undefined,
-    domain: overrides.domain || undefined,
-    linkedin_url: overrides.linkedin_url || undefined,
-    parent: overrides.parent || undefined,
-  };
-
-  let results = [];
+  // ---------- Provider: APOLLO first
   let usedProvider = null;
-
-  // ---------------------------- APOLLO path ----------------------------
-  let apollo;
-  try {
-    apollo = await import("./lib/apollo.js").catch(() => null);
-    console.log(
-      `[${rid}] provider: apollo loaded=${!!apollo} keys=${
-        apollo ? Object.keys(apollo).join(",") : "-"
-      }`
-    );
-  } catch (e) {
-    console.error(`[${rid}] provider: apollo import error`, e?.stack || e);
-  }
-
   if (apollo) {
-    // Prefer company-aware functions first
     const apolloFn =
       pickFn(apollo, ["apolloPeopleByDomain", "searchPeopleByCompany"]) ||
       pickFn(apollo, ["searchPeople", "search", "findPeople", "run"]);
@@ -164,154 +179,142 @@ export default async function enrichSearchHandler(req, res) {
       const t0 = performance.now();
       try {
         console.log(
-          `[${rid}] apollo.${apolloFn.name} → start (name=${overrides.name || q || "-"}, domain=${
-            overrides.domain || "-"
-          })`
+          `[${rid}] apollo.${apolloFn.name} start name=${overrides.name || q || "-"} domain=${overrides.domain || "-"}`
         );
-
-        // Compose a compact arg object but don't assume concrete signature
-        const args = {
+        const raw = await apolloFn.fn({
           q,
           name: overrides.name || q,
           domain: overrides.domain,
           linkedin_url: overrides.linkedin_url,
           parent: overrides.parent,
-        };
-
-        const raw = await apolloFn.fn(args);
+        });
         const list = normalizeContacts(raw?.results ?? raw);
-
-        // set timing
         summary.timings.apollo_ms = Math.round(performance.now() - t0);
-        console.log(
-          `[${rid}] apollo.${apolloFn.name} → ok count=${list.length} in ${summary.timings.apollo_ms}ms`
-        );
 
-        // focus to company
         const filtered = filterToCompany(list, {
           targetDomain: overrides.domain,
           companyText: overrides.name || q,
         });
-
         results = setProvider(filtered, "apollo");
         usedProvider = "apollo";
 
-        // improve company guess from top row hints if domain missing
+        // Backfill guess (name/domain/linkedin)
         if (results.length) {
           const top = results[0];
+          const inferredDomain =
+            overrides.domain ||
+            top.company_domain ||
+            emailDomainFn(top.email) ||
+            dominantDomain(results);
           summary.company_guess = {
-            name: (overrides.name || q) ?? top.company_name ?? undefined,
-            domain: overrides.domain || top.company_domain || extractDomainFromEmail(top.email) || undefined,
+            name:
+              titleCaseLoose(overrides.name || q) ||
+              top.company_name ||
+              titleCaseLoose(q),
+            domain: inferredDomain,
             linkedin_url: overrides.linkedin_url || top.company_linkedin || undefined,
             parent: overrides.parent || undefined,
           };
         }
+
+        console.log(
+          `[${rid}] apollo.${apolloFn.name} ok count=${results.length} in ${summary.timings.apollo_ms}ms`
+        );
       } catch (e) {
         summary.timings.apollo_ms = Math.round(performance.now() - t0);
-        console.error(
-          `[${rid}] apollo.${apolloFn.name} → error after ${summary.timings.apollo_ms}ms`,
-          e?.stack || e
-        );
+        console.error(`[${rid}] apollo.${apolloFn.name} error`, e?.stack || e);
       }
-    } else {
-      console.log(`[${rid}] apollo: no callable search function found`);
     }
   }
 
-  // ------------------------------ LLM fallback ------------------------------
-  if (!results.length) {
-    let llm;
-    try {
-      llm = await import("./lib/llm.js").catch(() => null);
-      console.log(
-        `[${rid}] provider: llm loaded=${!!llm} keys=${llm ? Object.keys(llm).join(",") : "-"}`
-      );
-    } catch (e) {
-      console.error(`[${rid}] provider: llm import error`, e?.stack || e);
-    }
+  // ---------- Provider: LLM fallback
+  if (!results.length && llm) {
+    const llmFn =
+      pickFn(llm, ["enrichContactsLLM", "search", "run", "generateContacts"]) || null;
+    if (llmFn) {
+      const t0 = performance.now();
+      try {
+        console.log(`[${rid}] llm.${llmFn.name} start`);
+        const raw = await llmFn.fn({
+          q,
+          name: overrides.name || q,
+          domain: overrides.domain,
+          linkedin_url: overrides.linkedin_url,
+          parent: overrides.parent,
+        });
+        const list = normalizeContacts(raw?.results ?? raw);
+        summary.timings.llm_ms = Math.round(performance.now() - t0);
 
-    if (llm) {
-      const llmFn =
-        pickFn(llm, ["enrichContactsLLM", "search", "run", "generateContacts"]) || null;
-      if (llmFn) {
-        const t0 = performance.now();
-        try {
-          console.log(`[${rid}] llm.${llmFn.name} → start`);
-          const raw = await llmFn.fn({
-            q,
-            name: overrides.name || q,
-            domain: overrides.domain,
-            linkedin_url: overrides.linkedin_url,
-            parent: overrides.parent,
-          });
-          const list = normalizeContacts(raw?.results ?? raw);
-          summary.timings.llm_ms = Math.round(performance.now() - t0);
-          console.log(
-            `[${rid}] llm.${llmFn.name} → ok count=${list.length} in ${summary.timings.llm_ms}ms`
-          );
+        const filtered = filterToCompany(list, {
+          targetDomain: overrides.domain,
+          companyText: overrides.name || q,
+        });
+        results = setProvider(filtered, "llm");
+        usedProvider = "llm";
 
-          const filtered = filterToCompany(list, {
-            targetDomain: overrides.domain,
-            companyText: overrides.name || q,
-          });
-
-          results = setProvider(filtered, "llm");
-          usedProvider = "llm";
-
-          if (results.length) {
-            const top = results[0];
-            // backfill guess if missing
-            summary.company_guess = {
-              name: summary.company_guess?.name || top.company_name || q || undefined,
-              domain:
-                summary.company_guess?.domain ||
-                top.company_domain ||
-                extractDomainFromEmail(top.email) ||
-                undefined,
-              linkedin_url:
-                summary.company_guess?.linkedin_url || top.company_linkedin || undefined,
-              parent: summary.company_guess?.parent || overrides.parent || undefined,
-            };
-          }
-        } catch (e) {
-          summary.timings.llm_ms = Math.round(performance.now() - t0);
-          console.error(
-            `[${rid}] llm.${llmFn.name} → error after ${summary.timings.llm_ms}ms`,
-            e?.stack || e
-          );
+        if (results.length) {
+          const top = results[0];
+          const inferredDomain =
+            overrides.domain ||
+            top.company_domain ||
+            emailDomainFn(top.email) ||
+            dominantDomain(results);
+          summary.company_guess = {
+            name:
+              titleCaseLoose(overrides.name || q) ||
+              top.company_name ||
+              titleCaseLoose(q),
+            domain: inferredDomain,
+            linkedin_url: overrides.linkedin_url || top.company_linkedin || undefined,
+            parent: overrides.parent || undefined,
+          };
         }
-      } else {
-        console.log(`[${rid}] llm: no callable search function found`);
+
+        console.log(
+          `[${rid}] llm.${llmFn.name} ok count=${results.length} in ${summary.timings.llm_ms}ms`
+        );
+      } catch (e) {
+        summary.timings.llm_ms = Math.round(performance.now() - t0);
+        console.error(`[${rid}] llm.${llmFn.name} error`, e?.stack || e);
       }
     }
   }
 
-  // finalize provider + total timing
+  // ---------- Finalize timings & quality
   if (usedProvider) summary.provider = usedProvider;
+  summary.timings.provider_ms =
+    (usedProvider === "apollo" && summary.timings.apollo_ms) ||
+    (usedProvider === "llm" && summary.timings.llm_ms) ||
+    0;
   summary.timings.total_ms = Math.round(performance.now() - tStart);
 
-  // Decide quality score: crude heuristic
-  const qty = results.length;
-  summary.quality = {
-    score: Math.max(0.3, Math.min(0.95, qty >= 8 ? 0.9 : qty >= 3 ? 0.7 : 0.5)),
-    explanation: qty
-      ? `Found ${qty} candidates from ${summary.provider}.`
-      : "No matches found.",
-  };
+  // optional quality module
+  if (quality && typeof quality.scoreFor === "function") {
+    try {
+      summary.quality = quality.scoreFor({
+        results,
+        provider: summary.provider,
+        guess: summary.company_guess,
+      });
+    } catch {
+      // keep fallback
+    }
+  } else {
+    const n = results.length;
+    summary.quality = {
+      score: Math.max(0.3, Math.min(0.95, n >= 8 ? 0.9 : n >= 3 ? 0.7 : 0.5)),
+      explanation: n ? `Found ${n} candidates from ${summary.provider}.` : "No matches found.",
+    };
+  }
 
-  // Log final shape
   console.log(
-    `[${rid}] enrich/search → provider=${summary.provider} results=${qty} timings=${JSON.stringify(
+    `[${rid}] enrich/search → provider=${summary.provider} results=${results.length} timings=${JSON.stringify(
       summary.timings
     )} guess=${JSON.stringify(summary.company_guess)}`
   );
 
-  // Always 200 with normalized payload (frontend already handles empty)
   return res.status(200).json({
     ok: true,
-    data: {
-      results,
-      summary,
-    },
+    data: { results, summary },
   });
 }

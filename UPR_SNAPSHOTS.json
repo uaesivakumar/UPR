@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-20T11:48:41Z",
-  "generated_human": "Sat, 20 Sep 2025 11:48:41 GMT",
+  "generated": "2025-09-20T11:59:11Z",
+  "generated_human": "Sat, 20 Sep 2025 11:59:11 GMT",
   "branch": "main",
-  "commit": "96b6063",
+  "commit": "055bfde",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -407,17 +407,17 @@
     },
     {
       "path": "routes/enrich/search.js",
-      "size": 10430,
-      "mtime": "2025-09-20T11:47:41.723Z",
-      "sha256": "97d6d74971fb4ecab189f832a013d914fb279431ba92c77bf0cb3fda78d9077f",
+      "size": 10560,
+      "mtime": "2025-09-20T11:59:01.381Z",
+      "sha256": "84b765a95fd932d45f3ea646985c3fefb637e3e10e0c846bdeb86ba285e348ff",
       "imports": [
-        "import { performance } from \"node:perf_hooks\";"
+        "\nimport { performance } from \"node:perf_hooks\";"
       ],
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "// routes/enrich/search.js\nimport { performance } from \"node:perf_hooks\";\n\n// ---------------------------- small utilities ----------------------------\nconst NOT_UNLOCKED_RE = /not[_-]?unlocked/i;\nconst EMAIL_RE = /^[^@\\s]+@([^\\s@]+\\.[^\\s@]+)$/i;\n\nfunction noStore(res) {\n  res.setHeader(\"Cache-Control\", \"no-store, must-revalidate\");\n}\n\nfunction stripProtoHost(s = \"\") {\n  return String(s)\n    .trim()\n    .replace(/^https?:\\/\\//i, \"\")\n    .replace(/^www\\./i, \"\")\n    .replace(/\\/.*$/, \"\")\n    .toLowerCase();\n}\n\nfunction extractDomainFromEmail(email) {\n  const m = EMAIL_RE.exec(email || \"\");\n  return m ? m[1].toLowerCase() : null;\n}\n\nfunction normalizeContacts(arr = []) {\n  if (!Array.isArray(arr)) return [];\n  return arr.map((c) => {\n    // normalize email + status; redact \"not unlocked\" placeholders\n    let email = c.email ?? c.work_email ?? c.contact_email ?? null;\n    let email_status = c.email_status ?? c.verification ?? undefined;\n    if (email && NOT_UNLOCKED_RE.test(email)) {\n      email = null;\n      email_status = \"locked\";\n    }\n\n    return {\n      name: c.name ?? c.full_name ?? c.person ?? \"—\",\n      designation: c.designation ?? c.title ?? c.role ?? undefined,\n      title: c.title ?? c.designation ?? c.role ?? undefined,",
-      "tail": "  const qty = results.length;\n  summary.quality = {\n    score: Math.max(0.3, Math.min(0.95, qty >= 8 ? 0.9 : qty >= 3 ? 0.7 : 0.5)),\n    explanation: qty\n      ? `Found ${qty} candidates from ${summary.provider}.`\n      : \"No matches found.\",\n  };\n\n  // Log final shape\n  console.log(\n    `[${rid}] enrich/search → provider=${summary.provider} results=${qty} timings=${JSON.stringify(\n      summary.timings\n    )} guess=${JSON.stringify(summary.company_guess)}`\n  );\n\n  // Always 200 with normalized payload (frontend already handles empty)\n  return res.status(200).json({\n    ok: true,\n    data: {\n      results,\n      summary,\n    },\n  });\n}\n"
+      "head": "// routes/enrich/search.js\n// Keep this file as a thin orchestrator. All provider and helper logic lives\n// in ./lib/*.js. We import dynamically and call the “best available” function\n// to avoid breaking if a module’s export name changes.\n\nimport { performance } from \"node:perf_hooks\";\n\n// ---------- tiny local fallbacks (used only if helper modules don't provide them)\nconst EMAIL_RE = /^[^@\\s]+@([^\\s@]+\\.[^\\s@]+)$/i;\nconst NOT_UNLOCKED_RE = /not[_-]?unlocked/i;\n\nfunction stripProtoHost(s = \"\") {\n  return String(s)\n    .trim()\n    .replace(/^https?:\\/\\//i, \"\")\n    .replace(/^www\\./i, \"\")\n    .replace(/\\/.*$/, \"\")\n    .toLowerCase();\n}\nfunction emailDomain(email) {\n  const m = EMAIL_RE.exec(email || \"\");\n  return m ? m[1].toLowerCase() : null;\n}\nfunction titleCaseLoose(s = \"\") {\n  if (!s) return s;\n  if (s === s.toUpperCase()) return s;\n  return s\n    .split(/\\s+/)\n    .map((w) => (w ? w[0].toUpperCase() + w.slice(1).toLowerCase() : w))\n    .join(\" \");\n}\nfunction normalizeContactsFallback(arr = []) {\n  if (!Array.isArray(arr)) return [];\n  return arr.map((c) => {\n    let email = c.email ?? c.work_email ?? c.contact_email ?? null;\n    let email_status = c.email_status ?? c.verification ?? undefined;\n    if (email && NOT_UNLOCKED_RE.test(email)) {\n      email = null;\n      email_status = \"locked\";\n    }",
+      "tail": "        guess: summary.company_guess,\n      });\n    } catch {\n      // keep fallback\n    }\n  } else {\n    const n = results.length;\n    summary.quality = {\n      score: Math.max(0.3, Math.min(0.95, n >= 8 ? 0.9 : n >= 3 ? 0.7 : 0.5)),\n      explanation: n ? `Found ${n} candidates from ${summary.provider}.` : \"No matches found.\",\n    };\n  }\n\n  console.log(\n    `[${rid}] enrich/search → provider=${summary.provider} results=${results.length} timings=${JSON.stringify(\n      summary.timings\n    )} guess=${JSON.stringify(summary.company_guess)}`\n  );\n\n  return res.status(200).json({\n    ok: true,\n    data: { results, summary },\n  });\n}\n"
     },
     {
       "path": "routes/hrLeads.js",
