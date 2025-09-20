@@ -1,4 +1,4 @@
-# Generated: 2025-09-20T09:57:48Z
+# Generated: 2025-09-20T10:03:57Z
 .DS_Store
 .dockerignore
 .githooks/pre-commit
@@ -82,6 +82,7 @@ server.js
 server/config.js
 server/db.js
 server/index.js
+server/middleware/authAny.js
 server/middleware/requireSession.js
 server/routes/auth.js
 server/routes/leads.js
