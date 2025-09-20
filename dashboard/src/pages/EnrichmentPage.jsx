@@ -33,6 +33,12 @@ export default function EnrichmentPage() {
   const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState(null); // timings, provider, company_guess, quality
 
+  // service status lights
+  const [dbOk, setDbOk] = useState(true);
+  const [llmOk, setLlmOk] = useState(true);
+  const [dataSource, setDataSource] = useState("live");
+  const [statusTimings, setStatusTimings] = useState({}); // optional timings if you return them
+
   // disambiguation modal state
   const [fixOpen, setFixOpen] = useState(false);
   const [fixName, setFixName] = useState("");
@@ -55,17 +61,48 @@ export default function EnrichmentPage() {
   async function fetchWithTimeout(url, options = {}, ms = 25000) {
     const controller = new AbortController();
     const t = setTimeout(() => controller.abort("timeout"), ms);
-    options.signal = controller.signal;
+    const merged = { ...options, signal: controller.signal };
     inFlight.current = controller;
 
     try {
-      const res = await authFetch(url, options);
+      const res = await authFetch(url, merged);
       return res;
     } finally {
       clearTimeout(t);
       inFlight.current = null;
     }
   }
+
+  // probe /api/enrich/status for chips
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await authFetch("/api/enrich/status", {
+          method: "GET",
+          noRedirect: true,
+          headers: { Accept: "application/json" },
+        });
+        if (res.status === 401) {
+          // Don't force logout; just show inline message later on first action
+          return;
+        }
+        const j = await res.json().catch(() => ({}));
+        if (!cancelled && j?.ok) {
+          setDbOk(!!j.data?.db_ok);
+          setLlmOk(!!j.data?.llm_ok);
+          setDataSource(j.data?.data_source || "live");
+          // if you ever add timings, set them here:
+          // setStatusTimings({ provider_ms: j.data?.provider_ms, llm_ms: j.data?.llm_ms })
+        }
+      } catch {
+        // ignore; keep defaults
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const run = async (overrides = {}) => {
     if (!q.trim() && !overrides.name && !overrides.domain && !overrides.linkedin_url) {
@@ -95,7 +132,18 @@ export default function EnrichmentPage() {
 
       const url = `/api/enrich/search?${sp.toString()}`;
       console.log("[Enrichment] GET", url);
-      const res = await fetchWithTimeout(url, { method: "GET" }, 25000);
+      const res = await fetchWithTimeout(
+        url,
+        { method: "GET", noRedirect: true, headers: { Accept: "application/json" } },
+        25000
+      );
+
+      if (res.status === 401) {
+        setErr("Your session seems to have expired. Please sign in again.");
+        setRows([]);
+        setSummary(null);
+        return;
+      }
 
       let json = null;
       try {
@@ -166,10 +214,15 @@ export default function EnrichmentPage() {
 
     const res = await authFetch("/api/enrich", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      noRedirect: true, // prevent forced logout on any 401
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify(body),
     });
-    const json = await res.json();
+
+    if (res.status === 401) {
+      throw new Error("Your session seems to have expired. Please sign in again.");
+    }
+    const json = await res.json().catch(() => ({}));
     if (!res.ok || !json.ok) throw new Error(json.error || "Save failed");
     return json;
   };
@@ -178,9 +231,9 @@ export default function EnrichmentPage() {
     <div className="p-6">
       {/* Header status chips (always on) */}
       <div className="mb-4 flex items-center justify-end gap-2">
-        <Pill label={`Data Source: ${summary?.provider || "live"}`} ok />
-        <Pill label="DB" ok />
-        <Pill label="LLM" ok />
+        <Pill label={`Data Source: ${dataSource || "live"}`} ok />
+        <Pill label="DB" ok={!!dbOk} ms={statusTimings?.db_ms} />
+        <Pill label="LLM" ok={!!llmOk} ms={statusTimings?.llm_ms} />
       </div>
 
       <h1 className="mb-1 text-3xl font-semibold tracking-tight text-gray-900">
@@ -213,12 +266,12 @@ export default function EnrichmentPage() {
       {/* per-run timings */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <Pill
-          label={`Data Source: ${summary?.provider || "live"}`}
+          label={`Data Source: ${summary?.provider || dataSource || "live"}`}
           ok
           ms={summary?.timings?.provider_ms}
         />
-        <Pill label="DB" ok />
-        <Pill label="LLM" ok ms={summary?.timings?.llm_ms} />
+        <Pill label="DB" ok={!!dbOk} />
+        <Pill label="LLM" ok={!!llmOk} ms={summary?.timings?.llm_ms} />
         {summary?.company_guess?.name && (
           <span className="ml-2 text-sm text-gray-600">
             Guess: <span className="font-medium">{summary.company_guess.name}</span>{" "}
@@ -248,8 +301,8 @@ export default function EnrichmentPage() {
                 onChange={(e) => setPickedCompanyId(e.target.value)}
               >
                 <option value="">— Choose company —</option>
-                {summary?.company_guess?.name && (
-                  <option value="__guess__">Use guessed: {summary.company_guess.name}</option>
+                {companyGuess?.name && (
+                  <option value="__guess__">Use guessed: {companyGuess.name}</option>
                 )}
               </select>
               <button

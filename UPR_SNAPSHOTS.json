@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-20T09:22:36Z",
-  "generated_human": "Sat, 20 Sep 2025 09:22:36 GMT",
+  "generated": "2025-09-20T09:57:49Z",
+  "generated_human": "Sat, 20 Sep 2025 09:57:49 GMT",
   "branch": "main",
-  "commit": "a16cc80",
+  "commit": "6846897",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -131,9 +131,9 @@
     },
     {
       "path": "dashboard/src/pages/EnrichmentPage.jsx",
-      "size": 14780,
-      "mtime": "2025-09-20T08:47:38.758Z",
-      "sha256": "3913a93cd46dcb62326c6c66af4761ba8d3c722667bd523aa661e9fa6a1f760b",
+      "size": 16584,
+      "mtime": "2025-09-20T09:55:58.328Z",
+      "sha256": "719e23d5e9f1a75003fe066f24c5bb840bca8214b7cc70c25218ed53c762fe81",
       "imports": [
         "import { useEffect, useMemo, useRef, useState } from \"react\";",
         "import { authFetch } from \"../utils/auth\";"
@@ -141,7 +141,7 @@
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "import { useEffect, useMemo, useRef, useState } from \"react\";\nimport { authFetch } from \"../utils/auth\";\n\nfunction Pill({ ok = true, label, ms }) {\n  return (\n    <span\n      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${\n        ok\n          ? \"border-green-200 bg-green-50 text-green-700\"\n          : \"border-gray-200 bg-gray-50 text-gray-600\"\n      }`}\n    >\n      <span className={`h-2 w-2 rounded-full ${ok ? \"bg-green-500\" : \"bg-gray-400\"}`} />\n      {label}\n      {typeof ms === \"number\" ? ` • ${ms}ms` : \"\"}\n    </span>\n  );\n}\n\nfunction Field({ label, children }) {\n  return (\n    <div>\n      <div className=\"mb-1 text-sm text-gray-700\">{label}</div>\n      {children}\n    </div>\n  );\n}\n\nexport default function EnrichmentPage() {\n  const [q, setQ] = useState(\"\");\n  const [rows, setRows] = useState([]);\n  const [err, setErr] = useState(\"\");\n  const [loading, setLoading] = useState(false);\n  const [summary, setSummary] = useState(null); // timings, provider, company_guess, quality\n\n  // disambiguation modal state\n  const [fixOpen, setFixOpen] = useState(false);\n  const [fixName, setFixName] = useState(\"\");\n  const [fixDomain, setFixDomain] = useState(\"\");\n  const [fixLinkedIn, setFixLinkedIn] = useState(\"\");",
+      "head": "import { useEffect, useMemo, useRef, useState } from \"react\";\nimport { authFetch } from \"../utils/auth\";\n\nfunction Pill({ ok = true, label, ms }) {\n  return (\n    <span\n      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${\n        ok\n          ? \"border-green-200 bg-green-50 text-green-700\"\n          : \"border-gray-200 bg-gray-50 text-gray-600\"\n      }`}\n    >\n      <span className={`h-2 w-2 rounded-full ${ok ? \"bg-green-500\" : \"bg-gray-400\"}`} />\n      {label}\n      {typeof ms === \"number\" ? ` • ${ms}ms` : \"\"}\n    </span>\n  );\n}\n\nfunction Field({ label, children }) {\n  return (\n    <div>\n      <div className=\"mb-1 text-sm text-gray-700\">{label}</div>\n      {children}\n    </div>\n  );\n}\n\nexport default function EnrichmentPage() {\n  const [q, setQ] = useState(\"\");\n  const [rows, setRows] = useState([]);\n  const [err, setErr] = useState(\"\");\n  const [loading, setLoading] = useState(false);\n  const [summary, setSummary] = useState(null); // timings, provider, company_guess, quality\n\n  // service status lights\n  const [dbOk, setDbOk] = useState(true);\n  const [llmOk, setLlmOk] = useState(true);\n  const [dataSource, setDataSource] = useState(\"live\");\n  const [statusTimings, setStatusTimings] = useState({}); // optional timings if you return them",
       "tail": "                  Cancel\n                </button>\n                <button\n                  className=\"rounded bg-gray-900 px-4 py-2 font-medium text-white\"\n                  onClick={() => {\n                    setFixOpen(false);\n                    run({\n                      name: fixName,\n                      domain: fixDomain,\n                      linkedin_url: fixLinkedIn,\n                      parent: fixParent,\n                    });\n                  }}\n                >\n                  Apply &amp; Re-run\n                </button>\n              </div>\n            </div>\n          </div>\n        </div>\n      )}\n    </div>\n  );\n}\n"
     },
     {
@@ -530,17 +530,17 @@
     },
     {
       "path": "utils/adminOnly.js",
-      "size": 625,
-      "mtime": "2025-09-14T04:40:30.915Z",
-      "sha256": "e5b62b7271a27feacae03b377f6a941ebcb59906ea881987c571aeca22f169dd",
+      "size": 438,
+      "mtime": "2025-09-20T09:44:50.676Z",
+      "sha256": "c5cd6663e58466e003e51910f3755d3034b9821ee54586791068f5b53ca9a142",
       "imports": [
-        "import { verifyJwt } from \"./jwt.js\";"
+        "import { getJwtFromRequest, verifyJwt } from \"./jwt.js\";"
       ],
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "// utils/adminOnly.js\nimport { verifyJwt } from \"./jwt.js\";\n\nexport function adminOnly(req, res, next) {\n  try {\n    const h = String(req.headers.authorization || \"\");\n    if (!h.startsWith(\"Bearer \")) {\n      return res.status(401).json({ ok: false, error: \"missing bearer\" });\n    }\n    const token = h.slice(\"Bearer \".length);\n    const payload = verifyJwt(token);\n    if (!payload || payload.role !== \"admin\") {\n      return res.status(401).json({ ok: false, error: \"unauthorized\" });\n    }\n    req.user = payload;\n    next();\n  } catch (e) {\n    return res.status(401).json({ ok: false, error: \"invalid token\" });\n  }\n}\n",
-      "tail": "// utils/adminOnly.js\nimport { verifyJwt } from \"./jwt.js\";\n\nexport function adminOnly(req, res, next) {\n  try {\n    const h = String(req.headers.authorization || \"\");\n    if (!h.startsWith(\"Bearer \")) {\n      return res.status(401).json({ ok: false, error: \"missing bearer\" });\n    }\n    const token = h.slice(\"Bearer \".length);\n    const payload = verifyJwt(token);\n    if (!payload || payload.role !== \"admin\") {\n      return res.status(401).json({ ok: false, error: \"unauthorized\" });\n    }\n    req.user = payload;\n    next();\n  } catch (e) {\n    return res.status(401).json({ ok: false, error: \"invalid token\" });\n  }\n}\n"
+      "head": "// utils/adminOnly.js\nimport { getJwtFromRequest, verifyJwt } from \"./jwt.js\";\n\nexport function adminOnly(req, res, next) {\n  const token = getJwtFromRequest(req);\n  if (!token) return res.status(401).json({ ok: false, error: \"unauthorized\" });\n  const decoded = verifyJwt(token);\n  if (!decoded) return res.status(401).json({ ok: false, error: \"unauthorized\" });\n\n  req.user = decoded; // { sub, role, iat, exp, ... }\n  return next();\n}\n",
+      "tail": "// utils/adminOnly.js\nimport { getJwtFromRequest, verifyJwt } from \"./jwt.js\";\n\nexport function adminOnly(req, res, next) {\n  const token = getJwtFromRequest(req);\n  if (!token) return res.status(401).json({ ok: false, error: \"unauthorized\" });\n  const decoded = verifyJwt(token);\n  if (!decoded) return res.status(401).json({ ok: false, error: \"unauthorized\" });\n\n  req.user = decoded; // { sub, role, iat, exp, ... }\n  return next();\n}\n"
     },
     {
       "path": "utils/ai.js",
@@ -621,20 +621,20 @@
     },
     {
       "path": "utils/jwt.js",
-      "size": 375,
-      "mtime": "2025-09-14T04:40:23.321Z",
-      "sha256": "8c531dc92f53c8c5467ed1a281a077c813835f60aa8d16413b4544a98c9015f1",
+      "size": 1271,
+      "mtime": "2025-09-20T09:44:40.223Z",
+      "sha256": "7262f7f29ca145fb082b89fb4209997da7417c5e0bbdbb0c0bc00b9d00326967",
       "imports": [
         "import jwt from \"jsonwebtoken\";"
       ],
       "envs": [
-        "APP_SECRET",
-        "JWT_SECRET"
+        "JWT_SECRET",
+        "NODE_ENV"
       ],
       "appUses": [],
       "endpoints": [],
-      "head": "// utils/jwt.js\nimport jwt from \"jsonwebtoken\";\n\nconst JWT_SECRET =\n  process.env.JWT_SECRET ||\n  process.env.APP_SECRET ||\n  \"dev-secret-change-me-please\";\n\nexport function signJwt(payload, expiresInSec = 60 * 60 * 24 * 7) {\n  return jwt.sign(payload, JWT_SECRET, { expiresIn: expiresInSec });\n}\n\nexport function verifyJwt(token) {\n  return jwt.verify(token, JWT_SECRET);\n}\n",
-      "tail": "// utils/jwt.js\nimport jwt from \"jsonwebtoken\";\n\nconst JWT_SECRET =\n  process.env.JWT_SECRET ||\n  process.env.APP_SECRET ||\n  \"dev-secret-change-me-please\";\n\nexport function signJwt(payload, expiresInSec = 60 * 60 * 24 * 7) {\n  return jwt.sign(payload, JWT_SECRET, { expiresIn: expiresInSec });\n}\n\nexport function verifyJwt(token) {\n  return jwt.verify(token, JWT_SECRET);\n}\n"
+      "head": "// utils/jwt.js\nimport jwt from \"jsonwebtoken\";\n\nconst JWT_SECRET = process.env.JWT_SECRET || \"dev_upr_secret\";\nconst COOKIE_NAME = \"upr_session\";\n\nexport function signJwt(payload, expiresIn = \"12h\") {\n  return jwt.sign(payload, JWT_SECRET, { expiresIn });\n}\n\nexport function verifyJwt(token) {\n  try {\n    return jwt.verify(token, JWT_SECRET);\n  } catch {\n    return null;\n  }\n}\n\n/** Read JWT from Authorization: Bearer … header OR from HttpOnly cookie. */\nexport function getJwtFromRequest(req) {\n  const h = req.headers?.authorization || req.headers?.Authorization;\n  if (h && typeof h === \"string\" && h.startsWith(\"Bearer \")) {\n    return h.slice(\"Bearer \".length).trim();\n  }\n  // cookie-parser populates req.cookies\n  const c = req.cookies?.[COOKIE_NAME];\n  if (c) return c;\n  return null;\n}\n\nexport function setSessionCookie(res, token, hours = 12) {\n  const secure = process.env.NODE_ENV === \"production\";\n  res.cookie(COOKIE_NAME, token, {\n    httpOnly: true,\n    secure,\n    sameSite: \"lax\",\n    maxAge: hours * 60 * 60 * 1000,\n    path: \"/\",\n  });\n}",
+      "tail": "  if (c) return c;\n  return null;\n}\n\nexport function setSessionCookie(res, token, hours = 12) {\n  const secure = process.env.NODE_ENV === \"production\";\n  res.cookie(COOKIE_NAME, token, {\n    httpOnly: true,\n    secure,\n    sameSite: \"lax\",\n    maxAge: hours * 60 * 60 * 1000,\n    path: \"/\",\n  });\n}\n\nexport function clearSessionCookie(res) {\n  const secure = process.env.NODE_ENV === \"production\";\n  res.clearCookie(COOKIE_NAME, {\n    httpOnly: true,\n    secure,\n    sameSite: \"lax\",\n    path: \"/\",\n  });\n}\n"
     },
     {
       "path": "utils/normalize.js",
