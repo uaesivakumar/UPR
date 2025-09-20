@@ -19,6 +19,9 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 10000;
 
+/* ---------- API caching off (prevents 304s on JSON endpoints) ---------- */
+app.set("etag", false);
+
 /* ------------------------------ helpers (auth) ------------------------------ */
 const COOKIE_NAME = "upr_jwt";
 const isProd = process.env.NODE_ENV === "production";
@@ -26,7 +29,7 @@ const isProd = process.env.NODE_ENV === "production";
 function getCookie(req, name) {
   const str = req.headers?.cookie || "";
   if (!str) return null;
-  const pairs = str.split(";").map(s => s.trim().split("="));
+  const pairs = str.split(";").map((s) => s.trim().split("="));
   const map = Object.fromEntries(pairs);
   const v = map[name];
   return v ? decodeURIComponent(v) : null;
@@ -184,7 +187,7 @@ app.use("/api/companies", companiesRouter);
 app.use("/api/hr-leads", hrLeadsRouter);
 app.use("/api/news", newsRouter);
 
-// Log all /api/enrich entries (path + auth presence)
+// Log all /api/enrich entries (before auth)
 app.use("/api/enrich", (req, _res, next) => {
   console.log(`[${req._reqid}] /api/enrich pre path=${req.path} auth=${!!req.headers.authorization}`);
   next();
@@ -203,26 +206,27 @@ app.all("/api/enrich/*", (req, res) => {
   res.status(404).json({ ok: false, error: "not_found", path: req.path });
 });
 
-/* ----------------------------- Diagnostics (full) ----------------------------- */
+/* ----------------------------- Diagnostics ----------------------------- */
 function listRoutes(appOrRouter) {
   const out = [];
-  const stack = (appOrRouter && appOrRouter._router ? appOrRouter._router.stack : appOrRouter.stack) || [];
+  const stack =
+    (appOrRouter && appOrRouter._router ? appOrRouter._router.stack : appOrRouter.stack) ||
+    [];
   for (const layer of stack) {
     if (layer.route && layer.route.path) {
-      const methods = Object.keys(layer.route.methods || {}).map(m => m.toUpperCase());
-      out.push(...methods.map(m => `${m} ${layer.route.path}`));
+      const methods = Object.keys(layer.route.methods || {}).map((m) => m.toUpperCase());
+      out.push(...methods.map((m) => `${m} ${layer.route.path}`));
     } else if (layer.name === "router" && layer.handle && layer.handle.stack) {
       for (const l2 of layer.handle.stack) {
         if (l2.route && l2.route.path) {
-          const methods = Object.keys(l2.route.methods || {}).map(m => m.toUpperCase());
-          out.push(...methods.map(m => `${m} ${l2.route.path}`));
+          const methods = Object.keys(l2.route.methods || {}).map((m) => m.toUpperCase());
+          out.push(...methods.map((m) => `${m} ${l2.route.path}`));
         }
       }
     }
   }
   return out;
 }
-
 app.get("/api/__diag_full/routes", (_req, res) => {
   res.json({ ok: true, routes: listRoutes(app) });
 });

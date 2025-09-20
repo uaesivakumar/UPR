@@ -1,56 +1,65 @@
 // routes/enrich/index.js
 import { Router } from "express";
-import searchHandler from "./search.js"; // your real logic
+import searchHandler from "./search.js";
 import { pool } from "../../utils/db.js";
 
 const router = Router();
 
-/**
- * Status for chips
- */
+function noStore(res) {
+  res.setHeader("Cache-Control", "no-store, must-revalidate");
+}
+
+/** Chips status */
 router.get("/status", (_req, res) => {
+  noStore(res);
   res.json({ ok: true, data: { db_ok: true, llm_ok: true, data_source: "live" } });
 });
 
-/**
- * GET /api/enrich/search
- * We wrap your real searchHandler with logging and normalize "no results" to 200.
- */
+/** GET /api/enrich/search */
 router.get("/search", async (req, res, next) => {
   try {
+    noStore(res);
     const q = (req.query?.q || "").trim();
     console.log(`[${req._reqid}] enrich/search GET q="${q}"`);
-    // Run your existing logic
-    const send = res.json.bind(res);
-    res.json = (payload) => {
-      console.log(`[${req._reqid}] enrich/search RESP`, {
-        status: res.statusCode,
-        hasResults: Array.isArray(payload?.data?.results) && payload.data.results.length > 0,
-      });
-      return send(payload);
-    };
     await searchHandler(req, res, next);
   } catch (e) {
-    console.error(`[${req._reqid}] enrich/search error`, e?.stack || e);
-    // If your handler throws "not_found" or returns 404, normalize to empty 200
+    console.error(`[${req._reqid}] enrich/search GET error`, e?.stack || e);
     if (!res.headersSent) {
       res.status(200).json({
         ok: true,
-        data: {
-          results: [],
-          summary: {
-            provider: "live",
-            quality: { score: 0.5, explanation: "No matches found." },
-          },
-        },
+        data: { results: [], summary: { provider: "live", quality: { score: 0.5, explanation: "No matches found." } } },
       });
     }
   }
 });
 
-/**
- * POST /api/enrich  (save contacts)
- */
+/** POST /api/enrich/search  (same behavior as GET; UI may call this as fallback) */
+router.post("/search", async (req, res, next) => {
+  try {
+    noStore(res);
+    // Allow the same handler by mapping body into query-like fields it expects
+    req.query = req.query || {};
+    if (req.body?.q) req.query.q = String(req.body.q);
+    if (req.body?.name) req.query.name = String(req.body.name);
+    if (req.body?.domain) req.query.domain = String(req.body.domain);
+    if (req.body?.linkedin_url) req.query.linkedin_url = String(req.body.linkedin_url);
+    if (req.body?.parent) req.query.parent = String(req.body.parent);
+
+    const q = (req.query?.q || "").trim();
+    console.log(`[${req._reqid}] enrich/search POST q="${q}" bodyKeys=${Object.keys(req.body || {})}`);
+    await searchHandler(req, res, next);
+  } catch (e) {
+    console.error(`[${req._reqid}] enrich/search POST error`, e?.stack || e);
+    if (!res.headersSent) {
+      res.status(200).json({
+        ok: true,
+        data: { results: [], summary: { provider: "live", quality: { score: 0.5, explanation: "No matches found." } } },
+      });
+    }
+  }
+});
+
+/** Save contacts */
 router.post("/", async (req, res) => {
   const body = req.body || {};
   const companyId = body.company_id ?? null;
