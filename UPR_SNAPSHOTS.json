@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-19T19:30:22Z",
-  "generated_human": "Fri, 19 Sep 2025 19:30:22 GMT",
-  "branch": "main",
-  "commit": "366d2df",
+  "generated": "2025-09-20T06:09:40Z",
+  "generated_human": "Sat, 20 Sep 2025 06:09:40 GMT",
+  "branch": "fix/ui-dashboard-enrichment",
+  "commit": "c8b42c0",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -70,7 +70,7 @@
     {
       "path": "dashboard/src/pages/Admin.jsx",
       "size": 6749,
-      "mtime": "2025-09-14T04:35:37.712Z",
+      "mtime": "2025-09-19T19:41:50.688Z",
       "sha256": "117cd39d4a05b474c4d2e63c4d5893a5a5a5be5fdadf2fd2c7f3c5bcfb712245",
       "imports": [
         "import { useEffect, useState } from \"react\";",
@@ -115,9 +115,9 @@
     },
     {
       "path": "dashboard/src/pages/DashboardHome.jsx",
-      "size": 7042,
-      "mtime": "2025-09-14T05:16:56.671Z",
-      "sha256": "c7aabcad134edf5c87cf014212770d93ebbfc1bdaaaaa6035784391cca898540",
+      "size": 5308,
+      "mtime": "2025-09-20T06:08:22.788Z",
+      "sha256": "b33b5b2414031143e1ee91c56376f655152cbf71a616fcfa4af8ed93107ff338",
       "imports": [
         "import { useEffect, useState } from \"react\";",
         "import { useNavigate } from \"react-router-dom\";",
@@ -126,14 +126,14 @@
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "// dashboard/src/pages/DashboardHome.jsx\nimport { useEffect, useState } from \"react\";\nimport { useNavigate } from \"react-router-dom\";\nimport { authFetch } from \"../utils/auth\";\n\nfunction num(n) {\n  const v = Number(n || 0);\n  return isNaN(v) ? 0 : v;\n}\nfunction fmtDT(v) {\n  if (!v) return \"—\";\n  try {\n    const d = new Date(v);\n    return d.toLocaleString();\n  } catch {\n    return String(v);\n  }\n}\nfunction Badge({ children, tone = \"gray\" }) {\n  const tones = {\n    gray: \"bg-gray-100 text-gray-700\",\n    blue: \"bg-blue-100 text-blue-800\",\n    green: \"bg-green-100 text-green-800\",\n    amber: \"bg-amber-100 text-amber-800\",\n  };\n  return (\n    <span className={`text-xs px-2 py-1 rounded-full ${tones[tone] || tones.gray}`}>\n      {children}\n    </span>\n  );\n}\n\nexport default function DashboardHome() {\n  const nav = useNavigate();\n  const [loading, setLoading] = useState(true);\n  const [err, setErr] = useState(null);\n  const [stats, setStats] = useState(null);\n\n  useEffect(() => {\n    let mounted = true;",
-      "tail": "                </tr>\n              </thead>\n              <tbody>\n                {stats.top_companies.map((c, i) => (\n                  <tr key={c.id || c.name || i} className=\"border-top border-gray-200\">\n                    <td className=\"px-5 py-2\">{c.name || \"—\"}</td>\n                    <td className=\"px-5 py-2\">\n                      {Array.isArray(c.locations) && c.locations.length\n                        ? c.locations.join(\", \")\n                        : c.location || \"—\"}\n                    </td>\n                    <td className=\"px-5 py-2\">{c.type || \"—\"}</td>\n                    <td className=\"px-5 py-2\">{num(c.qscore)}</td>\n                    <td className=\"px-5 py-2\">{fmtDT(c.created_at)}</td>\n                  </tr>\n                ))}\n              </tbody>\n            </table>\n          </div>\n        </section>\n      )}\n    </div>\n  );\n}\n"
+      "head": "// dashboard/src/pages/DashboardHome.jsx\nimport { useEffect, useState } from \"react\";\nimport { useNavigate } from \"react-router-dom\";\nimport { authFetch } from \"../utils/auth\";\n\nfunction num(n) {\n  const v = Number(n || 0);\n  return Number.isFinite(v) ? v : 0;\n}\nfunction fmtDT(v) {\n  if (!v) return \"—\";\n  try {\n    const d = new Date(v);\n    return d.toLocaleString();\n  } catch {\n    return String(v);\n  }\n}\nfunction Badge({ children, tone = \"gray\" }) {\n  const tones = {\n    gray: \"bg-gray-100 text-gray-700\",\n    blue: \"bg-blue-100 text-blue-800\",\n    green: \"bg-green-100 text-green-800\",\n    amber: \"bg-amber-100 text-amber-800\",\n  };\n  return (\n    <span className={`text-xs px-2 py-1 rounded-full ${tones[tone] || tones.gray}`}>\n      {children}\n    </span>\n  );\n}\n\nexport default function DashboardHome() {\n  const nav = useNavigate();\n  const [loading, setLoading] = useState(true);\n  const [err, setErr] = useState(null);\n  const [data, setData] = useState({\n    companies: 0,\n    leads: 0,\n    outreach: 0,",
+      "tail": "                <tr key={row.id || i} className=\"border-t border-gray-200\">\n                  <td className=\"px-5 py-2\">{row.id ?? \"—\"}</td>\n                  <td className=\"px-5 py-2\">{row.company_name || row.company || \"—\"}</td>\n                  <td className=\"px-5 py-2\">{row.role || row.designation || \"—\"}</td>\n                  <td className=\"px-5 py-2\">\n                    {row.status ? <Badge>{row.status}</Badge> : \"—\"}\n                  </td>\n                  <td className=\"px-5 py-2\">{fmtDT(row.created_at)}</td>\n                </tr>\n              ))}\n              {!loading && !err && (data.recent || []).length === 0 && (\n                <tr>\n                  <td colSpan={5} className=\"px-5 py-6 text-center text-gray-500\">\n                    No activity yet.\n                  </td>\n                </tr>\n              )}\n            </tbody>\n          </table>\n        </div>\n      </section>\n    </div>\n  );\n}\n"
     },
     {
       "path": "dashboard/src/pages/EnrichmentPage.jsx",
-      "size": 11584,
-      "mtime": "2025-09-19T19:20:34.296Z",
-      "sha256": "8b905c3f6eaeb510dce3dcfa62ff2cdb114cbd9ac0954a315af767b7fd41d964",
+      "size": 12974,
+      "mtime": "2025-09-20T06:08:30.638Z",
+      "sha256": "40099dc48213529e0f17a3eec142218491f67636e7241d1bdea870dc0126d007",
       "imports": [
         "import { useEffect, useMemo, useState } from \"react\";",
         "import { authFetch } from \"../utils/auth\";"
@@ -141,8 +141,8 @@
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "import { useEffect, useMemo, useState } from \"react\";\nimport { authFetch } from \"../utils/auth\";\n\nfunction Pill({ ok=true, label, ms }) {\n  return (\n    <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${ok ? \"border-green-200 bg-green-50 text-green-700\" : \"border-gray-200 bg-gray-50 text-gray-600\"}`}>\n      <span className={`h-2 w-2 rounded-full ${ok ? \"bg-green-500\" : \"bg-gray-400\"}`}></span>\n      {label}{typeof ms === \"number\" ? ` • ${ms}ms` : \"\"}\n    </span>\n  );\n}\n\nexport default function EnrichmentPage() {\n  const [q, setQ] = useState(\"\");\n  const [rows, setRows] = useState([]);\n  const [err, setErr] = useState(\"\");\n  const [loading, setLoading] = useState(false);\n  const [summary, setSummary] = useState(null); // timings, provider, company_guess, quality\n\n  // disambiguation modal state\n  const [fixOpen, setFixOpen] = useState(false);\n  const [fixName, setFixName] = useState(\"\");\n  const [fixDomain, setFixDomain] = useState(\"\");\n  const [fixLinkedIn, setFixLinkedIn] = useState(\"\");\n  const [fixParent, setFixParent] = useState(\"\");\n\n  const companyGuess = summary?.company_guess;\n\n  const run = async (overrides={}) => {\n    setLoading(true);\n    setErr(\"\");\n    try {\n      const sp = new URLSearchParams();\n      sp.set(\"q\", q.trim());\n      if (overrides.name) sp.set(\"name\", overrides.name.trim());\n      if (overrides.domain) sp.set(\"domain\", overrides.domain.trim().replace(/^https?:\\/\\//i, \"\").replace(/\\/.*$/, \"\"));\n      if (overrides.linkedin_url) sp.set(\"linkedin_url\", overrides.linkedin_url.trim());\n      if (overrides.parent) sp.set(\"parent\", overrides.parent.trim());\n\n      const res = await authFetch(`/api/enrich/search?${sp.toString()}`);",
-      "tail": "                <button\n                  className=\"rounded bg-gray-900 px-4 py-2 font-medium text-white\"\n                  onClick={() => { setFixOpen(false); run({ name: fixName, domain: fixDomain, linkedin_url: fixLinkedIn, parent: fixParent }); }}\n                >\n                  Apply &amp; Re-run\n                </button>\n              </div>\n            </div>\n          </div>\n        </div>\n      )}\n\n    </div>\n  );\n}\n\nfunction Field({label, children}) {\n  return (\n    <div>\n      <div className=\"mb-1 text-sm text-gray-700\">{label}</div>\n      {children}\n    </div>\n  );\n}\n"
+      "head": "// dashboard/src/pages/EnrichmentPage.jsx\nimport { useEffect, useMemo, useState } from \"react\";\nimport { authFetch } from \"../utils/auth\";\n\nfunction Pill({ ok = true, label, ms }) {\n  return (\n    <span\n      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${\n        ok ? \"border-green-200 bg-green-50 text-green-700\" : \"border-gray-200 bg-gray-50 text-gray-600\"\n      }`}\n    >\n      <span className={`h-2 w-2 rounded-full ${ok ? \"bg-green-500\" : \"bg-gray-400\"}`} />\n      {label}\n      {typeof ms === \"number\" ? ` • ${ms}ms` : \"\"}\n    </span>\n  );\n}\n\nexport default function EnrichmentPage() {\n  const [q, setQ] = useState(\"\");\n  const [rows, setRows] = useState([]);\n  const [err, setErr] = useState(\"\");\n  const [loading, setLoading] = useState(false);\n  const [summary, setSummary] = useState(null); // timings, provider, company_guess, quality\n\n  // disambiguation modal state\n  const [fixOpen, setFixOpen] = useState(false);\n  const [fixName, setFixName] = useState(\"\");\n  const [fixDomain, setFixDomain] = useState(\"\");\n  const [fixLinkedIn, setFixLinkedIn] = useState(\"\");\n  const [fixParent, setFixParent] = useState(\"\");\n\n  const companyGuess = summary?.company_guess;\n\n  const run = async (overrides = {}) => {\n    if (!q.trim() && !overrides.name && !overrides.domain && !overrides.linkedin_url) {\n      setErr(\"Enter a company name first.\");\n      return;\n    }\n    setLoading(true);",
+      "tail": "                  onClick={() => {\n                    setFixOpen(false);\n                    run({ name: fixName, domain: fixDomain, linkedin_url: fixLinkedIn, parent: fixParent });\n                  }}\n                >\n                  Apply &amp; Re-run\n                </button>\n              </div>\n            </div>\n          </div>\n        </div>\n      )}\n    </div>\n  );\n}\n\nfunction Field({ label, children }) {\n  return (\n    <div>\n      <div className=\"mb-1 text-sm text-gray-700\">{label}</div>\n      {children}\n    </div>\n  );\n}\n"
     },
     {
       "path": "dashboard/src/pages/HRLeads.jsx",
@@ -408,7 +408,7 @@
     {
       "path": "routes/enrich/search.js",
       "size": 8215,
-      "mtime": "2025-09-19T19:29:34.094Z",
+      "mtime": "2025-09-19T19:41:50.690Z",
       "sha256": "726b66a7f6606164fdbe54bcc07af83f3884a9df33d70cfb5f14da6425e42c44",
       "imports": [
         "import { Router } from \"express\";",
