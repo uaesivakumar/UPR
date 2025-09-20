@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-20T12:59:58Z",
-  "generated_human": "Sat, 20 Sep 2025 12:59:58 GMT",
+  "generated": "2025-09-20T13:16:32Z",
+  "generated_human": "Sat, 20 Sep 2025 13:16:33 GMT",
   "branch": "main",
-  "commit": "ca24dd6",
+  "commit": "4f89895",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -131,9 +131,9 @@
     },
     {
       "path": "dashboard/src/pages/EnrichmentPage.jsx",
-      "size": 7864,
-      "mtime": "2025-09-20T12:54:16.465Z",
-      "sha256": "37a42fd0a649d7d5e6efc7665319657f66d91076cd6f7d3ae432a2f538d8105f",
+      "size": 8864,
+      "mtime": "2025-09-20T13:16:09.445Z",
+      "sha256": "13091e4f6b96309b3e680734cce587c1805e4d45cadbc39fef847195db29e4fa",
       "imports": [
         "import { useEffect, useRef, useState } from \"react\";",
         "import { authFetch } from \"../utils/auth\";"
@@ -141,8 +141,8 @@
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "// dashboard/src/pages/EnrichmentPage.jsx\nimport { useEffect, useRef, useState } from \"react\";\nimport { authFetch } from \"../utils/auth\";\n\nfunction Pill({ ok = true, label, ms }) {\n  return (\n    <span\n      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${\n        ok\n          ? \"border-green-200 bg-green-50 text-green-700\"\n          : \"border-gray-200 bg-gray-50 text-gray-600\"\n      }`}\n    >\n      <span className={`h-2 w-2 rounded-full ${ok ? \"bg-green-500\" : \"bg-gray-400\"}`} />\n      {label}\n      {typeof ms === \"number\" ? ` • ${ms}ms` : \"\"}\n    </span>\n  );\n}\n\nexport default function EnrichmentPage() {\n  const [q, setQ] = useState(\"\");\n  const [rows, setRows] = useState([]);\n  const [err, setErr] = useState(\"\");\n  const [loading, setLoading] = useState(false);\n\n  const [company, setCompany] = useState(null);\n  const [timings, setTimings] = useState({});\n  const [provider, setProvider] = useState(\"\");\n\n  const inFlight = useRef(null);\n\n  // fetch with timeout\n  async function fetchWithTimeout(url, options = {}, ms = 25000) {\n    const controller = new AbortController();\n    const t = setTimeout(() => controller.abort(\"timeout\"), ms);\n    const merged = { ...options, signal: controller.signal };\n    inFlight.current = controller;\n    try {\n      const res = await authFetch(url, merged);",
-      "tail": "                      \"—\"\n                    )}\n                  </td>\n                  <td className=\"px-3 py-2\">\n                    {typeof r.confidence === \"number\" ? r.confidence.toFixed(2) : \"—\"}\n                  </td>\n                  <td className=\"px-3 py-2\">{r.email_status || \"—\"}</td>\n                  <td className=\"px-3 py-2\">{r.source || \"—\"}</td>\n                </tr>\n              ))}\n              {rows.length === 0 && !loading && (\n                <tr>\n                  <td className=\"px-3 py-6 text-center text-gray-500\" colSpan={8}>\n                    No results.\n                  </td>\n                </tr>\n              )}\n            </tbody>\n          </table>\n        </div>\n      </div>\n    </div>\n  );\n}\n"
+      "head": "// dashboard/src/pages/EnrichmentPage.jsx\nimport { useEffect, useRef, useState } from \"react\";\nimport { authFetch } from \"../utils/auth\";\n\nfunction Pill({ ok = true, label, ms }) {\n  return (\n    <span\n      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${\n        ok\n          ? \"border-green-200 bg-green-50 text-green-700\"\n          : \"border-gray-200 bg-gray-50 text-gray-600\"\n      }`}\n    >\n      <span className={`h-2 w-2 rounded-full ${ok ? \"bg-green-500\" : \"bg-gray-400\"}`} />\n      {label}\n      {typeof ms === \"number\" ? ` • ${ms}ms` : \"\"}\n    </span>\n  );\n}\n\nexport default function EnrichmentPage() {\n  const [q, setQ] = useState(\"\");\n  const [rows, setRows] = useState([]);\n  const [err, setErr] = useState(\"\");\n  const [loading, setLoading] = useState(false);\n\n  // Summary bits from backend\n  const [company, setCompany] = useState(null);        // { name, domain, linkedin_url, parent? }\n  const [timings, setTimings] = useState({});          // { llm_ms, apollo_ms, geo_ms, email_ms, quality_ms }\n  const [provider, setProvider] = useState(\"\");        // \"apollo+geo+email+llm\"\n\n  const inFlight = useRef(null);\n\n  // Small helper: fetch with abort + hard timeout\n  async function fetchWithTimeout(url, options = {}, ms = 25000) {\n    const controller = new AbortController();\n    const t = setTimeout(() => controller.abort(\"timeout\"), ms);\n    const merged = { ...options, signal: controller.signal };\n    inFlight.current = controller;\n    try {",
+      "tail": "                    )}\n                  </td>\n                  <td className=\"px-3 py-2\">\n                    {typeof r.confidence === \"number\" ? r.confidence.toFixed(2) : \"—\"}\n                  </td>\n                  <td className=\"px-3 py-2\">{r.email_status || \"—\"}</td>\n                  <td className=\"px-3 py-2\">{r.source || \"—\"}</td>\n                </tr>\n              ))}\n\n              {rows.length === 0 && !loading && (\n                <tr>\n                  <td className=\"px-3 py-6 text-center text-gray-500\" colSpan={8}>\n                    No results.\n                  </td>\n                </tr>\n              )}\n            </tbody>\n          </table>\n        </div>\n      </div>\n    </div>\n  );\n}\n"
     },
     {
       "path": "dashboard/src/pages/HRLeads.jsx",
@@ -342,17 +342,17 @@
     },
     {
       "path": "routes/enrich/lib/apollo.js",
-      "size": 3227,
-      "mtime": "2025-09-20T12:59:30.464Z",
-      "sha256": "513397ae0c5dce3eed324dae0e28ffaab43609ec62e8b8689dff4374d462a72f",
+      "size": 4689,
+      "mtime": "2025-09-20T13:09:17.702Z",
+      "sha256": "20cc56488197bf265b462bad4215fe2562199af7850256ad39cb83c6bf50cc1d",
       "imports": [],
       "envs": [
         "APOLLO_API_KEY"
       ],
       "appUses": [],
       "endpoints": [],
-      "head": "// routes/enrich/lib/apollo.js\nconst APOLLO_BASE = \"https://api.apollo.io/v1\";\n\nfunction apolloHeaders() {\n  return {\n    \"Content-Type\": \"application/json\",\n    Accept: \"application/json\",\n    \"X-Api-Key\": process.env.APOLLO_API_KEY || \"\",\n  };\n}\n\nfunction roleFiltersToQuery(roleFilters = [\"hr\", \"admin\", \"finance\"]) {\n  return [\n    \"hr\", \"human resources\", \"talent\", \"recruit\", \"people\", \"people operations\", \"people & culture\",\n    \"admin\", \"office manager\", \"operations\",\n    \"finance\", \"account\", \"payroll\",\n  ].join(\" OR \");\n}\n\nasync function apolloPOST(path, body) {\n  if (!process.env.APOLLO_API_KEY) return { ok: true, people: [], provider: \"mock\", reason: \"no_api_key\" };\n  const resp = await fetch(`${APOLLO_BASE}${path}`, {\n    method: \"POST\",\n    headers: apolloHeaders(),\n    body: JSON.stringify(body || {}),\n  });\n  if (!resp.ok) {\n    let err;\n    try { err = await resp.json(); } catch { err = { error: await resp.text() }; }\n    console.error(\"apollo non-200\", resp.status, err);\n    return { ok: false, error: err?.error || `apollo_${resp.status}` };\n  }\n  return await resp.json();\n}\n\nexport async function searchPeopleByCompany({ name, domain, limit = 20, roleFilters } = {}) {\n  const per_page = Math.min(Math.max(Number(limit) || 20, 1), 25);\n  const q_keywords = roleFiltersToQuery(roleFilters);\n  const cleanDomain = (domain || \"\").toLowerCase().replace(/^https?:\\/\\//, \"\").replace(/\\/.*$/, \"\");\n",
-      "tail": "    const results = (people || []).map((p) => ({\n      name: p.name || [p.first_name, p.last_name].filter(Boolean).join(\" \"),\n      designation: p.title || null,\n      email: p.email || null,\n      email_status: p.email_status || \"unknown\",\n      linkedin_url: p.linkedin_url || null,\n      emirate: deriveLocation(p),\n      confidence: 0.70,\n      source: \"apollo\",\n      // carry org domain so the search handler can filter if needed\n      org_domain: p?.organization?.primary_domain || null,\n      company_domain: p?.organization?.primary_domain || null,\n    }));\n\n    const ms = Date.now() - start;\n    console.log(\"[enrichWithApollo] got %d candidates in %dms\", results.length, ms);\n    return { ok: true, results, provider: \"apollo\", ms };\n  } catch (e) {\n    console.error(\"Apollo enrichment failed\", e);\n    return { ok: false, results: [], provider: \"apollo\", error: String(e?.message || e) };\n  }\n}\n\nexport default { searchPeopleByCompany, enrichWithApollo };\n"
+      "head": "// routes/enrich/lib/apollo.js\n\nconst APOLLO_BASE = \"https://api.apollo.io/v1\";\n\n/* ------------------------- helpers & primitives ------------------------- */\n\nfunction apolloHeaders() {\n  return {\n    \"Content-Type\": \"application/json\",\n    Accept: \"application/json\",\n    \"X-Api-Key\": process.env.APOLLO_API_KEY || \"\",\n  };\n}\n\nfunction normDomain(d = \"\") {\n  return String(d).toLowerCase().replace(/^https?:\\/\\//, \"\").replace(/\\/.*$/, \"\");\n}\n\nfunction roleFiltersToQuery(roleFilters = [\"hr\", \"admin\", \"finance\"]) {\n  // Broad but focused titles for HR/Admin/Finance discovery\n  return [\n    \"hr\",\n    \"human resources\",\n    \"talent\",\n    \"recruit\",\n    \"people\",\n    \"people operations\",\n    \"people & culture\",\n    \"admin\",\n    \"office manager\",\n    \"operations\",\n    \"finance\",\n    \"account\",\n    \"payroll\",\n  ].join(\" OR \");\n}\n\nasync function apolloPOST(path, body) {\n  if (!process.env.APOLLO_API_KEY) {\n    // Allow local/dev to run the pipeline without a hard failure",
+      "tail": "/* --------------------------- high-level wrapper -------------------------- */\n\nexport async function enrichWithApollo(query = {}) {\n  const started = Date.now();\n  try {\n    const { name, domain, limit } = query;\n    const people = await searchPeopleByCompany({ name, domain, limit });\n    const results = (people || []).map(normalizePerson);\n\n    const ms = Date.now() - started;\n    console.log(\"[enrichWithApollo] got %d candidates in %dms\", results.length, ms);\n    return { ok: true, results, provider: \"apollo\", ms };\n  } catch (e) {\n    console.error(\"Apollo enrichment failed\", e);\n    return { ok: false, results: [], provider: \"apollo\", error: String(e?.message || e) };\n  }\n}\n\nexport default {\n  searchPeopleByCompany,\n  searchPeopleByName,\n  enrichWithApollo,\n  deriveLocation,\n};\n"
     },
     {
       "path": "routes/enrich/lib/email.js",
@@ -407,9 +407,9 @@
     },
     {
       "path": "routes/enrich/search.js",
-      "size": 4122,
-      "mtime": "2025-09-20T12:59:13.946Z",
-      "sha256": "9755891a0f72f78b4f3dcad714beacadffc53a8ee7bafd074239786e4b441619",
+      "size": 4518,
+      "mtime": "2025-09-20T13:12:16.981Z",
+      "sha256": "c1bdec7c8bbd460ae086843ec3f48eb23b8058b541f7c97d44a1a81127d00d03",
       "imports": [
         "import { enrichWithApollo } from \"./lib/apollo.js\";",
         "import { enrichWithGeo } from \"./lib/geo.js\";",
@@ -420,8 +420,8 @@
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "// routes/enrich/search.js\nimport { enrichWithApollo } from \"./lib/apollo.js\";\nimport { enrichWithGeo } from \"./lib/geo.js\";\nimport { enrichWithEmail } from \"./lib/email.js\";\nimport { enrichWithLLM } from \"./lib/llm.js\";\nimport { qualityScore } from \"./lib/quality.js\";\n\n/**\n * GET or POST /api/enrich/search\n * Pipeline:\n *   1) LLM (company guess)  -> gives us a domain early\n *   2) Apollo (contacts)    -> query by domain when available\n *   3) Geo / Email          -> tag emirate, synthesize/verify emails\n *   4) Quality              -> page-level score\n */\nexport default async function searchHandler(req, res) {\n  const started = Date.now();\n\n  const q = (req.query.q || req.body?.q || \"\").trim();\n  const overrides = {\n    name: (req.query.name || req.body?.name || q || \"\").trim() || null,\n    domain: (req.query.domain || req.body?.domain || \"\").trim() || null,\n    linkedin_url: (req.query.linkedin_url || req.body?.linkedin_url || \"\").trim() || null,\n    parent: (req.query.parent || req.body?.parent || \"\").trim() || null,\n  };\n\n  if (!overrides.name && !overrides.domain && !overrides.linkedin_url) {\n    return res.status(200).json({\n      ok: true,\n      data: { results: [], summary: { provider: \"live\", company_guess: { name: q || \"\" }, quality: { score: 0.5 } } },\n      took_ms: Date.now() - started,\n    });\n  }\n\n  const timings = {};\n  let companyGuess = null;\n  let candidates = [];\n\n  try {\n    // 1) LLM FIRST — so we get a domain to constrain Apollo",
-      "tail": "    };\n\n    return res.json({\n      ok: true,\n      data: { results: candidates, summary },\n      took_ms: Date.now() - started,\n    });\n  } catch (e) {\n    console.error(\"[enrich/search] error\", e?.stack || e);\n    return res.status(200).json({\n      ok: true,\n      data: {\n        results: [],\n        summary: {\n          provider: \"live\",\n          company_guess: companyGuess || { name: q || overrides.name || \"\" },\n          quality: { score: 0.5, explanation: \"fallback after error\" },\n          timings,\n        },\n      },\n      took_ms: Date.now() - started,\n    });\n  }\n}\n"
+      "head": "// routes/enrich/search.js\nimport { enrichWithApollo } from \"./lib/apollo.js\";\nimport { enrichWithGeo } from \"./lib/geo.js\";\nimport { enrichWithEmail } from \"./lib/email.js\";\nimport { enrichWithLLM } from \"./lib/llm.js\";\nimport { qualityScore } from \"./lib/quality.js\";\n\n/**\n * GET or POST /api/enrich/search\n * Pipeline:\n *   1) LLM (company guess)  -> gives us a domain early\n *   2) Apollo (contacts)    -> query by domain when available\n *   3) Geo / Email          -> tag emirate, synthesize/verify emails\n *   4) Quality              -> page-level score\n */\nexport default async function searchHandler(req, res) {\n  const started = Date.now();\n\n  const q = (req.query.q || req.body?.q || \"\").trim();\n  const overrides = {\n    name: (req.query.name || req.body?.name || q || \"\").trim() || null,\n    domain: (req.query.domain || req.body?.domain || \"\").trim() || null,\n    linkedin_url: (req.query.linkedin_url || req.body?.linkedin_url || \"\").trim() || null,\n    parent: (req.query.parent || req.body?.parent || \"\").trim() || null,\n  };\n\n  // Soft-success empty result if nothing to search with (keeps UI simple)\n  if (!overrides.name && !overrides.domain && !overrides.linkedin_url) {\n    return res.status(200).json({\n      ok: true,\n      data: {\n        results: [],\n        summary: {\n          provider: \"live\",\n          company_guess: { name: q || \"\" },\n          quality: { score: 0.5, explanation: \"No query provided.\" },\n          timings: {},\n        },\n      },\n      took_ms: Date.now() - started,",
+      "tail": "\n    return res.json({\n      ok: true,\n      data: { results: candidates, summary },\n      took_ms: Date.now() - started,\n    });\n  } catch (e) {\n    console.error(\"[enrich/search] error\", e?.stack || e);\n    // Return soft-success so the UI stays responsive and shows chips/guess\n    return res.status(200).json({\n      ok: true,\n      data: {\n        results: [],\n        summary: {\n          provider: \"live\",\n          company_guess: companyGuess || { name: q || overrides.name || \"\" },\n          quality: { score: 0.5, explanation: \"fallback after error\" },\n          timings,\n        },\n      },\n      took_ms: Date.now() - started,\n    });\n  }\n}\n"
     },
     {
       "path": "routes/hrLeads.js",

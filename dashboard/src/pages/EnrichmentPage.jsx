@@ -24,13 +24,14 @@ export default function EnrichmentPage() {
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const [company, setCompany] = useState(null);
-  const [timings, setTimings] = useState({});
-  const [provider, setProvider] = useState("");
+  // Summary bits from backend
+  const [company, setCompany] = useState(null);        // { name, domain, linkedin_url, parent? }
+  const [timings, setTimings] = useState({});          // { llm_ms, apollo_ms, geo_ms, email_ms, quality_ms }
+  const [provider, setProvider] = useState("");        // "apollo+geo+email+llm"
 
   const inFlight = useRef(null);
 
-  // fetch with timeout
+  // Small helper: fetch with abort + hard timeout
   async function fetchWithTimeout(url, options = {}, ms = 25000) {
     const controller = new AbortController();
     const t = setTimeout(() => controller.abort("timeout"), ms);
@@ -56,9 +57,8 @@ export default function EnrichmentPage() {
     try {
       const sp = new URLSearchParams();
       sp.set("q", q.trim());
-      const url = `/api/enrich/search?${sp.toString()}`;
       const res = await fetchWithTimeout(
-        url,
+        `/api/enrich/search?${sp.toString()}`,
         { method: "GET", noRedirect: true, headers: { Accept: "application/json" } },
         25000
       );
@@ -67,19 +67,34 @@ export default function EnrichmentPage() {
         setErr("Your session expired. Please sign in again.");
         setRows([]);
         setCompany(null);
+        setTimings({});
+        setProvider("");
         return;
       }
 
-      const json = await res.json();
-      if (!res.ok || !json.ok) {
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
         throw new Error(json?.error || `Search failed (${res.status})`);
       }
 
-      // ✅ Fix: pull from json.data.results + json.data.summary
-      setRows(Array.isArray(json.data?.results) ? json.data.results : []);
-      setCompany(json.data?.summary?.company_guess || null);
-      setTimings(json.data?.summary?.timings || {});
-      setProvider(json.data?.summary?.provider || "");
+      // ✅ pull from the new shape
+      const data = json.data || {};
+      const summary = data.summary || {};
+
+      setRows(Array.isArray(data.results) ? data.results : []);
+      setCompany(summary.company_guess || null);
+      setTimings(summary.timings || {});
+      setProvider(summary.provider || "live");
+
+      // Optional: broadcast to the sidebar “Company” widget if it listens for this event
+      // so it can render the selected company box immediately.
+      try {
+        if (summary.company_guess) {
+          window.dispatchEvent(
+            new CustomEvent("upr:enrichCompanyGuess", { detail: summary.company_guess })
+          );
+        }
+      } catch {}
     } catch (e) {
       if (e?.name !== "AbortError") {
         setErr(e?.message || "Search failed");
@@ -93,7 +108,7 @@ export default function EnrichmentPage() {
     }
   };
 
-  // cleanup on unmount
+  // Clean up any inflight request when unmounting
   useEffect(() => {
     return () => {
       try {
@@ -104,7 +119,7 @@ export default function EnrichmentPage() {
 
   return (
     <div className="p-6">
-      {/* Header status chips */}
+      {/* Status chips */}
       <div className="mb-4 flex items-center justify-end gap-2">
         <Pill label={`Data Source: ${provider || "live"}`} ok ms={timings.provider_ms} />
         <Pill label="LLM" ok ms={timings.llm_ms} />
@@ -114,9 +129,7 @@ export default function EnrichmentPage() {
         <Pill label="Quality" ok ms={timings.quality_ms} />
       </div>
 
-      <h1 className="mb-1 text-3xl font-semibold tracking-tight text-gray-900">
-        Enrichment
-      </h1>
+      <h1 className="mb-1 text-3xl font-semibold tracking-tight text-gray-900">Enrichment</h1>
       <p className="mb-4 text-sm text-gray-500">
         Search by company name and review enriched leads.
       </p>
@@ -135,7 +148,7 @@ export default function EnrichmentPage() {
         <button
           className="rounded-xl bg-gray-900 px-4 py-2 font-medium text-white disabled:opacity-50"
           disabled={loading}
-          onClick={() => run()}
+          onClick={run}
         >
           {loading ? "Loading…" : "Enrich"}
         </button>
@@ -148,7 +161,7 @@ export default function EnrichmentPage() {
         </div>
       )}
 
-      {/* Company info */}
+      {/* Company summary from LLM guess */}
       {company && (
         <div className="mb-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
           <div>
@@ -157,6 +170,19 @@ export default function EnrichmentPage() {
           {company.domain && (
             <div>
               <span className="font-medium">Domain:</span> {company.domain}
+            </div>
+          )}
+          {company.linkedin_url && (
+            <div>
+              <span className="font-medium">LinkedIn:</span>{" "}
+              <a href={company.linkedin_url} className="underline" target="_blank" rel="noreferrer">
+                {company.linkedin_url}
+              </a>
+            </div>
+          )}
+          {company.parent && (
+            <div>
+              <span className="font-medium">Parent / Group:</span> {company.parent}
             </div>
           )}
         </div>
@@ -168,6 +194,7 @@ export default function EnrichmentPage() {
           <div className="flex items-center justify-between border-b bg-gray-50 px-3 py-2">
             <div className="text-sm text-gray-700">Candidates: {rows.length || 0}</div>
           </div>
+
           <table className="w-full">
             <thead className="bg-white">
               <tr className="text-xs uppercase text-gray-500">
@@ -198,12 +225,7 @@ export default function EnrichmentPage() {
                   </td>
                   <td className="px-3 py-2">
                     {r.linkedin_url ? (
-                      <a
-                        className="underline"
-                        href={r.linkedin_url}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
+                      <a className="underline" href={r.linkedin_url} target="_blank" rel="noreferrer">
                         LinkedIn
                       </a>
                     ) : (
@@ -217,6 +239,7 @@ export default function EnrichmentPage() {
                   <td className="px-3 py-2">{r.source || "—"}</td>
                 </tr>
               ))}
+
               {rows.length === 0 && !loading && (
                 <tr>
                   <td className="px-3 py-6 text-center text-gray-500" colSpan={8}>

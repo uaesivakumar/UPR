@@ -24,10 +24,19 @@ export default async function searchHandler(req, res) {
     parent: (req.query.parent || req.body?.parent || "").trim() || null,
   };
 
+  // Soft-success empty result if nothing to search with (keeps UI simple)
   if (!overrides.name && !overrides.domain && !overrides.linkedin_url) {
     return res.status(200).json({
       ok: true,
-      data: { results: [], summary: { provider: "live", company_guess: { name: q || "" }, quality: { score: 0.5 } } },
+      data: {
+        results: [],
+        summary: {
+          provider: "live",
+          company_guess: { name: q || "" },
+          quality: { score: 0.5, explanation: "No query provided." },
+          timings: {},
+        },
+      },
       took_ms: Date.now() - started,
     });
   }
@@ -37,7 +46,7 @@ export default async function searchHandler(req, res) {
   let candidates = [];
 
   try {
-    // 1) LLM FIRST — so we get a domain to constrain Apollo
+    // 1) LLM FIRST — get domain/name normalized up front
     let t0 = Date.now();
     const llm = await enrichWithLLM({
       name: overrides.name,
@@ -49,13 +58,25 @@ export default async function searchHandler(req, res) {
     timings.llm_ms = Date.now() - t0;
 
     companyGuess = {
-      name: overrides.name || llm?.name || llm?.company_guess?.name || q || null,
-      domain: overrides.domain || llm?.domain || llm?.company_guess?.domain || null,
-      linkedin_url: overrides.linkedin_url || llm?.linkedin_url || llm?.company_guess?.linkedin_url || null,
-      parent: overrides.parent || llm?.company_guess?.parent || null,
+      name:
+        overrides.name ??
+        llm?.name ??
+        llm?.company_guess?.name ??
+        (q || null),
+      domain:
+        overrides.domain ??
+        llm?.domain ??
+        llm?.company_guess?.domain ??
+        null,
+      linkedin_url:
+        overrides.linkedin_url ??
+        llm?.linkedin_url ??
+        llm?.company_guess?.linkedin_url ??
+        null,
+      parent: overrides.parent ?? llm?.company_guess?.parent ?? null,
     };
 
-    // 2) Apollo — use domain if we have it; otherwise name fallback
+    // 2) Apollo — prefer domain; fallback to name inside the lib
     t0 = Date.now();
     const ap = await enrichWithApollo({
       name: companyGuess.name,
@@ -65,18 +86,19 @@ export default async function searchHandler(req, res) {
     });
     timings.apollo_ms = ap?.ms ?? Date.now() - t0;
 
-    // Guardrail: if we have a domain, keep only rows that match it
-    const dom = (companyGuess.domain || "").toLowerCase();
+    // If we have a domain, keep results that match that org domain when present
+    const dom = String(companyGuess.domain || "").toLowerCase();
+    const apResults = Array.isArray(ap?.results) ? ap.results : [];
     const filtered = dom
-      ? (ap?.results || []).filter((r) => {
+      ? apResults.filter((r) => {
           const host = String(r.org_domain || r.company_domain || "").toLowerCase();
-          return host ? host === dom : true; // if Apollo didn’t include org domain, don’t over-prune
+          return host ? host === dom : true; // don't drop if Apollo omitted org domain
         })
-      : (ap?.results || []);
+      : apResults;
 
     candidates = filtered;
 
-    // 3) Geo + Email (use domain from companyGuess)
+    // 3) Geo + Email
     t0 = Date.now();
     candidates = await enrichWithGeo(candidates);
     timings.geo_ms = Date.now() - t0;
@@ -85,7 +107,7 @@ export default async function searchHandler(req, res) {
     candidates = await enrichWithEmail(candidates, companyGuess.domain || null);
     timings.email_ms = Date.now() - t0;
 
-    // 4) Quality
+    // 4) Quality score for page
     t0 = Date.now();
     const qScore = await qualityScore(companyGuess, candidates);
     timings.quality_ms = Date.now() - t0;
@@ -104,6 +126,7 @@ export default async function searchHandler(req, res) {
     });
   } catch (e) {
     console.error("[enrich/search] error", e?.stack || e);
+    // Return soft-success so the UI stays responsive and shows chips/guess
     return res.status(200).json({
       ok: true,
       data: {
