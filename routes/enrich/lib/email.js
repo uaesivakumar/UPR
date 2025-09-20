@@ -1,12 +1,13 @@
 /**
- * Email utilities:
+ * Email utilities + enrichment pipeline
  *  - inferPatternFromSamples(emails[], domain?)
  *  - applyPattern(person, domain, pattern)
- *  - applyEmailPattern(person, domain, pattern)  // alias of applyPattern
+ *  - applyEmailPattern(person, domain, pattern)
  *  - isProviderPlaceholderEmail(email)
  *  - loadPatternFromCache(domain)
  *  - savePatternToCache(domain, pattern)
- *  - verifyEmail(email)  // NeverBounce/ZeroBounce if configured, else "unknown"
+ *  - verifyEmail(email)
+ *  - enrichWithEmail(candidates[], domain?)   <-- added
  */
 
 const PATTERN_CACHE = new Map();
@@ -46,7 +47,6 @@ export function applyPattern(person, domain, pattern) {
       case "first":      return `${f}`;
       case "last":       return `${l}`;
       default:
-        // fallback heuristic: prefer first.last if both exist, else firstlast
         return f && l ? `${f}.${l}` : (f || l);
     }
   })();
@@ -77,7 +77,7 @@ export function inferPatternFromSamples(emails = [], domain = "") {
     const m = String(e || "").toLowerCase().match(/^([^@]+)@([^@]+)$/);
     if (!m) continue;
     const [, local, host] = m;
-    if (d && host !== d) continue; // prefer same domain
+    if (d && host !== d) continue;
     locals.push(local);
   }
   if (!locals.length) return "";
@@ -107,7 +107,7 @@ export function savePatternToCache(domain, pattern) {
   PATTERN_CACHE.set(k, String(pattern));
 }
 
-/** Email verification against NeverBounce or ZeroBounce (if keys exist) */
+/** Email verification */
 export async function verifyEmail(email) {
   try {
     const nb = process.env.NEVERBOUNCE_API_KEY;
@@ -119,7 +119,6 @@ export async function verifyEmail(email) {
       });
       const json = await resp.json();
       if (json && json.result) {
-        // map NB results to our schema
         const map = { valid: "valid", invalid: "invalid", catchall: "accept_all", disposable: "risky", unknown: "unknown" };
         return { status: map[json.result] || "unknown", reason: "neverbounce" };
       }
@@ -137,10 +136,51 @@ export async function verifyEmail(email) {
         return { status: map[json.status] || "unknown", reason: "zerobounce" };
       }
     }
-  } catch (e) {
+  } catch {
     return { status: "unknown", reason: "verifier_error" };
   }
   return { status: "unknown", reason: "no_verifier" };
+}
+
+/**
+ * Enrich candidates with emails (guesses + verification)
+ */
+export async function enrichWithEmail(candidates = [], domain = null) {
+  if (!Array.isArray(candidates)) return [];
+
+  // Infer a pattern from known emails
+  const knownEmails = candidates.map(c => c.email).filter(Boolean);
+  let pattern = loadPatternFromCache(domain);
+  if (!pattern && knownEmails.length) {
+    pattern = inferPatternFromSamples(knownEmails, domain);
+    savePatternToCache(domain, pattern);
+  }
+
+  const enriched = [];
+  for (const c of candidates) {
+    const out = { ...c };
+
+    // Guess if missing and we have domain
+    if (!out.email && domain) {
+      out.email = applyPattern(out, domain, pattern || "first.last");
+      out.email_status = "guessed";
+    }
+
+    // Skip placeholders
+    if (isProviderPlaceholderEmail(out.email)) {
+      out.email_status = "placeholder";
+    }
+
+    // Verify if we have an email
+    if (out.email && !out.email_status?.startsWith("valid")) {
+      const v = await verifyEmail(out.email);
+      out.email_status = v.status;
+    }
+
+    enriched.push(out);
+  }
+
+  return enriched;
 }
 
 export default {
@@ -151,4 +191,5 @@ export default {
   loadPatternFromCache,
   savePatternToCache,
   verifyEmail,
+  enrichWithEmail,
 };

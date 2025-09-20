@@ -28,7 +28,7 @@ export async function guessCompany(q, overrides = {}) {
   if (overrides.linkedin_url) out.linkedin_url = overrides.linkedin_url;
 
   // 2) If we still need, infer from q
-  const ql = q.toLowerCase();
+  const ql = String(q || "").toLowerCase();
   const tokens = ql.split(/\s+/).filter(Boolean);
 
   // simple patterns for "X from Y" / "X @ Y"
@@ -37,15 +37,15 @@ export async function guessCompany(q, overrides = {}) {
     out.name = tokens.slice(0, fromIdx).join(" ");
   }
   if (!out.name) {
-    out.name = q.trim();
+    out.name = String(q || "").trim();
   }
 
   // prefer .ae if likely UAE
   if (!out.domain) {
-    // normalize brand → domain-ish
     const brand = out.name.toLowerCase().replace(/[^a-z0-9]+/g, "");
-    // crude: if query mentions bank → try brand + .com; else prefer .ae
-    const ends = /bank|university|government|gulf|dubai|abu|sharjah/.test(ql) ? [".com", ".ae"] : [".ae", ".com"];
+    const ends = /bank|university|government|gulf|dubai|abu|sharjah/.test(ql)
+      ? [".com", ".ae"]
+      : [".ae", ".com"];
     out.domain = `${brand}${ends[0]}`;
     out.website_url = `https://${out.domain}`;
   }
@@ -55,3 +55,23 @@ export async function guessCompany(q, overrides = {}) {
 
   return out;
 }
+
+/**
+ * Wrapper to fit into enrichment pipeline
+ * Returns: { company_guess }
+ */
+export async function enrichWithLLM({ name, domain, linkedin_url, candidates }) {
+  try {
+    const q = name || domain || linkedin_url || "";
+    const guess = await guessCompany(q, { name, domain, linkedin_url });
+    return { company_guess: guess };
+  } catch (e) {
+    console.error("[llm] enrichWithLLM error", e);
+    return { company_guess: {} };
+  }
+}
+
+export default {
+  guessCompany,
+  enrichWithLLM,
+};

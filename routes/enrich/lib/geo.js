@@ -3,6 +3,7 @@
  *  - isUAE(locationLike)
  *  - emirateFromLocation(locationLike)
  *  - tagEmirate(record)  // mutates and returns record
+ *  - enrichWithGeo(records[]) // NEW
  */
 
 const EMIRATES = [
@@ -16,21 +17,21 @@ const EMIRATES = [
 ];
 
 const CITY_TO_EMIRATE = new Map([
-  ["abu dhabi","Abu Dhabi"],
-  ["al ain","Abu Dhabi"],
-  ["mussafah","Abu Dhabi"],
-  ["dubai","Dubai"],
-  ["jlt","Dubai"],
-  ["jumeirah","Dubai"],
-  ["business bay","Dubai"],
-  ["internet city","Dubai"],
-  ["sharjah","Sharjah"],
-  ["ajman","Ajman"],
-  ["fujairah","Fujairah"],
-  ["rak","Ras Al Khaimah"],
-  ["ras al khaimah","Ras Al Khaimah"],
-  ["umm al quwain","Umm Al Quwain"],
-  ["uaq","Umm Al Quwain"],
+  ["abu dhabi", "Abu Dhabi"],
+  ["al ain", "Abu Dhabi"],
+  ["mussafah", "Abu Dhabi"],
+  ["dubai", "Dubai"],
+  ["jlt", "Dubai"],
+  ["jumeirah", "Dubai"],
+  ["business bay", "Dubai"],
+  ["internet city", "Dubai"],
+  ["sharjah", "Sharjah"],
+  ["ajman", "Ajman"],
+  ["fujairah", "Fujairah"],
+  ["rak", "Ras Al Khaimah"],
+  ["ras al khaimah", "Ras Al Khaimah"],
+  ["umm al quwain", "Umm Al Quwain"],
+  ["uaq", "Umm Al Quwain"],
 ]);
 
 function norm(s) {
@@ -65,10 +66,25 @@ export function emirateFromLocation(loc) {
 
 export function tagEmirate(record) {
   if (!record || typeof record !== "object") return record;
-  const loc = record.location || [record.city, record.region, record.state, record.country].filter(Boolean).join(", ");
+  const loc = record.location || [record.city, record.region, record.state, record.country]
+    .filter(Boolean)
+    .join(", ");
   const e = emirateFromLocation(loc);
   if (e) record.emirate = e;
   return record;
 }
 
-export default { isUAE, emirateFromLocation, tagEmirate };
+/**
+ * Apply emirate tagging to all candidates
+ */
+export async function enrichWithGeo(records = []) {
+  if (!Array.isArray(records)) return [];
+  return records.map((r) => tagEmirate({ ...r }));
+}
+
+export default {
+  isUAE,
+  emirateFromLocation,
+  tagEmirate,
+  enrichWithGeo,
+};

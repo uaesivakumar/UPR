@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-20T12:32:37Z",
-  "generated_human": "Sat, 20 Sep 2025 12:32:37 GMT",
+  "generated": "2025-09-20T12:37:48Z",
+  "generated_human": "Sat, 20 Sep 2025 12:37:48 GMT",
   "branch": "main",
-  "commit": "99ae97a",
+  "commit": "b2977b4",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -356,9 +356,9 @@
     },
     {
       "path": "routes/enrich/lib/email.js",
-      "size": 5228,
-      "mtime": "2025-09-19T17:42:26.091Z",
-      "sha256": "0b8e9a517b56014cb1ae8ed7cb6cee9ffc70f7be765f894db8a7b4abc9f227a6",
+      "size": 6157,
+      "mtime": "2025-09-20T12:35:29.945Z",
+      "sha256": "8d8550f8b1f86de471dcfa58400e20d82b779b93c2745de3c2db9d9454a34fbc",
       "imports": [],
       "envs": [
         "NEVERBOUNCE_API_KEY",
@@ -366,32 +366,32 @@
       ],
       "appUses": [],
       "endpoints": [],
-      "head": "/**\n * Email utilities:\n *  - inferPatternFromSamples(emails[], domain?)\n *  - applyPattern(person, domain, pattern)\n *  - applyEmailPattern(person, domain, pattern)  // alias of applyPattern\n *  - isProviderPlaceholderEmail(email)\n *  - loadPatternFromCache(domain)\n *  - savePatternToCache(domain, pattern)\n *  - verifyEmail(email)  // NeverBounce/ZeroBounce if configured, else \"unknown\"\n */\n\nconst PATTERN_CACHE = new Map();\n\n/** very small name tokenizer */\nfunction splitName(obj) {\n  const raw =\n    obj?.name ||\n    [obj?.first_name, obj?.last_name].filter(Boolean).join(\" \") ||\n    \"\";\n  const s = String(raw).trim().replace(/\\s+/g, \" \");\n  if (!s) return { first: \"\", last: \"\" };\n  const parts = s.split(\" \");\n  const first = (obj?.first_name || parts[0] || \"\").toLowerCase();\n  const last = (obj?.last_name || parts.slice(-1)[0] || \"\").toLowerCase();\n  return { first, last };\n}\n\n/** apply a guessed pattern to produce an email string */\nexport function applyPattern(person, domain, pattern) {\n  const { first, last } = splitName(person);\n  const f = first.replace(/[^a-z]/g, \"\");\n  const l = last.replace(/[^a-z]/g, \"\");\n  const fl = f?.[0] || \"\";\n  const ll = l?.[0] || \"\";\n  const d = String(domain || \"\").toLowerCase().replace(/^https?:\\/\\//, \"\").replace(/\\/.*/, \"\");\n\n  if (!d || (!f && !l)) return \"\";\n\n  const local = (() => {\n    switch (String(pattern || \"\").toLowerCase()) {",
-      "tail": "      url.searchParams.set(\"api_key\", zb);\n      url.searchParams.set(\"email\", email);\n      const resp = await fetch(url.toString());\n      const json = await resp.json();\n      if (json && json.status) {\n        const map = { valid: \"valid\", invalid: \"invalid\", catch_all: \"accept_all\", unknown: \"unknown\" };\n        return { status: map[json.status] || \"unknown\", reason: \"zerobounce\" };\n      }\n    }\n  } catch (e) {\n    return { status: \"unknown\", reason: \"verifier_error\" };\n  }\n  return { status: \"unknown\", reason: \"no_verifier\" };\n}\n\nexport default {\n  inferPatternFromSamples,\n  applyPattern,\n  applyEmailPattern,\n  isProviderPlaceholderEmail,\n  loadPatternFromCache,\n  savePatternToCache,\n  verifyEmail,\n};\n"
+      "head": "/**\n * Email utilities + enrichment pipeline\n *  - inferPatternFromSamples(emails[], domain?)\n *  - applyPattern(person, domain, pattern)\n *  - applyEmailPattern(person, domain, pattern)\n *  - isProviderPlaceholderEmail(email)\n *  - loadPatternFromCache(domain)\n *  - savePatternToCache(domain, pattern)\n *  - verifyEmail(email)\n *  - enrichWithEmail(candidates[], domain?)   <-- added\n */\n\nconst PATTERN_CACHE = new Map();\n\n/** very small name tokenizer */\nfunction splitName(obj) {\n  const raw =\n    obj?.name ||\n    [obj?.first_name, obj?.last_name].filter(Boolean).join(\" \") ||\n    \"\";\n  const s = String(raw).trim().replace(/\\s+/g, \" \");\n  if (!s) return { first: \"\", last: \"\" };\n  const parts = s.split(\" \");\n  const first = (obj?.first_name || parts[0] || \"\").toLowerCase();\n  const last = (obj?.last_name || parts.slice(-1)[0] || \"\").toLowerCase();\n  return { first, last };\n}\n\n/** apply a guessed pattern to produce an email string */\nexport function applyPattern(person, domain, pattern) {\n  const { first, last } = splitName(person);\n  const f = first.replace(/[^a-z]/g, \"\");\n  const l = last.replace(/[^a-z]/g, \"\");\n  const fl = f?.[0] || \"\";\n  const ll = l?.[0] || \"\";\n  const d = String(domain || \"\").toLowerCase().replace(/^https?:\\/\\//, \"\").replace(/\\/.*/, \"\");\n\n  if (!d || (!f && !l)) return \"\";\n\n  const local = (() => {",
+      "tail": "    }\n\n    // Verify if we have an email\n    if (out.email && !out.email_status?.startsWith(\"valid\")) {\n      const v = await verifyEmail(out.email);\n      out.email_status = v.status;\n    }\n\n    enriched.push(out);\n  }\n\n  return enriched;\n}\n\nexport default {\n  inferPatternFromSamples,\n  applyPattern,\n  applyEmailPattern,\n  isProviderPlaceholderEmail,\n  loadPatternFromCache,\n  savePatternToCache,\n  verifyEmail,\n  enrichWithEmail,\n};\n"
     },
     {
       "path": "routes/enrich/lib/geo.js",
-      "size": 2101,
-      "mtime": "2025-09-19T17:42:26.100Z",
-      "sha256": "23d1ae1fd07d06d485a48f53a1606816dd10d8cb8f96a66438fb26ff8632f129",
+      "size": 2387,
+      "mtime": "2025-09-20T12:36:44.609Z",
+      "sha256": "966c9acc4fbb472efff80f097eaafeb4ccd94a8fc7c4f5fbc63e75d088876e74",
       "imports": [],
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "/**\n * GEO helpers for UAE:\n *  - isUAE(locationLike)\n *  - emirateFromLocation(locationLike)\n *  - tagEmirate(record)  // mutates and returns record\n */\n\nconst EMIRATES = [\n  \"Abu Dhabi\",\n  \"Dubai\",\n  \"Sharjah\",\n  \"Ajman\",\n  \"Fujairah\",\n  \"Ras Al Khaimah\",\n  \"Umm Al Quwain\",\n];\n\nconst CITY_TO_EMIRATE = new Map([\n  [\"abu dhabi\",\"Abu Dhabi\"],\n  [\"al ain\",\"Abu Dhabi\"],\n  [\"mussafah\",\"Abu Dhabi\"],\n  [\"dubai\",\"Dubai\"],\n  [\"jlt\",\"Dubai\"],\n  [\"jumeirah\",\"Dubai\"],\n  [\"business bay\",\"Dubai\"],\n  [\"internet city\",\"Dubai\"],\n  [\"sharjah\",\"Sharjah\"],\n  [\"ajman\",\"Ajman\"],\n  [\"fujairah\",\"Fujairah\"],\n  [\"rak\",\"Ras Al Khaimah\"],\n  [\"ras al khaimah\",\"Ras Al Khaimah\"],\n  [\"umm al quwain\",\"Umm Al Quwain\"],\n  [\"uaq\",\"Umm Al Quwain\"],\n]);\n\nfunction norm(s) {\n  return String(s || \"\").toLowerCase().replace(/\\s+/g, \" \").trim();\n}\n\nexport function isUAE(loc) {",
-      "tail": "}\n\nexport function emirateFromLocation(loc) {\n  const s = norm(\n    typeof loc === \"string\"\n      ? loc\n      : [loc?.city, loc?.state, loc?.country, loc?.location].filter(Boolean).join(\", \")\n  );\n  if (!s) return \"\";\n  for (const e of EMIRATES) if (s.includes(e.toLowerCase())) return e;\n  for (const [k, v] of CITY_TO_EMIRATE.entries()) if (s.includes(k)) return v;\n  if (/(united arab emirates|u\\.?a\\.?e\\.?|\\buae\\b)/i.test(s)) return \"United Arab Emirates\";\n  return \"\";\n}\n\nexport function tagEmirate(record) {\n  if (!record || typeof record !== \"object\") return record;\n  const loc = record.location || [record.city, record.region, record.state, record.country].filter(Boolean).join(\", \");\n  const e = emirateFromLocation(loc);\n  if (e) record.emirate = e;\n  return record;\n}\n\nexport default { isUAE, emirateFromLocation, tagEmirate };\n"
+      "head": "/**\n * GEO helpers for UAE:\n *  - isUAE(locationLike)\n *  - emirateFromLocation(locationLike)\n *  - tagEmirate(record)  // mutates and returns record\n *  - enrichWithGeo(records[]) // NEW\n */\n\nconst EMIRATES = [\n  \"Abu Dhabi\",\n  \"Dubai\",\n  \"Sharjah\",\n  \"Ajman\",\n  \"Fujairah\",\n  \"Ras Al Khaimah\",\n  \"Umm Al Quwain\",\n];\n\nconst CITY_TO_EMIRATE = new Map([\n  [\"abu dhabi\", \"Abu Dhabi\"],\n  [\"al ain\", \"Abu Dhabi\"],\n  [\"mussafah\", \"Abu Dhabi\"],\n  [\"dubai\", \"Dubai\"],\n  [\"jlt\", \"Dubai\"],\n  [\"jumeirah\", \"Dubai\"],\n  [\"business bay\", \"Dubai\"],\n  [\"internet city\", \"Dubai\"],\n  [\"sharjah\", \"Sharjah\"],\n  [\"ajman\", \"Ajman\"],\n  [\"fujairah\", \"Fujairah\"],\n  [\"rak\", \"Ras Al Khaimah\"],\n  [\"ras al khaimah\", \"Ras Al Khaimah\"],\n  [\"umm al quwain\", \"Umm Al Quwain\"],\n  [\"uaq\", \"Umm Al Quwain\"],\n]);\n\nfunction norm(s) {\n  return String(s || \"\").toLowerCase().replace(/\\s+/g, \" \").trim();\n}\n",
+      "tail": "export function tagEmirate(record) {\n  if (!record || typeof record !== \"object\") return record;\n  const loc = record.location || [record.city, record.region, record.state, record.country]\n    .filter(Boolean)\n    .join(\", \");\n  const e = emirateFromLocation(loc);\n  if (e) record.emirate = e;\n  return record;\n}\n\n/**\n * Apply emirate tagging to all candidates\n */\nexport async function enrichWithGeo(records = []) {\n  if (!Array.isArray(records)) return [];\n  return records.map((r) => tagEmirate({ ...r }));\n}\n\nexport default {\n  isUAE,\n  emirateFromLocation,\n  tagEmirate,\n  enrichWithGeo,\n};\n"
     },
     {
       "path": "routes/enrich/lib/llm.js",
-      "size": 1784,
-      "mtime": "2025-09-19T16:33:09.131Z",
-      "sha256": "b7a270af2572825ec4715c38f0383dd460711f3a0e48ada50f660cc7545cbe46",
+      "size": 2206,
+      "mtime": "2025-09-20T12:37:27.772Z",
+      "sha256": "03a4ffda25992e5e03e8f658b57e09337be06f4256271edcb7db9929b192347b",
       "imports": [],
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "/**\n * Very lightweight heuristics-based guesser with override support.\n * If overrides are passed (name/domain/linkedin_url), they win.\n * Otherwise we infer from the text, preferring .ae domains for UAE context\n * and recognizing simple \"X from Y\" subsidiary language.\n */\nexport async function guessCompany(q, overrides = {}) {\n  const out = {\n    name: null,\n    domain: null,\n    website_url: null,\n    linkedin_url: null,\n    hq: \"United Arab Emirates\",\n    industry: null,\n    size: null,\n    synonyms: [],\n    mode: \"LLM\",\n    confidence: 0.7,\n  };\n\n  // 1) Overrides first\n  if (overrides.name) out.name = overrides.name;\n  if (overrides.domain) {\n    const d = overrides.domain.toLowerCase().replace(/^https?:\\/\\//, \"\").replace(/\\/.*$/, \"\");\n    out.domain = d;\n    out.website_url = `https://${d}`;\n  }\n  if (overrides.linkedin_url) out.linkedin_url = overrides.linkedin_url;\n\n  // 2) If we still need, infer from q\n  const ql = q.toLowerCase();\n  const tokens = ql.split(/\\s+/).filter(Boolean);\n\n  // simple patterns for \"X from Y\" / \"X @ Y\"\n  const fromIdx = tokens.indexOf(\"from\");\n  if (!out.name && fromIdx > 0) {\n    out.name = tokens.slice(0, fromIdx).join(\" \");\n  }\n  if (!out.name) {\n    out.name = q.trim();",
-      "tail": "  // simple patterns for \"X from Y\" / \"X @ Y\"\n  const fromIdx = tokens.indexOf(\"from\");\n  if (!out.name && fromIdx > 0) {\n    out.name = tokens.slice(0, fromIdx).join(\" \");\n  }\n  if (!out.name) {\n    out.name = q.trim();\n  }\n\n  // prefer .ae if likely UAE\n  if (!out.domain) {\n    // normalize brand → domain-ish\n    const brand = out.name.toLowerCase().replace(/[^a-z0-9]+/g, \"\");\n    // crude: if query mentions bank → try brand + .com; else prefer .ae\n    const ends = /bank|university|government|gulf|dubai|abu|sharjah/.test(ql) ? [\".com\", \".ae\"] : [\".ae\", \".com\"];\n    out.domain = `${brand}${ends[0]}`;\n    out.website_url = `https://${out.domain}`;\n  }\n\n  // record parent for reference\n  if (overrides.parent) out.synonyms.push(overrides.parent);\n\n  return out;\n}\n"
+      "head": "/**\n * Very lightweight heuristics-based guesser with override support.\n * If overrides are passed (name/domain/linkedin_url), they win.\n * Otherwise we infer from the text, preferring .ae domains for UAE context\n * and recognizing simple \"X from Y\" subsidiary language.\n */\nexport async function guessCompany(q, overrides = {}) {\n  const out = {\n    name: null,\n    domain: null,\n    website_url: null,\n    linkedin_url: null,\n    hq: \"United Arab Emirates\",\n    industry: null,\n    size: null,\n    synonyms: [],\n    mode: \"LLM\",\n    confidence: 0.7,\n  };\n\n  // 1) Overrides first\n  if (overrides.name) out.name = overrides.name;\n  if (overrides.domain) {\n    const d = overrides.domain.toLowerCase().replace(/^https?:\\/\\//, \"\").replace(/\\/.*$/, \"\");\n    out.domain = d;\n    out.website_url = `https://${d}`;\n  }\n  if (overrides.linkedin_url) out.linkedin_url = overrides.linkedin_url;\n\n  // 2) If we still need, infer from q\n  const ql = String(q || \"\").toLowerCase();\n  const tokens = ql.split(/\\s+/).filter(Boolean);\n\n  // simple patterns for \"X from Y\" / \"X @ Y\"\n  const fromIdx = tokens.indexOf(\"from\");\n  if (!out.name && fromIdx > 0) {\n    out.name = tokens.slice(0, fromIdx).join(\" \");\n  }\n  if (!out.name) {\n    out.name = String(q || \"\").trim();",
+      "tail": "  if (overrides.parent) out.synonyms.push(overrides.parent);\n\n  return out;\n}\n\n/**\n * Wrapper to fit into enrichment pipeline\n * Returns: { company_guess }\n */\nexport async function enrichWithLLM({ name, domain, linkedin_url, candidates }) {\n  try {\n    const q = name || domain || linkedin_url || \"\";\n    const guess = await guessCompany(q, { name, domain, linkedin_url });\n    return { company_guess: guess };\n  } catch (e) {\n    console.error(\"[llm] enrichWithLLM error\", e);\n    return { company_guess: {} };\n  }\n}\n\nexport default {\n  guessCompany,\n  enrichWithLLM,\n};\n"
     },
     {
       "path": "routes/enrich/lib/quality.js",
