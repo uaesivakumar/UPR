@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-20T11:05:33Z",
-  "generated_human": "Sat, 20 Sep 2025 11:05:33 GMT",
+  "generated": "2025-09-20T11:11:50Z",
+  "generated_human": "Sat, 20 Sep 2025 11:11:50 GMT",
   "branch": "main",
-  "commit": "53eee66",
+  "commit": "b147d96",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -131,9 +131,9 @@
     },
     {
       "path": "dashboard/src/pages/EnrichmentPage.jsx",
-      "size": 16488,
-      "mtime": "2025-09-20T10:42:02.624Z",
-      "sha256": "406c98ffe81e9d3f9e03027741e28a883bbf015d26fe3ee94fb581742e76c15e",
+      "size": 18132,
+      "mtime": "2025-09-20T11:10:32.000Z",
+      "sha256": "b4ac2f03d5fac838797630d774c6a3706cf8eb2f342aa6d94dde03f02e2751e1",
       "imports": [
         "import { useEffect, useMemo, useRef, useState } from \"react\";",
         "import { authFetch } from \"../utils/auth\";"
@@ -141,7 +141,7 @@
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "// dashboard/src/pages/EnrichmentPage.jsx\nimport { useEffect, useMemo, useRef, useState } from \"react\";\nimport { authFetch } from \"../utils/auth\";\n\nfunction Pill({ ok = true, label, ms }) {\n  return (\n    <span\n      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${\n        ok\n          ? \"border-green-200 bg-green-50 text-green-700\"\n          : \"border-gray-200 bg-gray-50 text-gray-600\"\n      }`}\n    >\n      <span className={`h-2 w-2 rounded-full ${ok ? \"bg-green-500\" : \"bg-gray-400\"}`} />\n      {label}\n      {typeof ms === \"number\" ? ` • ${ms}ms` : \"\"}\n    </span>\n  );\n}\n\nfunction Field({ label, children }) {\n  return (\n    <div>\n      <div className=\"mb-1 text-sm text-gray-700\">{label}</div>\n      {children}\n    </div>\n  );\n}\n\nexport default function EnrichmentPage() {\n  const [q, setQ] = useState(\"\");\n  const [rows, setRows] = useState([]);\n  const [err, setErr] = useState(\"\");\n  const [loading, setLoading] = useState(false);\n  const [summary, setSummary] = useState(null);\n\n  const [dbOk, setDbOk] = useState(true);\n  const [llmOk, setLlmOk] = useState(true);\n  const [dataSource, setDataSource] = useState(\"live\");\n  const [statusTimings, setStatusTimings] = useState({});",
+      "head": "// dashboard/src/pages/EnrichmentPage.jsx\nimport { useEffect, useMemo, useRef, useState } from \"react\";\nimport { authFetch } from \"../utils/auth\";\n\nfunction Pill({ ok = true, label, ms }) {\n  return (\n    <span\n      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${\n        ok\n          ? \"border-green-200 bg-green-50 text-green-700\"\n          : \"border-gray-200 bg-gray-50 text-gray-600\"\n      }`}\n    >\n      <span className={`h-2 w-2 rounded-full ${ok ? \"bg-green-500\" : \"bg-gray-400\"}`} />\n      {label}\n      {typeof ms === \"number\" ? ` • ${ms}ms` : \"\"}\n    </span>\n  );\n}\n\nfunction Field({ label, children }) {\n  return (\n    <div>\n      <div className=\"mb-1 text-sm text-gray-700\">{label}</div>\n      {children}\n    </div>\n  );\n}\n\nexport default function EnrichmentPage() {\n  const [q, setQ] = useState(\"\");\n  const [rows, setRows] = useState([]);\n  const [err, setErr] = useState(\"\");\n  const [loading, setLoading] = useState(false);\n  const [summary, setSummary] = useState(null); // timings, provider, company_guess, quality\n\n  // status chips (optional)\n  const [dbOk, setDbOk] = useState(true);\n  const [llmOk, setLlmOk] = useState(true);\n  const [dataSource, setDataSource] = useState(\"live\");",
       "tail": "                  Cancel\n                </button>\n                <button\n                  className=\"rounded bg-gray-900 px-4 py-2 font-medium text-white\"\n                  onClick={() => {\n                    setFixOpen(false);\n                    run({\n                      name: fixName,\n                      domain: fixDomain,\n                      linkedin_url: fixLinkedIn,\n                      parent: fixParent,\n                    });\n                  }}\n                >\n                  Apply &amp; Re-run\n                </button>\n              </div>\n            </div>\n          </div>\n        </div>\n      )}\n    </div>\n  );\n}\n"
     },
     {

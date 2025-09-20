@@ -32,13 +32,14 @@ export default function EnrichmentPage() {
   const [rows, setRows] = useState([]);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
-  const [summary, setSummary] = useState(null);
+  const [summary, setSummary] = useState(null); // timings, provider, company_guess, quality
 
+  // status chips (optional)
   const [dbOk, setDbOk] = useState(true);
   const [llmOk, setLlmOk] = useState(true);
   const [dataSource, setDataSource] = useState("live");
-  const [statusTimings, setStatusTimings] = useState({});
 
+  // disambiguation modal state
   const [fixOpen, setFixOpen] = useState(false);
   const [fixName, setFixName] = useState("");
   const [fixDomain, setFixDomain] = useState("");
@@ -46,16 +47,17 @@ export default function EnrichmentPage() {
   const [fixParent, setFixParent] = useState("");
 
   const [pickedCompanyId, setPickedCompanyId] = useState("");
-  const [picked, setPicked] = useState({});
+  const [picked, setPicked] = useState({}); // idx -> true
   const pickedIdxs = useMemo(
     () => Object.keys(picked).filter((k) => picked[k]).map((n) => Number(n)),
     [picked]
   );
 
-  const inFlight = useRef(null);
+  const inFlight = useRef(null); // AbortController for current request
 
   const companyGuess = summary?.company_guess;
 
+  // ----- Fetch with abort + hard timeout so UI never stays stuck -----
   async function fetchWithTimeout(url, options = {}, ms = 25000) {
     const controller = new AbortController();
     const t = setTimeout(() => controller.abort("timeout"), ms);
@@ -71,28 +73,21 @@ export default function EnrichmentPage() {
     }
   }
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await authFetch("/api/enrich/status", {
-          method: "GET",
-          noRedirect: true,
-          headers: { Accept: "application/json" },
-        });
-        if (res.status === 401) return;
-        const j = await res.json().catch(() => ({}));
-        if (!cancelled && j?.ok) {
-          setDbOk(!!j.data?.db_ok);
-          setLlmOk(!!j.data?.llm_ok);
-          setDataSource(j.data?.data_source || "live");
-        }
-      } catch {}
-    })();
-    return () => {
-      cancelled = true;
+  // Normalize a 404/not_found into an empty successful payload
+  function asEmptyOk(queryStr) {
+    return {
+      ok: true,
+      data: {
+        results: [],
+        summary: {
+          provider: "live",
+          company_guess: queryStr ? { name: queryStr } : undefined,
+          quality: { score: 0.5, explanation: "No matches found." },
+          timings: {},
+        },
+      },
     };
-  }, []);
+  }
 
   const run = async (overrides = {}) => {
     if (!q.trim() && !overrides.name && !overrides.domain && !overrides.linkedin_url) {
@@ -103,9 +98,12 @@ export default function EnrichmentPage() {
     setLoading(true);
     setErr("");
 
+    // Cancel any prior request
     try {
       if (inFlight.current) inFlight.current.abort("new-search");
     } catch {}
+
+    const queryStr = (overrides.name || q || "").trim();
 
     try {
       const sp = new URLSearchParams();
@@ -119,14 +117,15 @@ export default function EnrichmentPage() {
       if (overrides.linkedin_url) sp.set("linkedin_url", overrides.linkedin_url.trim());
       if (overrides.parent) sp.set("parent", overrides.parent.trim());
 
-      const getUrl = `/api/enrich/search?${sp.toString()}`;
-      console.log("[Enrichment] GET", getUrl);
+      const url = `/api/enrich/search?${sp.toString()}`;
+      console.log("[Enrichment] GET", url);
       let res = await fetchWithTimeout(
-        getUrl,
+        url,
         { method: "GET", noRedirect: true, headers: { Accept: "application/json" } },
         25000
       );
 
+      // Session expired? show the banner and stop.
       if (res.status === 401) {
         setErr("Your session seems to have expired. Please sign in again.");
         setRows([]);
@@ -134,17 +133,28 @@ export default function EnrichmentPage() {
         return;
       }
 
-      let json = await res.json().catch(() => ({}));
+      let json = null;
+      try {
+        json = await res.json();
+      } catch (e) {
+        json = null;
+      }
 
-      const emptyOk =
+      // Treat 404/not_found as "no results" (not a user-facing error)
+      if (res.status === 404 || json?.error === "not_found") {
+        json = asEmptyOk(queryStr);
+      }
+
+      // If GET returned ok but empty, try POST fallback if you want server-side expansion.
+      const getWasEmptyOk =
         res.ok &&
         json?.ok &&
         json?.data &&
         Array.isArray(json.data.results) &&
         json.data.results.length === 0;
 
-      if (emptyOk) {
-        const postBody = {
+      if (getWasEmptyOk) {
+        const body = {
           q: q.trim(),
           name: overrides.name || undefined,
           domain: overrides.domain
@@ -153,18 +163,36 @@ export default function EnrichmentPage() {
           linkedin_url: overrides.linkedin_url || undefined,
           parent: overrides.parent || undefined,
         };
-        console.log("[Enrichment] POST /api/enrich/search (fallback)", postBody);
+
+        console.log("[Enrichment] POST /api/enrich/search (fallback body)", body);
         res = await fetchWithTimeout(
           "/api/enrich/search",
           {
             method: "POST",
             noRedirect: true,
             headers: { "Content-Type": "application/json", Accept: "application/json" },
-            body: JSON.stringify(postBody),
+            body: JSON.stringify(body),
           },
           25000
         );
-        json = await res.json().catch(() => ({}));
+
+        // 401 again?
+        if (res.status === 401) {
+          setErr("Your session seems to have expired. Please sign in again.");
+          setRows([]);
+          setSummary(null);
+          return;
+        }
+
+        try {
+          json = await res.json();
+        } catch {
+          json = null;
+        }
+
+        if (res.status === 404 || json?.error === "not_found") {
+          json = asEmptyOk(queryStr);
+        }
       }
 
       if (!res.ok || !json?.ok) {
@@ -175,25 +203,31 @@ export default function EnrichmentPage() {
       setRows(Array.isArray(data.results) ? data.results : []);
       setSummary(data.summary || null);
 
+      // seed fix form with what we got
       const g = data.summary?.company_guess || {};
       setFixName(g.name || "");
       setFixDomain(g.domain || "");
       setFixLinkedIn(g.linkedin_url || "");
       setFixParent("");
     } catch (e) {
-      if (e?.name === "AbortError") return;
+      if (e?.name === "AbortError") {
+        // silently ignore, a new search started
+        return;
+      }
       setErr(e?.message || "Search failed");
       setRows([]);
-      setSummary(null);
+      setSummary(asEmptyOk(queryStr).data.summary);
     } finally {
       setLoading(false);
     }
   };
 
+  // listen to company selection from sidebar/companies page
   useEffect(() => {
     const useNow = (e) => {
       const c = e?.detail;
       if (!c) return;
+      // auto-fill domain override and re-run search so emails use the right pattern
       setFixDomain(c.domain || "");
       run({ domain: c.domain, name: c.name, linkedin_url: c.linkedin_url });
     };
@@ -202,6 +236,27 @@ export default function EnrichmentPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q]);
 
+  // chip/status: optional
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await authFetch("/api/enrich/status", {
+          method: "GET",
+          noRedirect: true,
+          headers: { Accept: "application/json" },
+        });
+        if (!res.ok) return;
+        const j = await res.json().catch(() => ({}));
+        if (j?.ok) {
+          setDbOk(!!j.data?.db_ok);
+          setLlmOk(!!j.data?.llm_ok);
+          setDataSource(j.data?.data_source || "live");
+        }
+      } catch {}
+    })();
+  }, []);
+
+  // clean up on unmount
   useEffect(() => {
     return () => {
       try {
@@ -212,7 +267,7 @@ export default function EnrichmentPage() {
 
   const addToHR = async (companyId, selectedIdxs) => {
     if (!companyId) return;
-    const toSave = selectedIdxs.length ? selectedIdxs.map((i) => rows[i]) : null;
+    const toSave = selectedIdxs.length ? selectedIdxs.map((i) => rows[i]) : null; // backend will auto-pick if null
 
     const body = toSave
       ? { company_id: companyId, contacts: toSave }
@@ -224,10 +279,7 @@ export default function EnrichmentPage() {
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify(body),
     });
-
-    if (res.status === 401) {
-      throw new Error("Your session seems to have expired. Please sign in again.");
-    }
+    if (res.status === 401) throw new Error("Your session seems to have expired. Please sign in again.");
     const json = await res.json().catch(() => ({}));
     if (!res.ok || !json.ok) throw new Error(json.error || "Save failed");
     return json;
@@ -238,8 +290,8 @@ export default function EnrichmentPage() {
       {/* Header status chips (always on) */}
       <div className="mb-4 flex items-center justify-end gap-2">
         <Pill label={`Data Source: ${dataSource || "live"}`} ok />
-        <Pill label="DB" ok={!!dbOk} ms={statusTimings?.db_ms} />
-        <Pill label="LLM" ok={!!llmOk} ms={statusTimings?.llm_ms} />
+        <Pill label="DB" ok={!!dbOk} />
+        <Pill label="LLM" ok={!!llmOk} />
       </div>
 
       <h1 className="mb-1 text-3xl font-semibold tracking-tight text-gray-900">
@@ -307,8 +359,8 @@ export default function EnrichmentPage() {
                 onChange={(e) => setPickedCompanyId(e.target.value)}
               >
                 <option value="">— Choose company —</option>
-                {companyGuess?.name && (
-                  <option value="__guess__">Use guessed: {companyGuess.name}</option>
+                {summary?.company_guess?.name && (
+                  <option value="__guess__">Use guessed: {summary.company_guess.name}</option>
                 )}
               </select>
               <button

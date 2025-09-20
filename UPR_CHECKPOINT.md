@@ -1,8 +1,8 @@
 # UPR — Project Checkpoint (auto)
 
-**Generated:** 2025-09-20T11:05:33Z  
+**Generated:** 2025-09-20T11:11:50Z  
 **Branch:** main  
-**Commit:** 53eee66
+**Commit:** b147d96
 **Package:** upr-dashboard
 
 ---
@@ -17,7 +17,7 @@
 <details><summary>Click to expand</summary>
 
 ```
-# Generated: 2025-09-20T11:05:32Z
+# Generated: 2025-09-20T11:11:50Z
 .DS_Store
 .dockerignore
 .githooks/pre-commit
@@ -100,7 +100,6 @@ scripts/seed-leads.js
 server.js
 server/config.js
 server/db.js
-server/index.js
 server/middleware/authAny.js
 server/middleware/requireSession.js
 server/routes/auth.js
