@@ -1,14 +1,33 @@
 // dashboard/src/utils/auth.ts
+//
+// Hardened auth utilities for cookie + bearer flows.
+// - Always send credentials (cookies) and Bearer (if stored)
+// - On 401, verify once and RETRY the original request
+// - If still unauthorized, logout -> /login
+// - Keeps your existing API (getToken/setToken/clearToken, getAuthHeader, authFetch, loginWithPassword, verifyToken, logout)
+
 const TOKEN_KEY = "upr_admin_jwt";
 
+/* ---------------------------- token helpers ---------------------------- */
+
 export function getToken(): string | null {
-  try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
 }
+
 export function setToken(t: string): void {
-  try { localStorage.setItem(TOKEN_KEY, t); } catch {}
+  try {
+    localStorage.setItem(TOKEN_KEY, t);
+  } catch {}
 }
+
 export function clearToken(): void {
-  try { localStorage.removeItem(TOKEN_KEY); } catch {}
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+  } catch {}
 }
 
 export function getAuthHeader(): Record<string, string> {
@@ -16,59 +35,135 @@ export function getAuthHeader(): Record<string, string> {
   return t ? { Authorization: `Bearer ${t}` } : {};
 }
 
+/* ------------------------------ verify ------------------------------- */
+
+/** Server-side verify that accepts cookie and/or bearer. */
+export async function verifySession(): Promise<boolean> {
+  try {
+    const token = getToken();
+    const res = await fetch("/api/auth/verify", {
+      method: "GET",
+      credentials: "include", // send HttpOnly cookie if present
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      cache: "no-store",
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Backward-compatible alias (your code may already import verifyToken). */
+export async function verifyToken(): Promise<boolean> {
+  return verifySession();
+}
+
+/* ------------------------------ logout ------------------------------- */
+
+export async function logout(): Promise<void> {
+  try {
+    // If your server exposes a logout endpoint that clears the cookie:
+    await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+  } catch {
+    // ignore
+  } finally {
+    clearToken();
+    if (typeof window !== "undefined") window.location.replace("/login");
+  }
+}
+
+/* ------------------------------ authFetch ---------------------------- */
+
 /**
- * authFetch with optional noRedirect mode (so /login doesn't loop).
- * If opts.noRedirect === true, a 401 is returned to the caller without redirecting.
+ * authFetch
+ * - Includes cookies and Bearer header
+ * - On 401: verify once and retry the original request
+ * - If opts.noRedirect === true, do not logout/redirect; return the 401 to the caller (useful on /login)
  */
 export async function authFetch(
   input: RequestInfo | URL,
   init: RequestInit = {},
   opts?: { noRedirect?: boolean }
 ): Promise<Response> {
+  const token = getToken();
+
+  // Build base options (merge headers but do not mutate caller's object)
   const headers = new Headers(init.headers || {});
-  const auth = getAuthHeader();
-  for (const [k, v] of Object.entries(auth)) headers.set(k, v);
+  if (token && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
 
-  const res = await fetch(input, { ...init, headers });
+  const baseOpts: RequestInit = {
+    credentials: "include",
+    cache: init.cache || "no-store",
+    ...init,
+    headers,
+  };
 
+  // First attempt
+  let res = await fetch(input, baseOpts);
+  if (res.status !== 401) return res;
+
+  // If the caller wants to handle the 401 (e.g. Login page), just return it.
+  if (opts?.noRedirect) return res;
+
+  // Verify once
+  const ok = await verifySession();
+  if (!ok) {
+    await logout();
+    throw new Error("unauthorized");
+  }
+
+  // Retry once after verify
+  res = await fetch(input, baseOpts);
   if (res.status === 401) {
-    // Don't hard-redirect if caller asked not to (used by Login page).
-    if (opts?.noRedirect) return res;
-    try { clearToken(); } finally { if (typeof window !== "undefined") window.location.href = "/login"; }
-    throw new Error("Unauthorized");
+    await logout();
+    throw new Error("unauthorized");
   }
   return res;
 }
 
-/** Username/password login -> {ok, token} */
-export async function loginWithPassword(username: string, password: string): Promise<{ ok: boolean; token?: string; error?: string }> {
+/* ------------------------------- login ------------------------------- */
+
+export interface LoginResult {
+  ok: boolean;
+  token?: string;
+  error?: string;
+}
+
+/**
+ * Username/password login. Works with cookie-based auth and optional Bearer.
+ * If the server returns { ok, token }, we keep storing it for dual-mode auth.
+ */
+export async function loginWithPassword(
+  username: string,
+  password: string
+): Promise<LoginResult> {
   const res = await fetch("/api/auth/login", {
     method: "POST",
+    credentials: "include", // receive/set HttpOnly cookie
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ username, password }),
   });
+
   const data = await safeJson(res);
-  if (!res.ok || !data?.ok || !data?.token) {
+  if (!res.ok || !data?.ok) {
     return { ok: false, error: data?.error || "Login failed" };
   }
-  setToken(data.token);
-  return { ok: true, token: data.token };
+
+  if (data.token && typeof data.token === "string") {
+    setToken(data.token); // keep supporting Bearer if the server provides it
+  }
+
+  return { ok: true, token: data?.token };
 }
 
-/** Verify the stored JWT without redirecting on 401. */
-export async function verifyToken(): Promise<boolean> {
-  const token = getToken();
-  if (!token) return false;
-  const res = await authFetch("/api/auth/verify", {}, { noRedirect: true });
-  if (res.ok) return true;
-  clearToken();
-  return false;
-}
+/* ------------------------------ helpers ------------------------------ */
 
-export function logout(): void {
-  try { clearToken(); } finally { if (typeof window !== "undefined") window.location.href = "/login"; }
-}
-
-async function safeJson(resp: Response) {
-  try { return await resp.json(); } catch { return null; }
+async function safeJson<T = any>(resp: Response): Promise<T | null> {
+  try {
+    return (await resp.json()) as T;
+  } catch {
+    return null;
+  }
 }
