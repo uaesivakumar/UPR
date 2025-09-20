@@ -1,16 +1,16 @@
 // routes/enrich/index.js
 import { Router } from "express";
 import searchHandler from "./search.js";
-import { adminOnly } from "../../utils/adminOnly.js";
 import { pool } from "../../utils/db.js";
 
 const router = Router();
 
 /**
  * GET /api/enrich/search
- * Delegates to the search handler. Protected like the rest of the app.
+ * Delegates to the search handler.
+ * Authentication is already enforced by protectEnrich in server.js.
  */
-router.get("/search", adminOnly, searchHandler);
+router.get("/search", searchHandler);
 
 /**
  * POST /api/enrich
@@ -22,7 +22,7 @@ router.get("/search", adminOnly, searchHandler);
  * or
  *   { company_id, max_contacts: number }   // server chooses up to N from last search (noop here)
  */
-router.post("/", adminOnly, async (req, res) => {
+router.post("/", async (req, res) => {
   const body = req.body || {};
   const companyId = body.company_id ?? null;
   const contacts = Array.isArray(body.contacts) ? body.contacts : [];

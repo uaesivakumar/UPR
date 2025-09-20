@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-20T10:42:16Z",
-  "generated_human": "Sat, 20 Sep 2025 10:42:16 GMT",
+  "generated": "2025-09-20T10:56:24Z",
+  "generated_human": "Sat, 20 Sep 2025 10:56:24 GMT",
   "branch": "main",
-  "commit": "d528ad1",
+  "commit": "6ec6067",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -326,19 +326,18 @@
     },
     {
       "path": "routes/enrich/index.js",
-      "size": 2395,
-      "mtime": "2025-09-20T09:13:55.342Z",
-      "sha256": "c1e4bc260f97fc55f742a97172087902727331b4060185daee92cdf59aeb7c17",
+      "size": 2352,
+      "mtime": "2025-09-20T10:56:15.763Z",
+      "sha256": "46b03fff1ad11f33f46bca39040fba0adf552403319401ce724e074a628603c6",
       "imports": [
         "import { Router } from \"express\";",
         "import searchHandler from \"./search.js\";",
-        "import { adminOnly } from \"../../utils/adminOnly.js\";",
         "import { pool } from \"../../utils/db.js\";"
       ],
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "// routes/enrich/index.js\nimport { Router } from \"express\";\nimport searchHandler from \"./search.js\";\nimport { adminOnly } from \"../../utils/adminOnly.js\";\nimport { pool } from \"../../utils/db.js\";\n\nconst router = Router();\n\n/**\n * GET /api/enrich/search\n * Delegates to the search handler. Protected like the rest of the app.\n */\nrouter.get(\"/search\", adminOnly, searchHandler);\n\n/**\n * POST /api/enrich\n * Best-effort saver for contacts into hr_leads. We keep this permissive so the UI\n * never blocks; if the DB call fails we still return a JSON response.\n *\n * Body (either):\n *   { company_id, contacts: [{ name, designation|title, email, linkedin_url, emirate, source }] }\n * or\n *   { company_id, max_contacts: number }   // server chooses up to N from last search (noop here)\n */\nrouter.post(\"/\", adminOnly, async (req, res) => {\n  const body = req.body || {};\n  const companyId = body.company_id ?? null;\n  const contacts = Array.isArray(body.contacts) ? body.contacts : [];\n  const maxContacts = Number.isFinite(body.max_contacts)\n    ? Math.max(0, Math.min(10, body.max_contacts))\n    : 0;\n\n  if (!companyId && contacts.length === 0 && maxContacts === 0) {\n    return res.json({ ok: true, saved: 0 });\n  }\n\n  // If a DB issue happens, don’t hard-fail the UI.\n  if (!pool) return res.json({ ok: true, saved: 0, warning: \"db-unavailable\" });\n\n  let saved = 0;",
+      "head": "// routes/enrich/index.js\nimport { Router } from \"express\";\nimport searchHandler from \"./search.js\";\nimport { pool } from \"../../utils/db.js\";\n\nconst router = Router();\n\n/**\n * GET /api/enrich/search\n * Delegates to the search handler.\n * Authentication is already enforced by protectEnrich in server.js.\n */\nrouter.get(\"/search\", searchHandler);\n\n/**\n * POST /api/enrich\n * Best-effort saver for contacts into hr_leads. We keep this permissive so the UI\n * never blocks; if the DB call fails we still return a JSON response.\n *\n * Body (either):\n *   { company_id, contacts: [{ name, designation|title, email, linkedin_url, emirate, source }] }\n * or\n *   { company_id, max_contacts: number }   // server chooses up to N from last search (noop here)\n */\nrouter.post(\"/\", async (req, res) => {\n  const body = req.body || {};\n  const companyId = body.company_id ?? null;\n  const contacts = Array.isArray(body.contacts) ? body.contacts : [];\n  const maxContacts = Number.isFinite(body.max_contacts)\n    ? Math.max(0, Math.min(10, body.max_contacts))\n    : 0;\n\n  if (!companyId && contacts.length === 0 && maxContacts === 0) {\n    return res.json({ ok: true, saved: 0 });\n  }\n\n  // If a DB issue happens, don’t hard-fail the UI.\n  if (!pool) return res.json({ ok: true, saved: 0, warning: \"db-unavailable\" });\n\n  let saved = 0;",
       "tail": "        const emirate = c.emirate ?? null;\n        const source = c.source ?? \"enrich\";\n\n        const sql = `\n          INSERT INTO hr_leads (company_id, name, role, email, linkedin_url, emirate, status, source)\n          VALUES ($1, $2, $3, $4, $5, $6, 'new', $7)\n          ON CONFLICT DO NOTHING\n        `;\n        await pool.query(sql, [companyId, name, designation, email, linkedin, emirate, source]);\n        saved++;\n      } catch {\n        /* ignore per-row errors */\n      }\n    }\n    await pool.query(\"COMMIT\");\n  } catch {\n    try { await pool.query(\"ROLLBACK\"); } catch {}\n    return res.status(200).json({ ok: false, error: \"bulk-insert-failed\", saved });\n  }\n\n  return res.json({ ok: true, saved });\n});\n\nexport default router;\n"
     },
     {
