@@ -32,15 +32,13 @@ export default function EnrichmentPage() {
   const [rows, setRows] = useState([]);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
-  const [summary, setSummary] = useState(null); // timings, provider, company_guess, quality
+  const [summary, setSummary] = useState(null);
 
-  // service status lights
   const [dbOk, setDbOk] = useState(true);
   const [llmOk, setLlmOk] = useState(true);
   const [dataSource, setDataSource] = useState("live");
   const [statusTimings, setStatusTimings] = useState({});
 
-  // disambiguation modal state
   const [fixOpen, setFixOpen] = useState(false);
   const [fixName, setFixName] = useState("");
   const [fixDomain, setFixDomain] = useState("");
@@ -48,17 +46,16 @@ export default function EnrichmentPage() {
   const [fixParent, setFixParent] = useState("");
 
   const [pickedCompanyId, setPickedCompanyId] = useState("");
-  const [picked, setPicked] = useState({}); // idx -> true
+  const [picked, setPicked] = useState({});
   const pickedIdxs = useMemo(
     () => Object.keys(picked).filter((k) => picked[k]).map((n) => Number(n)),
     [picked]
   );
 
-  const inFlight = useRef(null); // AbortController for current request
+  const inFlight = useRef(null);
 
   const companyGuess = summary?.company_guess;
 
-  // ----- Fetch with abort + hard timeout so UI never stays stuck -----
   async function fetchWithTimeout(url, options = {}, ms = 25000) {
     const controller = new AbortController();
     const t = setTimeout(() => controller.abort("timeout"), ms);
@@ -74,7 +71,6 @@ export default function EnrichmentPage() {
     }
   }
 
-  // probe /api/enrich/status for chips
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -90,7 +86,6 @@ export default function EnrichmentPage() {
           setDbOk(!!j.data?.db_ok);
           setLlmOk(!!j.data?.llm_ok);
           setDataSource(j.data?.data_source || "live");
-          // setStatusTimings({ provider_ms: j.data?.provider_ms, llm_ms: j.data?.llm_ms })
         }
       } catch {}
     })();
@@ -108,7 +103,6 @@ export default function EnrichmentPage() {
     setLoading(true);
     setErr("");
 
-    // Cancel any prior request
     try {
       if (inFlight.current) inFlight.current.abort("new-search");
     } catch {}
@@ -125,7 +119,6 @@ export default function EnrichmentPage() {
       if (overrides.linkedin_url) sp.set("linkedin_url", overrides.linkedin_url.trim());
       if (overrides.parent) sp.set("parent", overrides.parent.trim());
 
-      // --- 1) Try GET first ---
       const getUrl = `/api/enrich/search?${sp.toString()}`;
       console.log("[Enrichment] GET", getUrl);
       let res = await fetchWithTimeout(
@@ -143,7 +136,6 @@ export default function EnrichmentPage() {
 
       let json = await res.json().catch(() => ({}));
 
-      // --- 2) If GET returns ok but empty results, fallback to POST body ---
       const emptyOk =
         res.ok &&
         json?.ok &&
@@ -183,7 +175,6 @@ export default function EnrichmentPage() {
       setRows(Array.isArray(data.results) ? data.results : []);
       setSummary(data.summary || null);
 
-      // seed fix form with what we got
       const g = data.summary?.company_guess || {};
       setFixName(g.name || "");
       setFixDomain(g.domain || "");
@@ -199,7 +190,6 @@ export default function EnrichmentPage() {
     }
   };
 
-  // listen to company selection from sidebar/companies page
   useEffect(() => {
     const useNow = (e) => {
       const c = e?.detail;
@@ -212,7 +202,6 @@ export default function EnrichmentPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q]);
 
-  // clean up on unmount
   useEffect(() => {
     return () => {
       try {
@@ -223,7 +212,7 @@ export default function EnrichmentPage() {
 
   const addToHR = async (companyId, selectedIdxs) => {
     if (!companyId) return;
-    const toSave = selectedIdxs.length ? selectedIdxs.map((i) => rows[i]) : null; // backend will auto-pick if null
+    const toSave = selectedIdxs.length ? selectedIdxs.map((i) => rows[i]) : null;
 
     const body = toSave
       ? { company_id: companyId, contacts: toSave }
