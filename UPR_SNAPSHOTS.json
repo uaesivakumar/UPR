@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-20T12:28:23Z",
-  "generated_human": "Sat, 20 Sep 2025 12:28:23 GMT",
+  "generated": "2025-09-20T12:32:37Z",
+  "generated_human": "Sat, 20 Sep 2025 12:32:37 GMT",
   "branch": "main",
-  "commit": "21e8c77",
+  "commit": "99ae97a",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -342,17 +342,17 @@
     },
     {
       "path": "routes/enrich/lib/apollo.js",
-      "size": 2858,
-      "mtime": "2025-09-19T17:42:26.097Z",
-      "sha256": "34b1a905fa57cb4f778e2c82a1befcd3ca7f995293c56b591bbedca96dd33dd4",
+      "size": 3810,
+      "mtime": "2025-09-20T12:30:47.207Z",
+      "sha256": "09e084752ddcaa3ac70f0bb4ffe78cf93f5801b82f5bc7a15ae544672065f194",
       "imports": [],
       "envs": [
         "APOLLO_API_KEY"
       ],
       "appUses": [],
       "endpoints": [],
-      "head": "/**\n * Apollo provider wrapper (uses X-Api-Key header).\n * Exports:\n *  - searchPeopleByCompany({ name?, domain?, limit?, roleFilters? })\n *  - apolloPeopleByDomain(domain, { limit?, roleFilters? })\n *  - compactApolloKeywords(q)\n *  - deriveLocation(person)\n */\n\nconst APOLLO_BASE = \"https://api.apollo.io/v1\";\n\nfunction apolloHeaders() {\n  const key = process.env.APOLLO_API_KEY || \"\";\n  return {\n    \"Content-Type\": \"application/json\",\n    \"Accept\": \"application/json\",\n    \"X-Api-Key\": key, // IMPORTANT: header (not query string)\n  };\n}\n\nfunction roleFiltersToQuery(roleFilters = [\"hr\",\"admin\",\"finance\"]) {\n  // Titles we care about (high recall but focused)\n  const titles = [\n    \"hr\", \"human resources\", \"talent\", \"recruit\", \"people\", \"people operations\", \"people & culture\",\n    \"admin\", \"office manager\", \"operations\",\n    \"finance\", \"account\", \"payroll\"\n  ];\n  // Apollo uses 'person_titles' OR 'q_keywords' depending on endpoint; we’ll use q_keywords to be flexible\n  return titles.join(\" OR \");\n}\n\nasync function apolloPOST(path, body) {\n  if (!process.env.APOLLO_API_KEY) {\n    return { ok: true, people: [], provider: \"mock\", reason: \"no_api_key\" };\n  }\n  const resp = await fetch(`${APOLLO_BASE}${path}`, {\n    method: \"POST\",\n    headers: apolloHeaders(),\n    body: JSON.stringify(body || {}),\n  });",
-      "tail": "export async function apolloPeopleByDomain(domain, { limit = 10, roleFilters } = {}) {\n  if (!domain) return [];\n  const people = await searchPeopleByCompany({ domain, limit, roleFilters });\n  return people;\n}\n\nexport function compactApolloKeywords(q = \"\") {\n  return String(q).replace(/[^a-z0-9 ]/gi, \" \").replace(/\\s+/g, \" \").trim();\n}\n\nexport function deriveLocation(p = {}) {\n  return (\n    p?.location ||\n    [p?.city, p?.state, p?.country].filter(Boolean).join(\", \") ||\n    \"\"\n  );\n}\n\nexport default {\n  searchPeopleByCompany,\n  apolloPeopleByDomain,\n  compactApolloKeywords,\n  deriveLocation,\n};\n"
+      "head": "/**\n * Apollo provider wrapper (uses X-Api-Key header).\n * Exports:\n *  - searchPeopleByCompany({ name?, domain?, limit?, roleFilters? })\n *  - apolloPeopleByDomain(domain, { limit?, roleFilters? })\n *  - compactApolloKeywords(q)\n *  - deriveLocation(person)\n *  - enrichWithApollo(query)  <-- NEW, used by search.js\n */\n\nconst APOLLO_BASE = \"https://api.apollo.io/v1\";\n\nfunction apolloHeaders() {\n  const key = process.env.APOLLO_API_KEY || \"\";\n  return {\n    \"Content-Type\": \"application/json\",\n    Accept: \"application/json\",\n    \"X-Api-Key\": key, // IMPORTANT: header (not query string)\n  };\n}\n\nfunction roleFiltersToQuery(roleFilters = [\"hr\", \"admin\", \"finance\"]) {\n  // Titles we care about (high recall but focused)\n  const titles = [\n    \"hr\", \"human resources\", \"talent\", \"recruit\", \"people\", \"people operations\", \"people & culture\",\n    \"admin\", \"office manager\", \"operations\",\n    \"finance\", \"account\", \"payroll\",\n  ];\n  return titles.join(\" OR \");\n}\n\nasync function apolloPOST(path, body) {\n  if (!process.env.APOLLO_API_KEY) {\n    return { ok: true, people: [], provider: \"mock\", reason: \"no_api_key\" };\n  }\n  const resp = await fetch(`${APOLLO_BASE}${path}`, {\n    method: \"POST\",\n    headers: apolloHeaders(),\n    body: JSON.stringify(body || {}),\n  });",
+      "tail": "      name: p.name || [p.first_name, p.last_name].filter(Boolean).join(\" \"),\n      designation: p.title || null,\n      email: p.email || null,\n      linkedin_url: p.linkedin_url || null,\n      emirate: deriveLocation(p),\n      confidence: 0.7, // Apollo doesn’t provide confidence; static baseline\n      source: \"apollo\",\n    }));\n\n    return { ok: true, results, provider: \"apollo\", ms };\n  } catch (e) {\n    console.error(\"Apollo enrichment failed\", e);\n    return { ok: false, results: [], provider: \"apollo\", error: String(e?.message || e) };\n  }\n}\n\n// keep default export so older code works\nexport default {\n  searchPeopleByCompany,\n  apolloPeopleByDomain,\n  compactApolloKeywords,\n  deriveLocation,\n  enrichWithApollo,\n};\n"
     },
     {
       "path": "routes/enrich/lib/email.js",
@@ -407,22 +407,22 @@
     },
     {
       "path": "routes/enrich/search.js",
-      "size": 2419,
-      "mtime": "2025-09-20T12:21:01.708Z",
-      "sha256": "44b8997bb51c64aa526532e03b5f32648aad87528e19a03cb44a0c5eab272d32",
+      "size": 2484,
+      "mtime": "2025-09-20T12:31:48.907Z",
+      "sha256": "48a3b1754003ba69a56d4f0701ef2465dbb931743ec22e6240a80a0d66f4a557",
       "imports": [
         "import { pool } from \"../../utils/db.js\";",
         "import { enrichWithApollo } from \"./lib/apollo.js\";",
         "import { enrichWithGeo } from \"./lib/geo.js\";",
         "import { enrichWithEmail } from \"./lib/email.js\";",
         "import { enrichWithLLM } from \"./lib/llm.js\";",
-        "import { computeQuality } from \"./lib/quality.js\";"
+        "import { qualityScore } from \"./lib/quality.js\";"
       ],
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "// routes/enrich/search.js\nimport { pool } from \"../../utils/db.js\";\nimport { enrichWithApollo } from \"./lib/apollo.js\";\nimport { enrichWithGeo } from \"./lib/geo.js\";\nimport { enrichWithEmail } from \"./lib/email.js\";\nimport { enrichWithLLM } from \"./lib/llm.js\";\nimport { computeQuality } from \"./lib/quality.js\";\n\n/**\n * GET or POST /api/enrich/search\n * Orchestrates enrichment pipeline using modular libs.\n */\nexport default async function searchHandler(req, res) {\n  const started = Date.now();\n  const q = (req.query.q || req.body.q || \"\").trim();\n  const name = req.query.name || req.body.name || q;\n  const domain = req.query.domain || req.body.domain || null;\n  const linkedin_url = req.query.linkedin_url || req.body.linkedin_url || null;\n  const parent = req.query.parent || req.body.parent || null;\n\n  if (!name && !domain && !linkedin_url) {\n    return res.status(400).json({ ok: false, error: \"missing_query\" });\n  }\n\n  const timings = {};\n  let candidates = [];\n  let companyGuess = { name, domain, linkedin_url, parent };\n\n  try {\n    // Apollo (contacts)\n    let t0 = Date.now();\n    candidates = await enrichWithApollo({ name, domain, linkedin_url });\n    timings.apollo_ms = Date.now() - t0;\n\n    // Geo enrichment\n    t0 = Date.now();\n    candidates = await enrichWithGeo(candidates);\n    timings.geo_ms = Date.now() - t0;\n\n    // Email enrichment",
-      "tail": "    const quality = await computeQuality(candidates, companyGuess);\n    timings.quality_ms = Date.now() - t0;\n\n    const summary = {\n      provider: \"enrich\",\n      company_guess: companyGuess,\n      quality,\n      timings,\n    };\n\n    return res.json({\n      ok: true,\n      data: { results: candidates, summary },\n      took_ms: Date.now() - started,\n    });\n  } catch (err) {\n    console.error(\"[enrich/search] error:\", err);\n    return res.status(500).json({\n      ok: false,\n      error: err.message || \"internal_error\",\n      took_ms: Date.now() - started,\n    });\n  }\n}\n"
+      "head": "// routes/enrich/search.js\nimport { pool } from \"../../utils/db.js\";\nimport { enrichWithApollo } from \"./lib/apollo.js\";\nimport { enrichWithGeo } from \"./lib/geo.js\";\nimport { enrichWithEmail } from \"./lib/email.js\";\nimport { enrichWithLLM } from \"./lib/llm.js\";\nimport { qualityScore } from \"./lib/quality.js\";\n\n/**\n * GET or POST /api/enrich/search\n * Orchestrates enrichment pipeline using modular libs.\n */\nexport default async function searchHandler(req, res) {\n  const started = Date.now();\n  const q = (req.query.q || req.body.q || \"\").trim();\n  const name = req.query.name || req.body.name || q;\n  const domain = req.query.domain || req.body.domain || null;\n  const linkedin_url = req.query.linkedin_url || req.body.linkedin_url || null;\n  const parent = req.query.parent || req.body.parent || null;\n\n  if (!name && !domain && !linkedin_url) {\n    return res.status(400).json({ ok: false, error: \"missing_query\" });\n  }\n\n  const timings = {};\n  let candidates = [];\n  let companyGuess = { name, domain, linkedin_url, parent };\n\n  try {\n    // Apollo (contacts)\n    let t0 = Date.now();\n    const apolloOut = await enrichWithApollo({ name, domain, linkedin_url });\n    timings.apollo_ms = apolloOut?.ms ?? Date.now() - t0;\n    candidates = apolloOut?.results || [];\n\n    // Geo enrichment\n    t0 = Date.now();\n    candidates = await enrichWithGeo(candidates);\n    timings.geo_ms = Date.now() - t0;\n",
+      "tail": "    const quality = await qualityScore(companyGuess, candidates);\n    timings.quality_ms = Date.now() - t0;\n\n    const summary = {\n      provider: \"apollo+llm\",\n      company_guess: companyGuess,\n      quality,\n      timings,\n    };\n\n    return res.json({\n      ok: true,\n      data: { results: candidates, summary },\n      took_ms: Date.now() - started,\n    });\n  } catch (err) {\n    console.error(\"[enrich/search] error:\", err);\n    return res.status(500).json({\n      ok: false,\n      error: err.message || \"internal_error\",\n      took_ms: Date.now() - started,\n    });\n  }\n}\n"
     },
     {
       "path": "routes/hrLeads.js",

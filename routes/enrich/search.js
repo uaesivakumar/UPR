@@ -4,7 +4,7 @@ import { enrichWithApollo } from "./lib/apollo.js";
 import { enrichWithGeo } from "./lib/geo.js";
 import { enrichWithEmail } from "./lib/email.js";
 import { enrichWithLLM } from "./lib/llm.js";
-import { computeQuality } from "./lib/quality.js";
+import { qualityScore } from "./lib/quality.js";
 
 /**
  * GET or POST /api/enrich/search
@@ -29,8 +29,9 @@ export default async function searchHandler(req, res) {
   try {
     // Apollo (contacts)
     let t0 = Date.now();
-    candidates = await enrichWithApollo({ name, domain, linkedin_url });
-    timings.apollo_ms = Date.now() - t0;
+    const apolloOut = await enrichWithApollo({ name, domain, linkedin_url });
+    timings.apollo_ms = apolloOut?.ms ?? Date.now() - t0;
+    candidates = apolloOut?.results || [];
 
     // Geo enrichment
     t0 = Date.now();
@@ -52,11 +53,11 @@ export default async function searchHandler(req, res) {
 
     // Quality scoring
     t0 = Date.now();
-    const quality = await computeQuality(candidates, companyGuess);
+    const quality = await qualityScore(companyGuess, candidates);
     timings.quality_ms = Date.now() - t0;
 
     const summary = {
-      provider: "enrich",
+      provider: "apollo+llm",
       company_guess: companyGuess,
       quality,
       timings,
