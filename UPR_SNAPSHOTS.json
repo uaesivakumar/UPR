@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-20T11:21:15Z",
-  "generated_human": "Sat, 20 Sep 2025 11:21:15 GMT",
+  "generated": "2025-09-20T11:39:34Z",
+  "generated_human": "Sat, 20 Sep 2025 11:39:34 GMT",
   "branch": "main",
-  "commit": "eb4a426",
+  "commit": "701feac",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -407,17 +407,17 @@
     },
     {
       "path": "routes/enrich/search.js",
-      "size": 1607,
-      "mtime": "2025-09-20T09:22:19.894Z",
-      "sha256": "edf78cf90be8a7f91491361efbfb8b140be998adb250b78c0f85ba6713514771",
+      "size": 5860,
+      "mtime": "2025-09-20T11:37:04.313Z",
+      "sha256": "0e1f4b184432f79acc7e9ac331263e1bf6873dcb85bdaac82a2f897d26c889a6",
       "imports": [
-        "import { Router } from \"express\";"
+        "import { performance } from \"node:perf_hooks\";"
       ],
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "// routes/enrich/search.js\nimport { Router } from \"express\";\n\n/**\n * Fast, safe handler that never hangs the UI.\n * Query params supported: q, name, domain, linkedin_url, parent\n *\n * Response shape:\n * { ok: true, data: { results: Contact[], summary: { provider, timings, company_guess, quality } } }\n */\nexport default async function searchHandler(req, res) {\n  const started = Date.now();\n  const q = String(req.query.q || \"\").trim();\n  const name = String(req.query.name || q || \"\").trim();\n  const domain = String(req.query.domain || \"\")\n    .trim()\n    .replace(/^https?:\\/\\//i, \"\")\n    .replace(/\\/.*$/, \"\");\n  const linkedin_url = String(req.query.linkedin_url || \"\").trim();\n  const parent = String(req.query.parent || \"\").trim();\n\n  // Build a lightweight company guess from the inputs we have.\n  const company_guess = {};\n  if (name) company_guess.name = name;\n  if (domain) company_guess.domain = domain;\n  if (linkedin_url) company_guess.linkedin_url = linkedin_url;\n  if (parent) company_guess.parent = parent;\n\n  // NOTE: Plug your real providers here behind try/catch with strict timeouts.\n  // This default returns quickly with no candidates instead of hanging.\n  const results = [];\n\n  const summary = {\n    provider: \"live\",\n    timings: { provider_ms: Date.now() - started, llm_ms: 0 },\n    company_guess,\n    quality: { score: 0.5, explanation: \"Heuristic guess based on input.\" },\n  };\n\n  return res.json({ ok: true, data: { results, summary } });",
-      "tail": "\n  // Build a lightweight company guess from the inputs we have.\n  const company_guess = {};\n  if (name) company_guess.name = name;\n  if (domain) company_guess.domain = domain;\n  if (linkedin_url) company_guess.linkedin_url = linkedin_url;\n  if (parent) company_guess.parent = parent;\n\n  // NOTE: Plug your real providers here behind try/catch with strict timeouts.\n  // This default returns quickly with no candidates instead of hanging.\n  const results = [];\n\n  const summary = {\n    provider: \"live\",\n    timings: { provider_ms: Date.now() - started, llm_ms: 0 },\n    company_guess,\n    quality: { score: 0.5, explanation: \"Heuristic guess based on input.\" },\n  };\n\n  return res.json({ ok: true, data: { results, summary } });\n}\n\n// Optional Router export if you ever want to mount this file directly.\nexport const router = Router().get(\"/search\", searchHandler);\n"
+      "head": "// routes/enrich/search.js\nimport { performance } from \"node:perf_hooks\";\n\n// Best-effort helper: pick the first callable from a list of candidate names\nfunction pickFn(mod, candidates = []) {\n  if (!mod) return null;\n  for (const name of candidates) {\n    const fn = mod?.[name];\n    if (typeof fn === \"function\") return { name, fn };\n  }\n  return null;\n}\n\nfunction noStore(res) {\n  res.setHeader(\"Cache-Control\", \"no-store, must-revalidate\");\n}\n\n// Normalize contacts to the shape the UI expects\nfunction normalizeContacts(arr = []) {\n  if (!Array.isArray(arr)) return [];\n  return arr.map((c) => ({\n    name: c.name ?? c.full_name ?? c.person ?? \"—\",\n    designation: c.designation ?? c.title ?? c.role ?? undefined,\n    title: c.title ?? c.designation ?? c.role ?? undefined,\n    email: c.email ?? c.work_email ?? undefined,\n    linkedin_url: c.linkedin_url ?? c.linkedin ?? c.linkedinProfile ?? undefined,\n    emirate: c.emirate ?? c.location ?? undefined,\n    confidence: typeof c.confidence === \"number\" ? c.confidence : undefined,\n    email_status: c.email_status ?? c.verification ?? undefined,\n    source: c.source ?? c.provider ?? \"enrich\",\n  }));\n}\n\nexport default async function enrichSearchHandler(req, res) {\n  noStore(res);\n\n  const rid = req._reqid || Math.random().toString(36).slice(2, 8);\n  const q = (req.query?.q ?? \"\").toString().trim();\n  const overrides = {\n    name: (req.query?.name ?? \"\").toString().trim() || undefined,",
+      "tail": "      } else {\n        console.log(`[${rid}] llm: no callable function found; exposed keys=${llm ? Object.keys(llm).join(\",\") : \"-\"}`);\n      }\n    }\n  }\n\n  // Finalize summary\n  if (usedProvider) summary.provider = usedProvider;\n\n  // If still empty, return clean 200 with empty payload (UI shows \"No results.\")\n  if (!Array.isArray(results) || results.length === 0) {\n    console.log(`[${rid}] enrich/search → no results (provider=${summary.provider}, q=${JSON.stringify(q)})`);\n    return res.status(200).json({\n      ok: true,\n      data: { results: [], summary },\n    });\n  }\n\n  console.log(`[${rid}] enrich/search → returning ${results.length} result(s) provider=${summary.provider}`);\n  return res.status(200).json({\n    ok: true,\n    data: { results, summary },\n  });\n}\n"
     },
     {
       "path": "routes/hrLeads.js",
