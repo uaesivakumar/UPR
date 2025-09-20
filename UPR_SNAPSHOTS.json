@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-20T12:46:28Z",
-  "generated_human": "Sat, 20 Sep 2025 12:46:28 GMT",
+  "generated": "2025-09-20T12:54:40Z",
+  "generated_human": "Sat, 20 Sep 2025 12:54:40 GMT",
   "branch": "main",
-  "commit": "0b39712",
+  "commit": "b91226c",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -131,17 +131,17 @@
     },
     {
       "path": "dashboard/src/pages/EnrichmentPage.jsx",
-      "size": 7751,
-      "mtime": "2025-09-20T12:14:14.053Z",
-      "sha256": "2b22e0577c332f1a495185913522ede904b909dc7b20071fbbcca216282a1258",
+      "size": 7864,
+      "mtime": "2025-09-20T12:54:16.465Z",
+      "sha256": "37a42fd0a649d7d5e6efc7665319657f66d91076cd6f7d3ae432a2f538d8105f",
       "imports": [
-        "import { useEffect, useMemo, useRef, useState } from \"react\";",
+        "import { useEffect, useRef, useState } from \"react\";",
         "import { authFetch } from \"../utils/auth\";"
       ],
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "// dashboard/src/pages/EnrichmentPage.jsx\nimport { useEffect, useMemo, useRef, useState } from \"react\";\nimport { authFetch } from \"../utils/auth\";\n\nfunction Pill({ ok = true, label, ms }) {\n  return (\n    <span\n      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${\n        ok\n          ? \"border-green-200 bg-green-50 text-green-700\"\n          : \"border-gray-200 bg-gray-50 text-gray-600\"\n      }`}\n    >\n      <span className={`h-2 w-2 rounded-full ${ok ? \"bg-green-500\" : \"bg-gray-400\"}`} />\n      {label}\n      {typeof ms === \"number\" ? ` • ${ms}ms` : \"\"}\n    </span>\n  );\n}\n\nexport default function EnrichmentPage() {\n  const [q, setQ] = useState(\"\");\n  const [rows, setRows] = useState([]);\n  const [err, setErr] = useState(\"\");\n  const [loading, setLoading] = useState(false);\n\n  const [company, setCompany] = useState(null);\n  const [timings, setTimings] = useState({});\n  const [provider, setProvider] = useState(\"\");\n\n  const inFlight = useRef(null);\n\n  // fetch with timeout\n  async function fetchWithTimeout(url, options = {}, ms = 25000) {\n    const controller = new AbortController();\n    const t = setTimeout(() => controller.abort(\"timeout\"), ms);\n    const merged = { ...options, signal: controller.signal };\n    inFlight.current = controller;\n    try {\n      const res = await authFetch(url, merged);",
+      "head": "// dashboard/src/pages/EnrichmentPage.jsx\nimport { useEffect, useRef, useState } from \"react\";\nimport { authFetch } from \"../utils/auth\";\n\nfunction Pill({ ok = true, label, ms }) {\n  return (\n    <span\n      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${\n        ok\n          ? \"border-green-200 bg-green-50 text-green-700\"\n          : \"border-gray-200 bg-gray-50 text-gray-600\"\n      }`}\n    >\n      <span className={`h-2 w-2 rounded-full ${ok ? \"bg-green-500\" : \"bg-gray-400\"}`} />\n      {label}\n      {typeof ms === \"number\" ? ` • ${ms}ms` : \"\"}\n    </span>\n  );\n}\n\nexport default function EnrichmentPage() {\n  const [q, setQ] = useState(\"\");\n  const [rows, setRows] = useState([]);\n  const [err, setErr] = useState(\"\");\n  const [loading, setLoading] = useState(false);\n\n  const [company, setCompany] = useState(null);\n  const [timings, setTimings] = useState({});\n  const [provider, setProvider] = useState(\"\");\n\n  const inFlight = useRef(null);\n\n  // fetch with timeout\n  async function fetchWithTimeout(url, options = {}, ms = 25000) {\n    const controller = new AbortController();\n    const t = setTimeout(() => controller.abort(\"timeout\"), ms);\n    const merged = { ...options, signal: controller.signal };\n    inFlight.current = controller;\n    try {\n      const res = await authFetch(url, merged);",
       "tail": "                      \"—\"\n                    )}\n                  </td>\n                  <td className=\"px-3 py-2\">\n                    {typeof r.confidence === \"number\" ? r.confidence.toFixed(2) : \"—\"}\n                  </td>\n                  <td className=\"px-3 py-2\">{r.email_status || \"—\"}</td>\n                  <td className=\"px-3 py-2\">{r.source || \"—\"}</td>\n                </tr>\n              ))}\n              {rows.length === 0 && !loading && (\n                <tr>\n                  <td className=\"px-3 py-6 text-center text-gray-500\" colSpan={8}>\n                    No results.\n                  </td>\n                </tr>\n              )}\n            </tbody>\n          </table>\n        </div>\n      </div>\n    </div>\n  );\n}\n"
     },
     {

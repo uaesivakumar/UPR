@@ -1,5 +1,5 @@
 // dashboard/src/pages/EnrichmentPage.jsx
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { authFetch } from "../utils/auth";
 
 function Pill({ ok = true, label, ms }) {
@@ -75,10 +75,11 @@ export default function EnrichmentPage() {
         throw new Error(json?.error || `Search failed (${res.status})`);
       }
 
-      setRows(Array.isArray(json.candidates) ? json.candidates : []);
-      setCompany(json.company || null);
-      setTimings(json.timings || {});
-      setProvider(json.provider || "");
+      // ✅ Fix: pull from json.data.results + json.data.summary
+      setRows(Array.isArray(json.data?.results) ? json.data.results : []);
+      setCompany(json.data?.summary?.company_guess || null);
+      setTimings(json.data?.summary?.timings || {});
+      setProvider(json.data?.summary?.provider || "");
     } catch (e) {
       if (e?.name !== "AbortError") {
         setErr(e?.message || "Search failed");
