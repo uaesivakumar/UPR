@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-20T10:59:39Z",
-  "generated_human": "Sat, 20 Sep 2025 10:59:39 GMT",
+  "generated": "2025-09-20T11:05:33Z",
+  "generated_human": "Sat, 20 Sep 2025 11:05:33 GMT",
   "branch": "main",
-  "commit": "4a48f64",
+  "commit": "53eee66",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -326,9 +326,9 @@
     },
     {
       "path": "routes/enrich/index.js",
-      "size": 2344,
-      "mtime": "2025-09-20T10:59:34.357Z",
-      "sha256": "276d8d759661cca053a8efafe5bba81e5d84c839e58770259b5d2ed49b3b4fa7",
+      "size": 2666,
+      "mtime": "2025-09-20T11:05:14.339Z",
+      "sha256": "c791bc5a8e0b4c1e361b2595910e88e8e4da291c7858074e72011c61a8735cee",
       "imports": [
         "import { Router } from \"express\";",
         "import searchHandler from \"./search.js\";",
@@ -337,8 +337,8 @@
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "// routes/enrich/index.js\nimport { Router } from \"express\";\nimport searchHandler from \"./search.js\";\nimport { pool } from \"../../utils/db.js\";\n\nconst router = Router();\n\n/**\n * GET /api/enrich/search\n * Delegates to the search handler.\n * Authentication is enforced by protectEnrich in server.js.\n */\nrouter.get(\"/search\", searchHandler);\n\n/**\n * POST /api/enrich\n * Best-effort saver for contacts into hr_leads. We keep this permissive so the UI\n * never blocks; if the DB call fails we still return a JSON response.\n *\n * Body (either):\n *   { company_id, contacts: [{ name, designation|title, email, linkedin_url, emirate, source }] }\n * or\n *   { company_id, max_contacts: number }   // server chooses up to N from last search (noop here)\n */\nrouter.post(\"/\", async (req, res) => {\n  const body = req.body || {};\n  const companyId = body.company_id ?? null;\n  const contacts = Array.isArray(body.contacts) ? body.contacts : [];\n  const maxContacts = Number.isFinite(body.max_contacts)\n    ? Math.max(0, Math.min(10, body.max_contacts))\n    : 0;\n\n  if (!companyId && contacts.length === 0 && maxContacts === 0) {\n    return res.json({ ok: true, saved: 0 });\n  }\n\n  // If a DB issue happens, don’t hard-fail the UI.\n  if (!pool) return res.json({ ok: true, saved: 0, warning: \"db-unavailable\" });\n\n  let saved = 0;",
-      "tail": "        const emirate = c.emirate ?? null;\n        const source = c.source ?? \"enrich\";\n\n        const sql = `\n          INSERT INTO hr_leads (company_id, name, role, email, linkedin_url, emirate, status, source)\n          VALUES ($1, $2, $3, $4, $5, $6, 'new', $7)\n          ON CONFLICT DO NOTHING\n        `;\n        await pool.query(sql, [companyId, name, designation, email, linkedin, emirate, source]);\n        saved++;\n      } catch {\n        /* ignore per-row errors */\n      }\n    }\n    await pool.query(\"COMMIT\");\n  } catch {\n    try { await pool.query(\"ROLLBACK\"); } catch {}\n    return res.status(200).json({ ok: false, error: \"bulk-insert-failed\", saved });\n  }\n\n  return res.json({ ok: true, saved });\n});\n\nexport default router;\n"
+      "head": "// routes/enrich/index.js\nimport { Router } from \"express\";\nimport searchHandler from \"./search.js\";\nimport { pool } from \"../../utils/db.js\";\n\nconst router = Router();\n\n/**\n * Keep a status endpoint the UI can ping for chips.\n * This route is intentionally OPEN (server.js protects only non-/status).\n */\nrouter.get(\"/status\", (_req, res) => {\n  res.json({\n    ok: true,\n    data: { db_ok: true, llm_ok: true, data_source: \"live\" },\n  });\n});\n\n/**\n * GET /api/enrich/search\n * Authentication is enforced by protectEnrich in server.js.\n * We wrap the actual handler to add logs for debugging 404/flow.\n */\nrouter.get(\"/search\", async (req, res, next) => {\n  try {\n    console.log(`[${req._reqid}] enrich/search hit (GET) q=\"${req.query?.q ?? \"\"}\"`);\n    return await searchHandler(req, res, next);\n  } catch (e) {\n    console.error(`[${req._reqid}] enrich/search error:`, e);\n    return res.status(500).json({ ok: false, error: \"search_failed\" });\n  }\n});\n\n/**\n * POST /api/enrich\n * Best-effort saver for contacts into hr_leads.\n */\nrouter.post(\"/\", async (req, res) => {\n  const body = req.body || {};\n  const companyId = body.company_id ?? null;",
+      "tail": "        const source = c.source ?? \"enrich\";\n\n        const sql = `\n          INSERT INTO hr_leads (company_id, name, role, email, linkedin_url, emirate, status, source)\n          VALUES ($1, $2, $3, $4, $5, $6, 'new', $7)\n          ON CONFLICT DO NOTHING\n        `;\n        await pool.query(sql, [companyId, name, designation, email, linkedin, emirate, source]);\n        saved++;\n      } catch {\n        /* ignore per-row errors so UI isn't blocked */\n      }\n    }\n    await pool.query(\"COMMIT\");\n  } catch (e) {\n    try { await pool.query(\"ROLLBACK\"); } catch {}\n    console.error(`[${req._reqid}] enrich save bulk error:`, e);\n    return res.status(200).json({ ok: false, error: \"bulk-insert-failed\", saved });\n  }\n\n  return res.json({ ok: true, saved });\n});\n\nexport default router;\n"
     },
     {
       "path": "routes/enrich/lib/apollo.js",
@@ -487,9 +487,9 @@
     },
     {
       "path": "server.js",
-      "size": 9463,
-      "mtime": "2025-09-20T10:59:23.308Z",
-      "sha256": "6c4987f87869f77072257f4cbe80c2452655493dbc48a7fb94476cbf05221deb",
+      "size": 10106,
+      "mtime": "2025-09-20T11:05:01.276Z",
+      "sha256": "cbaf3cda709ef2315f407587ce65e296d14b1e2fd958793694ac2e2d13df9df3",
       "imports": [
         "import express from \"express\";",
         "import path from \"path\";",
@@ -524,7 +524,7 @@
       "endpoints": [
         "app.get(\"/health\", (_req, res) => res.json({ ok: true }));"
       ],
-      "head": "// server.js\nimport express from \"express\";\nimport path from \"path\";\nimport fs from \"fs\";\nimport os from \"os\";\nimport jwt from \"jsonwebtoken\";\nimport { fileURLToPath } from \"url\";\n\nimport { pool } from \"./utils/db.js\";\nimport companiesRouter from \"./routes/companies.js\";\nimport hrLeadsRouter from \"./routes/hrLeads.js\";\nimport newsRouter from \"./routes/news.js\";\nimport enrichRouter from \"./routes/enrich/index.js\"; // mounts /search and POST /\nimport { signJwt } from \"./utils/jwt.js\";\n\nconst __filename = fileURLToPath(import.meta.url);\nconst __dirname = path.dirname(__filename);\n\nconst app = express();\nconst PORT = process.env.PORT || 10000;\n\n/* ------------------------------ helpers (auth) ------------------------------ */\nconst COOKIE_NAME = \"upr_jwt\";\nconst isProd = process.env.NODE_ENV === \"production\";\n\n// tiny cookie reader (no extra deps)\nfunction getCookie(req, name) {\n  const str = req.headers?.cookie || \"\";\n  if (!str) return null;\n  const pairs = str.split(\";\").map((s) => s.trim().split(\"=\"));\n  const map = Object.fromEntries(pairs);\n  const v = map[name];\n  return v ? decodeURIComponent(v) : null;\n}\n\nfunction setAuthCookie(res, token) {\n  const parts = [\n    `${COOKIE_NAME}=${encodeURIComponent(token)}`,\n    \"Path=/\",\n    \"HttpOnly\",",
+      "head": "// server.js\nimport express from \"express\";\nimport path from \"path\";\nimport fs from \"fs\";\nimport os from \"os\";\nimport jwt from \"jsonwebtoken\";\nimport { fileURLToPath } from \"url\";\n\nimport { pool } from \"./utils/db.js\";\nimport companiesRouter from \"./routes/companies.js\";\nimport hrLeadsRouter from \"./routes/hrLeads.js\";\nimport newsRouter from \"./routes/news.js\";\nimport enrichRouter from \"./routes/enrich/index.js\";\nimport { signJwt } from \"./utils/jwt.js\";\n\nconst __filename = fileURLToPath(import.meta.url);\nconst __dirname = path.dirname(__filename);\n\nconst app = express();\nconst PORT = process.env.PORT || 10000;\n\n/* ------------------------------ helpers (auth) ------------------------------ */\nconst COOKIE_NAME = \"upr_jwt\";\nconst isProd = process.env.NODE_ENV === \"production\";\n\nfunction getCookie(req, name) {\n  const str = req.headers?.cookie || \"\";\n  if (!str) return null;\n  const pairs = str.split(\";\").map((s) => s.trim().split(\"=\"));\n  const map = Object.fromEntries(pairs);\n  const v = map[name];\n  return v ? decodeURIComponent(v) : null;\n}\n\nfunction setAuthCookie(res, token) {\n  const parts = [\n    `${COOKIE_NAME}=${encodeURIComponent(token)}`,\n    \"Path=/\",\n    \"HttpOnly\",\n    \"SameSite=Lax\",",
       "tail": "if (fs.existsSync(dashboardDist)) {\n  app.use(\n    express.static(dashboardDist, {\n      setHeaders: (res, filePath) => {\n        if (filePath.endsWith(\".html\")) {\n          res.setHeader(\"Cache-Control\", \"no-store, must-revalidate\");\n        }\n      },\n    })\n  );\n\n  const indexFile = path.join(dashboardDist, \"index.html\");\n\n  // SPA fallback: anything not under /api/* returns index.html with no-store\n  app.get(/^(?!\\/api\\/).*/, (_req, res) => {\n    res.setHeader(\"Cache-Control\", \"no-store, must-revalidate\");\n    res.sendFile(indexFile);\n  });\n}\n\n/* ---------------------------------- Start ---------------------------------- */\napp.listen(PORT, () => {\n  console.log(`UPR backend listening on ${PORT}`);\n});\n"
     },
     {

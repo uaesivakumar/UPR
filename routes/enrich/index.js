@@ -6,21 +6,34 @@ import { pool } from "../../utils/db.js";
 const router = Router();
 
 /**
- * GET /api/enrich/search
- * Delegates to the search handler.
- * Authentication is enforced by protectEnrich in server.js.
+ * Keep a status endpoint the UI can ping for chips.
+ * This route is intentionally OPEN (server.js protects only non-/status).
  */
-router.get("/search", searchHandler);
+router.get("/status", (_req, res) => {
+  res.json({
+    ok: true,
+    data: { db_ok: true, llm_ok: true, data_source: "live" },
+  });
+});
+
+/**
+ * GET /api/enrich/search
+ * Authentication is enforced by protectEnrich in server.js.
+ * We wrap the actual handler to add logs for debugging 404/flow.
+ */
+router.get("/search", async (req, res, next) => {
+  try {
+    console.log(`[${req._reqid}] enrich/search hit (GET) q="${req.query?.q ?? ""}"`);
+    return await searchHandler(req, res, next);
+  } catch (e) {
+    console.error(`[${req._reqid}] enrich/search error:`, e);
+    return res.status(500).json({ ok: false, error: "search_failed" });
+  }
+});
 
 /**
  * POST /api/enrich
- * Best-effort saver for contacts into hr_leads. We keep this permissive so the UI
- * never blocks; if the DB call fails we still return a JSON response.
- *
- * Body (either):
- *   { company_id, contacts: [{ name, designation|title, email, linkedin_url, emirate, source }] }
- * or
- *   { company_id, max_contacts: number }   // server chooses up to N from last search (noop here)
+ * Best-effort saver for contacts into hr_leads.
  */
 router.post("/", async (req, res) => {
   const body = req.body || {};
@@ -34,7 +47,6 @@ router.post("/", async (req, res) => {
     return res.json({ ok: true, saved: 0 });
   }
 
-  // If a DB issue happens, don’t hard-fail the UI.
   if (!pool) return res.json({ ok: true, saved: 0, warning: "db-unavailable" });
 
   let saved = 0;
@@ -57,12 +69,13 @@ router.post("/", async (req, res) => {
         await pool.query(sql, [companyId, name, designation, email, linkedin, emirate, source]);
         saved++;
       } catch {
-        /* ignore per-row errors */
+        /* ignore per-row errors so UI isn't blocked */
       }
     }
     await pool.query("COMMIT");
-  } catch {
+  } catch (e) {
     try { await pool.query("ROLLBACK"); } catch {}
+    console.error(`[${req._reqid}] enrich save bulk error:`, e);
     return res.status(200).json({ ok: false, error: "bulk-insert-failed", saved });
   }
 

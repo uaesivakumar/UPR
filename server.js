@@ -10,7 +10,7 @@ import { pool } from "./utils/db.js";
 import companiesRouter from "./routes/companies.js";
 import hrLeadsRouter from "./routes/hrLeads.js";
 import newsRouter from "./routes/news.js";
-import enrichRouter from "./routes/enrich/index.js"; // mounts /search and POST /
+import enrichRouter from "./routes/enrich/index.js";
 import { signJwt } from "./utils/jwt.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -23,7 +23,6 @@ const PORT = process.env.PORT || 10000;
 const COOKIE_NAME = "upr_jwt";
 const isProd = process.env.NODE_ENV === "production";
 
-// tiny cookie reader (no extra deps)
 function getCookie(req, name) {
   const str = req.headers?.cookie || "";
   if (!str) return null;
@@ -45,17 +44,28 @@ function setAuthCookie(res, token) {
   res.setHeader("Set-Cookie", parts.join("; "));
 }
 
+/* ------------------------------ request logger ------------------------------ */
+app.use((req, res, next) => {
+  const t0 = Date.now();
+  const id = Math.random().toString(36).slice(2, 8);
+  req._reqid = id;
+  const started = `${req.method} ${req.originalUrl}`;
+  console.log(`[${id}] → ${started}`);
+  res.on("finish", () => {
+    console.log(
+      `[${id}] ← ${res.statusCode} ${started} (${Date.now() - t0}ms)`
+    );
+  });
+  next();
+});
+
 /* ----------------------- auth middlewares (inline) ----------------------- */
-// Accept session user, or JWT from HttpOnly cookie (upr_jwt), or Authorization: Bearer
 function authAny(req, res, next) {
-  // 1) Session
   if (req?.session?.user) {
     req.user = req.session.user;
     req.userId = req.session.user.id || req.session.user.sub || "admin";
     return next();
   }
-
-  // 2) HttpOnly cookie JWT
   const cookieToken = getCookie(req, COOKIE_NAME);
   if (cookieToken) {
     try {
@@ -63,12 +73,8 @@ function authAny(req, res, next) {
       req.user = { id: payload.sub, role: payload.role, ...payload };
       req.userId = payload.sub || "admin";
       return next();
-    } catch {
-      // fall through
-    }
+    } catch {}
   }
-
-  // 3) Authorization: Bearer <token>
   const h = req.headers.authorization || "";
   const m = h.match(/^Bearer\s+(.+)$/i);
   if (m) {
@@ -77,17 +83,11 @@ function authAny(req, res, next) {
       req.user = { id: payload.sub, role: payload.role, ...payload };
       req.userId = payload.sub || "admin";
       return next();
-    } catch {
-      // fall through
-    }
+    } catch {}
   }
-
-  // 4) Unauthorized
   return res.status(401).json({ ok: false, error: "unauthorized" });
 }
 
-// If a valid cookie exists but no Authorization header, add one so
-// downstream middleware/routers that only look at Bearer still work.
 function cookieToBearer(req, _res, next) {
   if (!req.headers.authorization) {
     const cookieToken = getCookie(req, COOKIE_NAME);
@@ -108,9 +108,7 @@ app.get("/__diag", async (_req, res) => {
     await pool.query("SELECT 1");
     res.json({ ok: true, db_ok: true });
   } catch (err) {
-    res
-      .status(500)
-      .json({ ok: false, db_ok: false, error: String(err?.message || err) });
+    res.status(500).json({ ok: false, db_ok: false, error: String(err?.message || err) });
   }
 });
 
@@ -164,24 +162,18 @@ app.get("/api/stats", async (_req, res) => {
     }
   };
   const companies = await safeCount(`SELECT COUNT(*) FROM companies`);
-  const leads = await safeCount(`SELECT COUNT(*) FROM hr_leads`);
-  const new7d = await safeCount(
-    `SELECT COUNT(*) FROM hr_leads WHERE created_at >= NOW() - INTERVAL '7 days'`
-  );
-  const outreach = await safeCount(
-    `SELECT COUNT(*) FROM hr_leads WHERE status ILIKE 'contacted' OR status ILIKE 'outreach%'`
-  );
+  const leads     = await safeCount(`SELECT COUNT(*) FROM hr_leads`);
+  const new7d     = await safeCount(`SELECT COUNT(*) FROM hr_leads WHERE created_at >= NOW() - INTERVAL '7 days'`);
+  const outreach  = await safeCount(`SELECT COUNT(*) FROM hr_leads WHERE status ILIKE 'contacted' OR status ILIKE 'outreach%'`);
 
   let recent = [];
   try {
-    const { rows } = await pool.query(
-      `
+    const { rows } = await pool.query(`
       SELECT id, company_name, role, status, created_at
       FROM hr_leads
       ORDER BY created_at DESC NULLS LAST
       LIMIT 5
-    `
-    );
+    `);
     recent = rows || [];
   } catch {
     recent = [];
@@ -195,13 +187,29 @@ app.use("/api/companies", companiesRouter);
 app.use("/api/hr-leads", hrLeadsRouter);
 app.use("/api/news", newsRouter);
 
-// Keep /api/enrich/status OPEN (if present), guard all other enrich endpoints,
-// and promote cookie -> bearer before hitting the router.
+// Log every /api/enrich request early (helps with 404 debugging)
+app.use("/api/enrich", (req, _res, next) => {
+  console.log(`[${req._reqid}] /api/enrich pre → path=${req.path} auth=${!!req.headers.authorization}`);
+  next();
+});
+
+// Keep /api/enrich/status OPEN; guard others; promote cookie->bearer.
 function protectEnrich(req, res, next) {
   if (req.path === "/status") return next();
   return authAny(req, res, next);
 }
 app.use("/api/enrich", cookieToBearer, protectEnrich, enrichRouter);
+
+// After the router, trap any unmatched /api/enrich/* and log available routes
+app.all("/api/enrich/*", (req, res) => {
+  console.warn(`[${req._reqid}] /api/enrich 404 trap for path=${req.path}`);
+  res.status(404).json({
+    ok: false,
+    error: "not_found",
+    path: req.path,
+    hint: "If you expected /search, ensure routes/enrich/index.js defines router.get('/search') and this file mounts it.",
+  });
+});
 
 /* ----------------------------- Diagnostics (full) ----------------------------- */
 function listRoutes(appOrRouter) {
@@ -228,10 +236,7 @@ function listRoutes(appOrRouter) {
 function envFlags() {
   const keys = [
     "DATABASE_URL",
-    "UPR_ADMIN_USER",
-    "UPR_ADMIN_PASS",
-    "ADMIN_USERNAME",
-    "ADMIN_PASSWORD",
+    "UPR_ADMIN_USER","UPR_ADMIN_PASS","ADMIN_USERNAME","ADMIN_PASSWORD",
     "JWT_SECRET",
     "APOLLO_API_KEY",
     "OPENAI_API_KEY",
@@ -268,6 +273,10 @@ async function diagPayload() {
 app.get("/api/__diag_full", async (_req, res) => {
   const payload = await diagPayload();
   res.json(payload);
+});
+
+app.get("/api/__diag_full/routes", async (_req, res) => {
+  res.json({ ok: true, routes: listRoutes(app) });
 });
 
 app.get("/__diag_full", async (_req, res) => {
