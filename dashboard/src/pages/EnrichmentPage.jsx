@@ -18,52 +18,24 @@ function Pill({ ok = true, label, ms }) {
   );
 }
 
-function Field({ label, children }) {
-  return (
-    <div>
-      <div className="mb-1 text-sm text-gray-700">{label}</div>
-      {children}
-    </div>
-  );
-}
-
 export default function EnrichmentPage() {
   const [q, setQ] = useState("");
   const [rows, setRows] = useState([]);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
-  const [summary, setSummary] = useState(null); // timings, provider, company_guess, quality
 
-  // status chips (optional)
-  const [dbOk, setDbOk] = useState(true);
-  const [llmOk, setLlmOk] = useState(true);
-  const [dataSource, setDataSource] = useState("live");
+  const [company, setCompany] = useState(null);
+  const [timings, setTimings] = useState({});
+  const [provider, setProvider] = useState("");
 
-  // disambiguation modal state
-  const [fixOpen, setFixOpen] = useState(false);
-  const [fixName, setFixName] = useState("");
-  const [fixDomain, setFixDomain] = useState("");
-  const [fixLinkedIn, setFixLinkedIn] = useState("");
-  const [fixParent, setFixParent] = useState("");
+  const inFlight = useRef(null);
 
-  const [pickedCompanyId, setPickedCompanyId] = useState("");
-  const [picked, setPicked] = useState({}); // idx -> true
-  const pickedIdxs = useMemo(
-    () => Object.keys(picked).filter((k) => picked[k]).map((n) => Number(n)),
-    [picked]
-  );
-
-  const inFlight = useRef(null); // AbortController for current request
-
-  const companyGuess = summary?.company_guess;
-
-  // ----- Fetch with abort + hard timeout so UI never stays stuck -----
+  // fetch with timeout
   async function fetchWithTimeout(url, options = {}, ms = 25000) {
     const controller = new AbortController();
     const t = setTimeout(() => controller.abort("timeout"), ms);
     const merged = { ...options, signal: controller.signal };
     inFlight.current = controller;
-
     try {
       const res = await authFetch(url, merged);
       return res;
@@ -73,190 +45,54 @@ export default function EnrichmentPage() {
     }
   }
 
-  // Normalize a 404/not_found into an empty successful payload
-  function asEmptyOk(queryStr) {
-    return {
-      ok: true,
-      data: {
-        results: [],
-        summary: {
-          provider: "live",
-          company_guess: queryStr ? { name: queryStr } : undefined,
-          quality: { score: 0.5, explanation: "No matches found." },
-          timings: {},
-        },
-      },
-    };
-  }
-
-  const run = async (overrides = {}) => {
-    if (!q.trim() && !overrides.name && !overrides.domain && !overrides.linkedin_url) {
+  const run = async () => {
+    if (!q.trim()) {
       setErr("Type a company name first.");
       return;
     }
-
     setLoading(true);
     setErr("");
-
-    // Cancel any prior request
-    try {
-      if (inFlight.current) inFlight.current.abort("new-search");
-    } catch {}
-
-    const queryStr = (overrides.name || q || "").trim();
 
     try {
       const sp = new URLSearchParams();
       sp.set("q", q.trim());
-      if (overrides.name) sp.set("name", overrides.name.trim());
-      if (overrides.domain)
-        sp.set(
-          "domain",
-          overrides.domain.trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "")
-        );
-      if (overrides.linkedin_url) sp.set("linkedin_url", overrides.linkedin_url.trim());
-      if (overrides.parent) sp.set("parent", overrides.parent.trim());
-
       const url = `/api/enrich/search?${sp.toString()}`;
-      console.log("[Enrichment] GET", url);
-      let res = await fetchWithTimeout(
+      const res = await fetchWithTimeout(
         url,
         { method: "GET", noRedirect: true, headers: { Accept: "application/json" } },
         25000
       );
 
-      // Session expired? show the banner and stop.
       if (res.status === 401) {
-        setErr("Your session seems to have expired. Please sign in again.");
+        setErr("Your session expired. Please sign in again.");
         setRows([]);
-        setSummary(null);
+        setCompany(null);
         return;
       }
 
-      let json = null;
-      try {
-        json = await res.json();
-      } catch (e) {
-        json = null;
-      }
-
-      // Treat 404/not_found as "no results" (not a user-facing error)
-      if (res.status === 404 || json?.error === "not_found") {
-        json = asEmptyOk(queryStr);
-      }
-
-      // If GET returned ok but empty, try POST fallback if you want server-side expansion.
-      const getWasEmptyOk =
-        res.ok &&
-        json?.ok &&
-        json?.data &&
-        Array.isArray(json.data.results) &&
-        json.data.results.length === 0;
-
-      if (getWasEmptyOk) {
-        const body = {
-          q: q.trim(),
-          name: overrides.name || undefined,
-          domain: overrides.domain
-            ? overrides.domain.trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "")
-            : undefined,
-          linkedin_url: overrides.linkedin_url || undefined,
-          parent: overrides.parent || undefined,
-        };
-
-        console.log("[Enrichment] POST /api/enrich/search (fallback body)", body);
-        res = await fetchWithTimeout(
-          "/api/enrich/search",
-          {
-            method: "POST",
-            noRedirect: true,
-            headers: { "Content-Type": "application/json", Accept: "application/json" },
-            body: JSON.stringify(body),
-          },
-          25000
-        );
-
-        // 401 again?
-        if (res.status === 401) {
-          setErr("Your session seems to have expired. Please sign in again.");
-          setRows([]);
-          setSummary(null);
-          return;
-        }
-
-        try {
-          json = await res.json();
-        } catch {
-          json = null;
-        }
-
-        if (res.status === 404 || json?.error === "not_found") {
-          json = asEmptyOk(queryStr);
-        }
-      }
-
-      if (!res.ok || !json?.ok) {
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
         throw new Error(json?.error || `Search failed (${res.status})`);
       }
 
-      const data = json.data || {};
-      setRows(Array.isArray(data.results) ? data.results : []);
-      setSummary(data.summary || null);
-
-      // seed fix form with what we got
-      const g = data.summary?.company_guess || {};
-      setFixName(g.name || "");
-      setFixDomain(g.domain || "");
-      setFixLinkedIn(g.linkedin_url || "");
-      setFixParent("");
+      setRows(Array.isArray(json.candidates) ? json.candidates : []);
+      setCompany(json.company || null);
+      setTimings(json.timings || {});
+      setProvider(json.provider || "");
     } catch (e) {
-      if (e?.name === "AbortError") {
-        // silently ignore, a new search started
-        return;
+      if (e?.name !== "AbortError") {
+        setErr(e?.message || "Search failed");
+        setRows([]);
+        setCompany(null);
+        setTimings({});
+        setProvider("");
       }
-      setErr(e?.message || "Search failed");
-      setRows([]);
-      setSummary(asEmptyOk(queryStr).data.summary);
     } finally {
       setLoading(false);
     }
   };
 
-  // listen to company selection from sidebar/companies page
-  useEffect(() => {
-    const useNow = (e) => {
-      const c = e?.detail;
-      if (!c) return;
-      // auto-fill domain override and re-run search so emails use the right pattern
-      setFixDomain(c.domain || "");
-      run({ domain: c.domain, name: c.name, linkedin_url: c.linkedin_url });
-    };
-    window.addEventListener("upr:companyUseNow", useNow);
-    return () => window.removeEventListener("upr:companyUseNow", useNow);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q]);
-
-  // chip/status: optional
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await authFetch("/api/enrich/status", {
-          method: "GET",
-          noRedirect: true,
-          headers: { Accept: "application/json" },
-        });
-        if (!res.ok) return;
-        const j = await res.json().catch(() => ({}));
-        if (j?.ok) {
-          setDbOk(!!j.data?.db_ok);
-          setLlmOk(!!j.data?.llm_ok);
-          setDataSource(j.data?.data_source || "live");
-        }
-      } catch {}
-    })();
-  }, []);
-
-  // clean up on unmount
+  // cleanup on unmount
   useEffect(() => {
     return () => {
       try {
@@ -265,43 +101,26 @@ export default function EnrichmentPage() {
     };
   }, []);
 
-  const addToHR = async (companyId, selectedIdxs) => {
-    if (!companyId) return;
-    const toSave = selectedIdxs.length ? selectedIdxs.map((i) => rows[i]) : null; // backend will auto-pick if null
-
-    const body = toSave
-      ? { company_id: companyId, contacts: toSave }
-      : { company_id: companyId, max_contacts: 3 };
-
-    const res = await authFetch("/api/enrich", {
-      method: "POST",
-      noRedirect: true,
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (res.status === 401) throw new Error("Your session seems to have expired. Please sign in again.");
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok || !json.ok) throw new Error(json.error || "Save failed");
-    return json;
-  };
-
   return (
     <div className="p-6">
-      {/* Header status chips (always on) */}
+      {/* Header status chips */}
       <div className="mb-4 flex items-center justify-end gap-2">
-        <Pill label={`Data Source: ${dataSource || "live"}`} ok />
-        <Pill label="DB" ok={!!dbOk} />
-        <Pill label="LLM" ok={!!llmOk} />
+        <Pill label={`Data Source: ${provider || "live"}`} ok ms={timings.provider_ms} />
+        <Pill label="LLM" ok ms={timings.llm_ms} />
+        <Pill label="Apollo" ok ms={timings.apollo_ms} />
+        <Pill label="Geo" ok ms={timings.geo_ms} />
+        <Pill label="Email" ok ms={timings.email_ms} />
+        <Pill label="Quality" ok ms={timings.quality_ms} />
       </div>
 
       <h1 className="mb-1 text-3xl font-semibold tracking-tight text-gray-900">
         Enrichment
       </h1>
       <p className="mb-4 text-sm text-gray-500">
-        No company selected — search by company name.
+        Search by company name and review enriched leads.
       </p>
 
-      {/* Search bar + actions */}
+      {/* Search bar */}
       <div className="mb-3 flex items-center gap-2">
         <input
           className="flex-1 rounded-xl border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-gray-900/10"
@@ -321,29 +140,24 @@ export default function EnrichmentPage() {
         </button>
       </div>
 
-      {/* per-run timings */}
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <Pill
-          label={`Data Source: ${summary?.provider || dataSource || "live"}`}
-          ok
-          ms={summary?.timings?.provider_ms}
-        />
-        <Pill label="DB" ok={!!dbOk} />
-        <Pill label="LLM" ok={!!llmOk} ms={summary?.timings?.llm_ms} />
-        {summary?.company_guess?.name && (
-          <span className="ml-2 text-sm text-gray-600">
-            Guess: <span className="font-medium">{summary.company_guess.name}</span>{" "}
-            <button className="ml-2 text-blue-600 underline" onClick={() => setFixOpen(true)}>
-              Not right? Fix
-            </button>
-          </span>
-        )}
-      </div>
-
-      {/* error */}
+      {/* Error */}
       {err && (
         <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           {err}
+        </div>
+      )}
+
+      {/* Company info */}
+      {company && (
+        <div className="mb-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
+          <div>
+            <span className="font-medium">Company:</span> {company.name || "—"}
+          </div>
+          {company.domain && (
+            <div>
+              <span className="font-medium">Domain:</span> {company.domain}
+            </div>
+          )}
         </div>
       )}
 
@@ -352,40 +166,10 @@ export default function EnrichmentPage() {
         <div className="min-w-full">
           <div className="flex items-center justify-between border-b bg-gray-50 px-3 py-2">
             <div className="text-sm text-gray-700">Candidates: {rows.length || 0}</div>
-            <div className="flex items-center gap-2">
-              <select
-                className="rounded-lg border px-3 py-2 text-sm"
-                value={pickedCompanyId}
-                onChange={(e) => setPickedCompanyId(e.target.value)}
-              >
-                <option value="">— Choose company —</option>
-                {summary?.company_guess?.name && (
-                  <option value="__guess__">Use guessed: {summary.company_guess.name}</option>
-                )}
-              </select>
-              <button
-                className="rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-                disabled={!pickedCompanyId || (pickedIdxs.length === 0 && rows.length === 0)}
-                onClick={async () => {
-                  const company_id = pickedCompanyId === "__guess__" ? null : pickedCompanyId;
-                  try {
-                    await addToHR(company_id, pickedIdxs);
-                    setPicked({});
-                    alert("Saved!");
-                  } catch (e) {
-                    alert(e.message || "Save failed");
-                  }
-                }}
-              >
-                Add to HR Leads
-              </button>
-            </div>
           </div>
-
           <table className="w-full">
             <thead className="bg-white">
               <tr className="text-xs uppercase text-gray-500">
-                <th className="w-8 px-3 py-2" />
                 <th className="px-3 py-2 text-left">Name</th>
                 <th className="px-3 py-2 text-left">Emirate</th>
                 <th className="px-3 py-2 text-left">Title</th>
@@ -399,13 +183,6 @@ export default function EnrichmentPage() {
             <tbody className="divide-y">
               {rows.map((r, i) => (
                 <tr key={i} className="hover:bg-gray-50">
-                  <td className="px-3 py-2">
-                    <input
-                      type="checkbox"
-                      checked={!!picked[i]}
-                      onChange={(e) => setPicked((p) => ({ ...p, [i]: e.target.checked }))}
-                    />
-                  </td>
                   <td className="px-3 py-2">{r.name || "—"}</td>
                   <td className="px-3 py-2">{r.emirate || "—"}</td>
                   <td className="px-3 py-2">{r.designation || r.title || "—"}</td>
@@ -420,7 +197,12 @@ export default function EnrichmentPage() {
                   </td>
                   <td className="px-3 py-2">
                     {r.linkedin_url ? (
-                      <a className="underline" href={r.linkedin_url} target="_blank" rel="noreferrer">
+                      <a
+                        className="underline"
+                        href={r.linkedin_url}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
                         LinkedIn
                       </a>
                     ) : (
@@ -436,7 +218,7 @@ export default function EnrichmentPage() {
               ))}
               {rows.length === 0 && !loading && (
                 <tr>
-                  <td className="px-3 py-6 text-center text-gray-500" colSpan={9}>
+                  <td className="px-3 py-6 text-center text-gray-500" colSpan={8}>
                     No results.
                   </td>
                 </tr>
@@ -445,80 +227,6 @@ export default function EnrichmentPage() {
           </table>
         </div>
       </div>
-
-      {/* Quality note */}
-      {summary?.quality?.score != null && (
-        <div className="mt-2 text-sm text-gray-600">
-          Quality: {(summary.quality.score * 100).toFixed(0)}% —{" "}
-          {summary.quality.explanation || "—"}
-        </div>
-      )}
-
-      {/* Fix company modal */}
-      {fixOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-          <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl">
-            <div className="flex items-center justify-between border-b px-4 py-3">
-              <div className="text-lg font-semibold">Correct Company</div>
-              <button className="text-gray-500" onClick={() => setFixOpen(false)}>
-                ✕
-              </button>
-            </div>
-            <div className="space-y-3 p-4">
-              <Field label="Name">
-                <input
-                  className="w-full rounded border px-3 py-2"
-                  value={fixName}
-                  onChange={(e) => setFixName(e.target.value)}
-                />
-              </Field>
-              <Field label="Website / Domain">
-                <input
-                  className="w-full rounded border px-3 py-2"
-                  placeholder="solutionsplus.ae"
-                  value={fixDomain}
-                  onChange={(e) => setFixDomain(e.target.value)}
-                />
-              </Field>
-              <Field label="LinkedIn URL">
-                <input
-                  className="w-full rounded border px-3 py-2"
-                  value={fixLinkedIn}
-                  onChange={(e) => setFixLinkedIn(e.target.value)}
-                />
-              </Field>
-              <Field label="Parent / Group (optional)">
-                <input
-                  className="w-full rounded border px-3 py-2"
-                  placeholder="Mubadala"
-                  value={fixParent}
-                  onChange={(e) => setFixParent(e.target.value)}
-                />
-              </Field>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button className="rounded border px-4 py-2" onClick={() => setFixOpen(false)}>
-                  Cancel
-                </button>
-                <button
-                  className="rounded bg-gray-900 px-4 py-2 font-medium text-white"
-                  onClick={() => {
-                    setFixOpen(false);
-                    run({
-                      name: fixName,
-                      domain: fixDomain,
-                      linkedin_url: fixLinkedIn,
-                      parent: fixParent,
-                    });
-                  }}
-                >
-                  Apply &amp; Re-run
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

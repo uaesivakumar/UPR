@@ -1,8 +1,8 @@
 {
-  "generated": "2025-09-20T12:11:09Z",
-  "generated_human": "Sat, 20 Sep 2025 12:11:09 GMT",
+  "generated": "2025-09-20T12:14:39Z",
+  "generated_human": "Sat, 20 Sep 2025 12:14:39 GMT",
   "branch": "main",
-  "commit": "cc4143c",
+  "commit": "7cd14f5",
   "package": "upr-dashboard",
   "package_dependencies": {
     "bcryptjs": "^3.0.2",
@@ -131,9 +131,9 @@
     },
     {
       "path": "dashboard/src/pages/EnrichmentPage.jsx",
-      "size": 18132,
-      "mtime": "2025-09-20T11:10:32.000Z",
-      "sha256": "b4ac2f03d5fac838797630d774c6a3706cf8eb2f342aa6d94dde03f02e2751e1",
+      "size": 7751,
+      "mtime": "2025-09-20T12:14:14.053Z",
+      "sha256": "2b22e0577c332f1a495185913522ede904b909dc7b20071fbbcca216282a1258",
       "imports": [
         "import { useEffect, useMemo, useRef, useState } from \"react\";",
         "import { authFetch } from \"../utils/auth\";"
@@ -141,8 +141,8 @@
       "envs": [],
       "appUses": [],
       "endpoints": [],
-      "head": "// dashboard/src/pages/EnrichmentPage.jsx\nimport { useEffect, useMemo, useRef, useState } from \"react\";\nimport { authFetch } from \"../utils/auth\";\n\nfunction Pill({ ok = true, label, ms }) {\n  return (\n    <span\n      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${\n        ok\n          ? \"border-green-200 bg-green-50 text-green-700\"\n          : \"border-gray-200 bg-gray-50 text-gray-600\"\n      }`}\n    >\n      <span className={`h-2 w-2 rounded-full ${ok ? \"bg-green-500\" : \"bg-gray-400\"}`} />\n      {label}\n      {typeof ms === \"number\" ? ` • ${ms}ms` : \"\"}\n    </span>\n  );\n}\n\nfunction Field({ label, children }) {\n  return (\n    <div>\n      <div className=\"mb-1 text-sm text-gray-700\">{label}</div>\n      {children}\n    </div>\n  );\n}\n\nexport default function EnrichmentPage() {\n  const [q, setQ] = useState(\"\");\n  const [rows, setRows] = useState([]);\n  const [err, setErr] = useState(\"\");\n  const [loading, setLoading] = useState(false);\n  const [summary, setSummary] = useState(null); // timings, provider, company_guess, quality\n\n  // status chips (optional)\n  const [dbOk, setDbOk] = useState(true);\n  const [llmOk, setLlmOk] = useState(true);\n  const [dataSource, setDataSource] = useState(\"live\");",
-      "tail": "                  Cancel\n                </button>\n                <button\n                  className=\"rounded bg-gray-900 px-4 py-2 font-medium text-white\"\n                  onClick={() => {\n                    setFixOpen(false);\n                    run({\n                      name: fixName,\n                      domain: fixDomain,\n                      linkedin_url: fixLinkedIn,\n                      parent: fixParent,\n                    });\n                  }}\n                >\n                  Apply &amp; Re-run\n                </button>\n              </div>\n            </div>\n          </div>\n        </div>\n      )}\n    </div>\n  );\n}\n"
+      "head": "// dashboard/src/pages/EnrichmentPage.jsx\nimport { useEffect, useMemo, useRef, useState } from \"react\";\nimport { authFetch } from \"../utils/auth\";\n\nfunction Pill({ ok = true, label, ms }) {\n  return (\n    <span\n      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${\n        ok\n          ? \"border-green-200 bg-green-50 text-green-700\"\n          : \"border-gray-200 bg-gray-50 text-gray-600\"\n      }`}\n    >\n      <span className={`h-2 w-2 rounded-full ${ok ? \"bg-green-500\" : \"bg-gray-400\"}`} />\n      {label}\n      {typeof ms === \"number\" ? ` • ${ms}ms` : \"\"}\n    </span>\n  );\n}\n\nexport default function EnrichmentPage() {\n  const [q, setQ] = useState(\"\");\n  const [rows, setRows] = useState([]);\n  const [err, setErr] = useState(\"\");\n  const [loading, setLoading] = useState(false);\n\n  const [company, setCompany] = useState(null);\n  const [timings, setTimings] = useState({});\n  const [provider, setProvider] = useState(\"\");\n\n  const inFlight = useRef(null);\n\n  // fetch with timeout\n  async function fetchWithTimeout(url, options = {}, ms = 25000) {\n    const controller = new AbortController();\n    const t = setTimeout(() => controller.abort(\"timeout\"), ms);\n    const merged = { ...options, signal: controller.signal };\n    inFlight.current = controller;\n    try {\n      const res = await authFetch(url, merged);",
+      "tail": "                      \"—\"\n                    )}\n                  </td>\n                  <td className=\"px-3 py-2\">\n                    {typeof r.confidence === \"number\" ? r.confidence.toFixed(2) : \"—\"}\n                  </td>\n                  <td className=\"px-3 py-2\">{r.email_status || \"—\"}</td>\n                  <td className=\"px-3 py-2\">{r.source || \"—\"}</td>\n                </tr>\n              ))}\n              {rows.length === 0 && !loading && (\n                <tr>\n                  <td className=\"px-3 py-6 text-center text-gray-500\" colSpan={8}>\n                    No results.\n                  </td>\n                </tr>\n              )}\n            </tbody>\n          </table>\n        </div>\n      </div>\n    </div>\n  );\n}\n"
     },
     {
       "path": "dashboard/src/pages/HRLeads.jsx",
