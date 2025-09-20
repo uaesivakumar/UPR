@@ -8,7 +8,7 @@ const router = Router();
 /**
  * GET /api/enrich/search
  * Delegates to the search handler.
- * Authentication is already enforced by protectEnrich in server.js.
+ * Authentication is enforced by protectEnrich in server.js.
  */
 router.get("/search", searchHandler);
 

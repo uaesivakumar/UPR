@@ -10,7 +10,7 @@ import { pool } from "./utils/db.js";
 import companiesRouter from "./routes/companies.js";
 import hrLeadsRouter from "./routes/hrLeads.js";
 import newsRouter from "./routes/news.js";
-import enrichRouter from "./routes/enrich/index.js";
+import enrichRouter from "./routes/enrich/index.js"; // mounts /search and POST /
 import { signJwt } from "./utils/jwt.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -23,6 +23,7 @@ const PORT = process.env.PORT || 10000;
 const COOKIE_NAME = "upr_jwt";
 const isProd = process.env.NODE_ENV === "production";
 
+// tiny cookie reader (no extra deps)
 function getCookie(req, name) {
   const str = req.headers?.cookie || "";
   if (!str) return null;
@@ -47,12 +48,14 @@ function setAuthCookie(res, token) {
 /* ----------------------- auth middlewares (inline) ----------------------- */
 // Accept session user, or JWT from HttpOnly cookie (upr_jwt), or Authorization: Bearer
 function authAny(req, res, next) {
+  // 1) Session
   if (req?.session?.user) {
     req.user = req.session.user;
     req.userId = req.session.user.id || req.session.user.sub || "admin";
     return next();
   }
 
+  // 2) HttpOnly cookie JWT
   const cookieToken = getCookie(req, COOKIE_NAME);
   if (cookieToken) {
     try {
@@ -60,9 +63,12 @@ function authAny(req, res, next) {
       req.user = { id: payload.sub, role: payload.role, ...payload };
       req.userId = payload.sub || "admin";
       return next();
-    } catch {}
+    } catch {
+      // fall through
+    }
   }
 
+  // 3) Authorization: Bearer <token>
   const h = req.headers.authorization || "";
   const m = h.match(/^Bearer\s+(.+)$/i);
   if (m) {
@@ -71,13 +77,17 @@ function authAny(req, res, next) {
       req.user = { id: payload.sub, role: payload.role, ...payload };
       req.userId = payload.sub || "admin";
       return next();
-    } catch {}
+    } catch {
+      // fall through
+    }
   }
 
+  // 4) Unauthorized
   return res.status(401).json({ ok: false, error: "unauthorized" });
 }
 
-// Promote cookie -> Bearer for downstream code that expects Authorization
+// If a valid cookie exists but no Authorization header, add one so
+// downstream middleware/routers that only look at Bearer still work.
 function cookieToBearer(req, _res, next) {
   if (!req.headers.authorization) {
     const cookieToken = getCookie(req, COOKIE_NAME);
@@ -98,7 +108,9 @@ app.get("/__diag", async (_req, res) => {
     await pool.query("SELECT 1");
     res.json({ ok: true, db_ok: true });
   } catch (err) {
-    res.status(500).json({ ok: false, db_ok: false, error: String(err?.message || err) });
+    res
+      .status(500)
+      .json({ ok: false, db_ok: false, error: String(err?.message || err) });
   }
 });
 
@@ -152,18 +164,24 @@ app.get("/api/stats", async (_req, res) => {
     }
   };
   const companies = await safeCount(`SELECT COUNT(*) FROM companies`);
-  const leads     = await safeCount(`SELECT COUNT(*) FROM hr_leads`);
-  const new7d     = await safeCount(`SELECT COUNT(*) FROM hr_leads WHERE created_at >= NOW() - INTERVAL '7 days'`);
-  const outreach  = await safeCount(`SELECT COUNT(*) FROM hr_leads WHERE status ILIKE 'contacted' OR status ILIKE 'outreach%'`);
+  const leads = await safeCount(`SELECT COUNT(*) FROM hr_leads`);
+  const new7d = await safeCount(
+    `SELECT COUNT(*) FROM hr_leads WHERE created_at >= NOW() - INTERVAL '7 days'`
+  );
+  const outreach = await safeCount(
+    `SELECT COUNT(*) FROM hr_leads WHERE status ILIKE 'contacted' OR status ILIKE 'outreach%'`
+  );
 
   let recent = [];
   try {
-    const { rows } = await pool.query(`
+    const { rows } = await pool.query(
+      `
       SELECT id, company_name, role, status, created_at
       FROM hr_leads
       ORDER BY created_at DESC NULLS LAST
       LIMIT 5
-    `);
+    `
+    );
     recent = rows || [];
   } catch {
     recent = [];
@@ -177,7 +195,8 @@ app.use("/api/companies", companiesRouter);
 app.use("/api/hr-leads", hrLeadsRouter);
 app.use("/api/news", newsRouter);
 
-// Keep /api/enrich/status OPEN; guard others and add cookie->bearer
+// Keep /api/enrich/status OPEN (if present), guard all other enrich endpoints,
+// and promote cookie -> bearer before hitting the router.
 function protectEnrich(req, res, next) {
   if (req.path === "/status") return next();
   return authAny(req, res, next);
@@ -187,7 +206,9 @@ app.use("/api/enrich", cookieToBearer, protectEnrich, enrichRouter);
 /* ----------------------------- Diagnostics (full) ----------------------------- */
 function listRoutes(appOrRouter) {
   const out = [];
-  const stack = (appOrRouter && appOrRouter._router ? appOrRouter._router.stack : appOrRouter.stack) || [];
+  const stack =
+    (appOrRouter && appOrRouter._router ? appOrRouter._router.stack : appOrRouter.stack) ||
+    [];
   for (const layer of stack) {
     if (layer.route && layer.route.path) {
       const methods = Object.keys(layer.route.methods || {}).map((m) => m.toUpperCase());
@@ -207,12 +228,15 @@ function listRoutes(appOrRouter) {
 function envFlags() {
   const keys = [
     "DATABASE_URL",
-    "UPR_ADMIN_USER","UPR_ADMIN_PASS","ADMIN_USERNAME","ADMIN_PASSWORD",
+    "UPR_ADMIN_USER",
+    "UPR_ADMIN_PASS",
+    "ADMIN_USERNAME",
+    "ADMIN_PASSWORD",
     "JWT_SECRET",
     "APOLLO_API_KEY",
     "OPENAI_API_KEY",
     "NEVERBOUNCE_API_KEY",
-    "ZEROBOUNCE_API_KEY"
+    "ZEROBOUNCE_API_KEY",
   ];
   const o = {};
   for (const k of keys) o[k] = !!process.env[k];
