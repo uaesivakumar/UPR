@@ -11,7 +11,7 @@ import companiesRouter from "./routes/companies.js";
 import hrLeadsRouter from "./routes/hrLeads.js";
 import newsRouter from "./routes/news.js";
 import enrichRouter from "./routes/enrich/index.js"; // index re-exports status/search/etc.
-import { signJwt, verifyToken } from "./utils/jwt.js"; // <-- add verifyToken
+import { signJwt } from "./utils/jwt.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -56,7 +56,7 @@ function authAny(req, res, next) {
   const m = h.match(/^Bearer\s+(.+)$/i);
   if (m) {
     try {
-      const payload = verifyToken(m[1]);
+      const payload = jwt.verify(m[1], process.env.JWT_SECRET);
       if (payload) {
         req.user = { id: payload.sub, role: payload.role, ...payload };
         return next();
